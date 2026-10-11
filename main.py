@@ -4,13 +4,15 @@ import uuid
 import time
 import asyncio
 import argparse
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 from models.task import AgentTask, AgentResult, TaskStatus
 from app.state_store import StateStore
 from app.coordinator import Coordinator
 from app.router import TaskRouter
 from app.obsidian import ObsidianVaultWriter
+from app.dag_scheduler import TaskDAG, DAGScheduler
+from app.worktree_manager import WorktreeManager
 from adapters.ollama import OllamaAdapter
 from adapters.nine_router import NineRouterAdapter
 from adapters.claude_code import ClaudeCodeAdapter
@@ -131,6 +133,30 @@ class MultiagentOrchestrator:
 
         return result
 
+    async def execute_dag(self, dag: TaskDAG, save_to_obsidian: bool = True) -> Dict[str, AgentResult]:
+        """Executa um Grafo Acíclico Direcionado (DAG) completo com controle de paralelismo."""
+        scheduler = DAGScheduler(
+            router=self.router,
+            coordinator=self.coordinator,
+            max_concurrency=2,
+            on_feedback=self._print_feedback
+        )
+
+        results = await scheduler.execute_dag(dag)
+
+        if save_to_obsidian:
+            for task_id, res in results.items():
+                if res.status == TaskStatus.SUCCEEDED:
+                    task = dag.tasks[task_id]
+                    note_path = self.vault_writer.record_execution(
+                        task=task,
+                        result=res,
+                        validation_items=task.acceptance_criteria
+                    )
+                    self._print_feedback(f"📝 [OBSIDIAN] Nota salva: {os.path.basename(note_path)}")
+
+        return results
+
 async def main():
     parser = argparse.ArgumentParser(description="Multiagent Orchestrator CLI")
     subparsers = parser.add_subparsers(dest="command")
@@ -148,6 +174,9 @@ async def main():
     run_parser.add_argument("--criteria", type=str, nargs="*", default=[], help="Critérios de aceite")
     run_parser.add_argument("--no-obsidian", action="store_true", help="Não registrar no Obsidian")
 
+    # Comando: dag-demo
+    subparsers.add_parser("dag-demo", help="Demonstração prática de paralelismo e dependências com DAG")
+
     # Comando: list
     subparsers.add_parser("list", help="Listar histórico recente de tarefas no SQLite")
 
@@ -157,6 +186,58 @@ async def main():
 
     if args.command == "health" or not args.command:
         await orchestrator.check_all_health()
+
+    elif args.command == "dag-demo":
+        print("\n" + "=" * 60)
+        print("🚀 DEMONSTRAÇÃO DE EXECUÇÃO PARALELA COM DAG DE DEPENDÊNCIAS")
+        print("=" * 60)
+
+        dag = TaskDAG()
+        id1 = f"dag-p1-{uuid.uuid4().hex[:4]}"
+        id2 = f"dag-p2-{uuid.uuid4().hex[:4]}"
+        id3 = f"dag-p3-{uuid.uuid4().hex[:4]}"
+
+        # Tarefa 1 e 2 rodam em paralelo
+        t1 = AgentTask(
+            id=id1,
+            title="Função de Hash SHA-256",
+            instruction="Escreva uma função simples em Python que retorne o hash SHA-256 de uma string.",
+            task_type="coding",
+            assigned_agent="ollama",
+            assigned_model="qwen2.5-coder:1.5b",
+            acceptance_criteria=["Função python válida"]
+        )
+        t2 = AgentTask(
+            id=id2,
+            title="Conceito de DAG",
+            instruction="Defina o que é um Directed Acyclic Graph (DAG) em computação em exatamente 2 frases.",
+            task_type="summary",
+            assigned_agent="ollama",
+            assigned_model="qwen2.5-coder:1.5b",
+            acceptance_criteria=["Definição concisa em 2 frases"]
+        )
+        # Tarefa 3 aguarda t1 e t2
+        t3 = AgentTask(
+            id=id3,
+            title="Consolidação do Plano",
+            instruction="Escreva um breve resumo de aprovação do plano técnico após a execução dos módulos paralelos.",
+            task_type="summary",
+            dependencies=[id1, id2],
+            assigned_agent="ollama",
+            assigned_model="qwen2.5-coder:1.5b",
+            acceptance_criteria=["Plano técnico consolidado"]
+        )
+
+        dag.add_task(t1)
+        dag.add_task(t2)
+        dag.add_task(t3)
+
+        results = await orchestrator.execute_dag(dag)
+        print("\n" + "=" * 60)
+        print("RESULTADOS DO DAG:")
+        for t_id, r in results.items():
+            print(f"- [{r.status.value}] {t_id}: {r.summary}")
+        print("=" * 60 + "\n")
 
     elif args.command == "run":
         title = args.title or args.instruction[:50]
