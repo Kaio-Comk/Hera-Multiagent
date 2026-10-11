@@ -1,0 +1,47 @@
+# Políticas de Permissão e Segurança para o Orquestrador Multiagente Local
+version: "1.0"
+
+# Comandos de leitura e validação pré-autorizados (execução autônoma)
+allowed_commands:
+  - "pytest"
+  - "python -m pytest"
+  - "python -m py_compile"
+  - "git status"
+  - "git diff"
+  - "git log"
+  - "git branch"
+  - "ruff check"
+  - "black --check"
+  - "flake8"
+  - "mypy"
+
+# Comandos expressamente bloqueados (potencialmente destrutivos ou de alto risco)
+forbidden_patterns:
+  - "rm -rf"
+  - "rmdir /s"
+  - "del /f /s /q"
+  - "remove-item -recurse -force"
+  - "format "
+  - "git reset --hard"
+  - "git push.*--force"
+  - "git push.* -f"
+  - "reg delete"
+  - "shutdown"
+  - "reboot"
+  - "net stop"
+  - "drop database"
+  - "drop table"
+
+# Diretórios protegidos fora do workspace do projeto (proibido acessar ou modificar)
+protected_paths:
+  - "C:\\Windows"
+  - "C:\\Program Files"
+  - "C:\\Program Files (x86)"
+  - "%SYSTEMROOT%"
+  - "%WINDIR%"
+
+# Configurações de execução
+limits:
+  max_command_timeout_seconds: 120
+  require_interactive_approval_for_unknown: true
+  sanitize_secrets: true

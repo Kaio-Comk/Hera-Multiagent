@@ -182,6 +182,32 @@ class StateStore:
                 for r in rows
             ]
 
+    def recover_interrupted_tasks(self) -> List[str]:
+        """Recupera tarefas deixadas em RUNNING ou VALIDATING após encerramento inesperado."""
+        recovered_ids: List[str] = []
+        now = time.time()
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT id, title FROM tasks WHERE status IN (?, ?)",
+                (TaskStatus.RUNNING.value, TaskStatus.VALIDATING.value)
+            ).fetchall()
+            for r in rows:
+                task_id = r["id"]
+                conn.execute(
+                    "UPDATE tasks SET status = ?, updated_at = ?, completed_at = ? WHERE id = ?",
+                    (TaskStatus.FAILED.value, now, now, task_id)
+                )
+                recovered_ids.append(task_id)
+            conn.commit()
+
+        for t_id in recovered_ids:
+            self.record_event(
+                t_id,
+                "CRASH_RECOVERY",
+                "Tarefa marcada como FAILED pela rotina de recuperação após encerramento inesperado do orquestrador."
+            )
+        return recovered_ids
+
     def _row_to_task(self, row: sqlite3.Row) -> AgentTask:
         return AgentTask(
             id=row["id"],
