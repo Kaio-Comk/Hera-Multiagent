@@ -93,7 +93,17 @@ Instrução:
 
         cmd = [self.binary_path, "-p", prompt, "--output-format", "text"]
 
-        cwd = task.workspace if (task.workspace and os.path.exists(task.workspace)) else None
+        # Validação estrita de workspace
+        if task.workspace and not os.path.isdir(task.workspace):
+            return AgentResult(
+                task_id=task.id,
+                status=TaskStatus.FAILED,
+                summary="Falha de validação de workspace",
+                error_message=f"Workspace especificado '{task.workspace}' não existe ou é inválido. Execução abortada por segurança.",
+                execution_time_seconds=0.0
+            )
+
+        cwd = task.workspace if task.workspace else None
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -132,8 +142,12 @@ Instrução:
         except asyncio.TimeoutError:
             elapsed = time.time() - start_time
             if task.id in self._active_processes:
+                p = self._active_processes[task.id]
                 try:
-                    self._active_processes[task.id].kill()
+                    if os.name == 'nt' and p.pid:
+                        subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+                    else:
+                        p.kill()
                 except Exception:
                     pass
             return AgentResult(

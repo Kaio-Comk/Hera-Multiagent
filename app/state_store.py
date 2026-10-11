@@ -14,8 +14,11 @@ class StateStore:
         self._init_db()
 
     def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path))
+        conn = sqlite3.connect(str(self.db_path), timeout=10.0)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA busy_timeout = 5000")
+        conn.execute("PRAGMA journal_mode = WAL")
         return conn
 
     def _init_db(self):
@@ -183,7 +186,7 @@ class StateStore:
             ]
 
     def recover_interrupted_tasks(self) -> List[str]:
-        """Recupera tarefas deixadas em RUNNING ou VALIDATING após encerramento inesperado."""
+        """Recupera tarefas deixadas em RUNNING ou VALIDATING após encerramento inesperado em transação atômica."""
         recovered_ids: List[str] = []
         now = time.time()
         with self._get_connection() as conn:
@@ -197,15 +200,21 @@ class StateStore:
                     "UPDATE tasks SET status = ?, updated_at = ?, completed_at = ? WHERE id = ?",
                     (TaskStatus.FAILED.value, now, now, task_id)
                 )
+                conn.execute(
+                    """
+                    INSERT INTO events (task_id, event_type, message, payload, timestamp)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        task_id,
+                        "CRASH_RECOVERY",
+                        "Tarefa marcada como FAILED pela rotina de recuperação atômica após encerramento inesperado do orquestrador.",
+                        json.dumps({"recovery_timestamp": now, "previous_status": "ORPHANED_RUNNING"}),
+                        now
+                    )
+                )
                 recovered_ids.append(task_id)
             conn.commit()
-
-        for t_id in recovered_ids:
-            self.record_event(
-                t_id,
-                "CRASH_RECOVERY",
-                "Tarefa marcada como FAILED pela rotina de recuperação após encerramento inesperado do orquestrador."
-            )
         return recovered_ids
 
     def _row_to_task(self, row: sqlite3.Row) -> AgentTask:

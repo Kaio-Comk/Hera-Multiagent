@@ -48,6 +48,7 @@ class MultiagentOrchestrator:
 
         # Validador determinístico e motor de auto-correção
         self.validator = TaskValidator()
+        self.worktree_manager = WorktreeManager(repo_root=os.getcwd())
         self.autofix = AutoFixEngine(
             router=self.router,
             coordinator=self.coordinator,

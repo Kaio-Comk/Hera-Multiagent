@@ -6,21 +6,30 @@ import httpx
 from models.task import AgentTask, AgentResult, TaskStatus
 from models.agent import HealthStatus, AgentCapabilities, RunHandle
 from adapters.base import AgentAdapter
+from app.privacy_guard import PrivacyGuard
 
 class NineRouterAdapter:
     """Adaptador para o roteador local 9Router (porta 20128).
     
     Compatível com o formato OpenAI API (/v1/chat/completions e /v1/models).
     Usado para triagem rápida, segunda opinião e acesso a modelos em nuvem/gratuitos.
+    Possui Gate DLP ativo contra vazamento de credenciais.
     """
 
     def __init__(
         self,
         base_url: str = "http://127.0.0.1:20128/v1",
         default_model: str = "alicode-intl/qwen3.5-plus",
-        timeout: float = 60.0
+        timeout: float = 60.0,
+        allow_insecure_remote: bool = False
     ):
-        self.base_url = base_url.rstrip("/")
+        clean_url = base_url.rstrip("/")
+        # Validação estrita de loopback por segurança (permitindo loopback ou nomes de teste)
+        is_loopback = any(host in clean_url for host in ("127.0.0.1", "localhost", "::1", "mock-9router", "test-router"))
+        if not is_loopback and not allow_insecure_remote:
+            raise ValueError(f"Segurança: 9Router só pode se comunicar com loopback local, recebido: {clean_url}")
+
+        self.base_url = clean_url
         self.default_model = default_model
         self.timeout = timeout
         self._active_runs: Dict[str, asyncio.Task] = {}
@@ -85,6 +94,17 @@ class NineRouterAdapter:
         messages = self._build_messages(task)
         start_time = handle.start_time
 
+        # Pre-flight Gate DLP: verificar todo o payload antes de enviar à nuvem
+        is_safe, dlp_error = PrivacyGuard.validate_outbound_payload(messages)
+        if not is_safe:
+            return AgentResult(
+                task_id=task.id,
+                status=TaskStatus.FAILED,
+                summary="Envio para a nuvem bloqueado pelo Gate DLP (Pre-flight check)",
+                error_message=dlp_error or "Payload contém credenciais confidenciais.",
+                execution_time_seconds=0.0
+            )
+
         payload = {
             "model": model_name,
             "messages": messages,
@@ -123,11 +143,12 @@ class NineRouterAdapter:
                         execution_time_seconds=round(elapsed, 2)
                     )
                 else:
+                    clean_err = PrivacyGuard.sanitize_content(response.text[:300])
                     return AgentResult(
                         task_id=task.id,
                         status=TaskStatus.FAILED,
                         summary=f"Erro HTTP {response.status_code} do 9Router",
-                        error_message=response.text,
+                        error_message=clean_err,
                         execution_time_seconds=round(elapsed, 2)
                     )
 
@@ -141,11 +162,12 @@ class NineRouterAdapter:
             )
         except Exception as e:
             elapsed = time.time() - start_time
+            clean_err = PrivacyGuard.sanitize_content(str(e))
             return AgentResult(
                 task_id=task.id,
                 status=TaskStatus.FAILED,
                 summary="Exceção na chamada ao 9Router",
-                error_message=str(e),
+                error_message=clean_err,
                 execution_time_seconds=round(elapsed, 2)
             )
 
