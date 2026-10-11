@@ -1,7 +1,7 @@
 [project]
-name = "multiagent-orchestrator"
-version = "0.1.0"
-description = "Orquestrador Multiagente Local para Windows (Claude Code, Antigravity, 9Router, Ollama, Obsidian)"
+name = "hera-multiagent"
+version = "1.0.0"
+description = "Hera Multiagent — The Sovereign Local AI Orchestrator for Windows (Ollama, Claude Code, Antigravity, 9Router, Obsidian)"
 authors = [{ name = "Kaio Lima" }]
 readme = "README.md"
 requires-python = ">=3.11"

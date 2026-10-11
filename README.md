@@ -1,12 +1,12 @@
 <div align="center">
 
-# 🤖 Local Multiagent Orchestrator
-### Production-Grade Local AI Orchestration Engine for Windows
+# 👑 HERA Multiagent
+### The Sovereign Local AI Orchestration Engine for Windows
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12%2B-blue.svg?logo=python&logoColor=white)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-64%2F64%20Passing%20(100%25)-success.svg?logo=pytest&logoColor=white)](https://github.com/Kaio-Comk/multiagent-orchestrator)
-[![Architecture](https://img.shields.io/badge/Architecture-DAG%20%7C%20SQLite%20WAL-orange.svg)](https://github.com/Kaio-Comk/multiagent-orchestrator)
-[![Security](https://img.shields.io/badge/Security-Zero--Shell%20%7C%20Pre--flight%20DLP-red.svg)](https://github.com/Kaio-Comk/multiagent-orchestrator)
+[![Tests](https://img.shields.io/badge/Tests-64%2F64%20Passing%20(100%25)-success.svg?logo=pytest&logoColor=white)](https://github.com/Kaio-Comk/hera-multiagent)
+[![Architecture](https://img.shields.io/badge/Architecture-DAG%20%7C%20SQLite%20WAL-orange.svg)](https://github.com/Kaio-Comk/hera-multiagent)
+[![Security](https://img.shields.io/badge/Security-Zero--Shell%20%7C%20Pre--flight%20DLP-red.svg)](https://github.com/Kaio-Comk/hera-multiagent)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Connect, route, validate, and orchestrate Ollama, Claude Code CLI, Antigravity CLI, 9Router, and Obsidian as permanent memory — with deterministic guardrails, zero-shell execution, and real-time feedback.**
@@ -123,8 +123,8 @@ Following an independent application security audit, the orchestrator implements
 
 ### 1. Clone & Setup
 ```powershell
-git clone https://github.com/Kaio-Comk/multiagent-orchestrator.git
-cd multiagent-orchestrator
+git clone https://github.com/Kaio-Comk/hera-multiagent.git
+cd hera-multiagent
 
 python -m venv .venv
 .venv\Scripts\activate
@@ -191,7 +191,7 @@ python main.py list
 ## 📂 Project Structure
 
 ```
-multiagent-orchestrator/
+hera-multiagent/
 ├── adapters/
 │   ├── antigravity.py         # Antigravity CLI adapter (agy -p headless)
 │   ├── claude_code.py         # Claude Code CLI adapter (claude -p headless)
