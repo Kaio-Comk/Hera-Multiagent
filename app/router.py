@@ -1,12 +1,13 @@
 from typing import Dict, Tuple, Optional
 from models.task import AgentTask
 from adapters.base import AgentAdapter
+from app.privacy_guard import PrivacyGuard
 
 class TaskRouter:
-    """Roteador inteligente de tarefas multiagente.
+    """Roteador inteligente de tarefas multiagente com Gate de Privacidade (DLP).
     
-    Aplica heurísticas determinísticas e fórmula de pontuação para escolher
-    o melhor motor de execução (Ollama, 9Router, Claude Code, Antigravity).
+    Aplica heurísticas determinísticas, verificação de segredos e regras de isolamento
+    para garantir que dados sensíveis nunca sejam enviados a provedores em nuvem.
     """
 
     def __init__(self, adapters: Dict[str, AgentAdapter], default_offline: bool = False):
@@ -16,18 +17,38 @@ class TaskRouter:
     async def route(self, task: AgentTask) -> Tuple[AgentAdapter, str, str]:
         """Seleciona o adaptador ideal, modelo sugerido e justificativa para auditoria."""
 
-        # 1. Se o usuário explicitou o agente na tarefa
+        # 1. GATE DE PRIVACIDADE E POLÍTICA OFFLINE (Prioridade Máxima)
+        is_offline_req = self.default_offline or (task.task_type == "offline")
+        has_secret, secret_types = PrivacyGuard.scan_content(task.instruction)
+
+        # Se houver segredos detectados ou requisito estrito de offline
+        if is_offline_req or has_secret:
+            reason_privacy = (
+                f"Gate DLP ativado (detectado: {', '.join(secret_types)}): rota forçada para execução 100% local."
+                if has_secret else
+                "Política de privacidade/offline: rota restrita a execução local."
+            )
+            # Se o usuário tentou forçar 9router (nuvem) em uma tarefa sensível, barrar!
+            if task.assigned_agent == "9router":
+                reason_privacy += " Tentativa de envio para 9Router (nuvem) bloqueada pelo Gate DLP."
+
+            # Garantir executor local Ollama (Fail-Closed)
+            adapter = self.adapters.get("ollama")
+            if adapter:
+                return adapter, "qwen2.5-coder:1.5b", f"{reason_privacy} Executado 100% na GPU local via Ollama."
+
+            # Se não houver executor local disponível, FALHAR FECHADO (não fazer fallback para nuvem!)
+            raise PermissionError(
+                f"Falha de segurança (Fail-Closed): Tarefa confidencial/offline não pode ser enviada para a nuvem "
+                f"e o executor local (Ollama) não está disponível."
+            )
+
+        # 2. Atribuição manual direta (quando segura)
         if task.assigned_agent and task.assigned_agent in self.adapters:
             adapter = self.adapters[task.assigned_agent]
             model = task.assigned_model or getattr(adapter, "default_model", "default")
             reason = f"Atribuição manual direta solicitada para '{task.assigned_agent}'"
             return adapter, model, reason
-
-        # 2. Tarefa com restrição de privacidade ou modo offline
-        if self.default_offline or task.task_type == "offline":
-            adapter = self.adapters.get("ollama")
-            if adapter:
-                return adapter, "qwen2.5-coder:1.5b", "Política de privacidade/offline: executado 100% na GPU local via Ollama"
 
         # 3. Tarefas de codificação e refatoração
         if task.task_type == "coding":

@@ -14,18 +14,18 @@ async def test_validator_command_success():
         id="t-val-01",
         title="Teste Validação Sucesso",
         instruction="Executar comando simples",
-        validation_commands=['python -c "print(\'teste ok\')"']
+        validation_commands=['python -m py_compile models/task.py']
     )
     result = AgentResult(
         task_id="t-val-01",
-        status=TaskStatus.RUNNING,
+        status=TaskStatus.SUCCEEDED,
         summary="Executado"
     )
 
     val_res = await validator.validate(task, result)
     assert val_res.passed is True
     assert val_res.failure_summary is None
-    assert val_res.commands_executed['python -c "print(\'teste ok\')"']["passed"] is True
+    assert val_res.commands_executed['python -m py_compile models/task.py']["passed"] is True
 
 @pytest.mark.asyncio
 async def test_validator_command_failure():
@@ -34,17 +34,17 @@ async def test_validator_command_failure():
         id="t-val-02",
         title="Teste Validação Falha",
         instruction="Executar comando com erro",
-        validation_commands=['python -c "import sys; sys.exit(42)"']
+        validation_commands=['python -m py_compile non_existent_file_xyz.py']
     )
     result = AgentResult(
         task_id="t-val-02",
-        status=TaskStatus.RUNNING,
+        status=TaskStatus.SUCCEEDED,
         summary="Executado"
     )
 
     val_res = await validator.validate(task, result)
     assert val_res.passed is False
-    assert "exit 42" in val_res.failure_summary
+    assert "falhou" in val_res.failure_summary
     assert val_res.suggested_fix_prompt is not None
 
 @pytest.mark.asyncio
@@ -139,7 +139,7 @@ async def test_autofix_success_after_retry(tmp_path):
         id="t-autofix-01",
         title="Auto Fix Task",
         instruction="Criar script",
-        validation_commands=['python -c "import sys; sys.exit(1)"'],
+        validation_commands=['python -m py_compile missing_file_xyz.py'],
         max_retries=2,
         assigned_agent="flaky"
     )
@@ -175,7 +175,7 @@ async def test_autofix_exhaustion(tmp_path):
         id="t-exhaust-01",
         title="Exhaustion Task",
         instruction="Comando que sempre quebra",
-        validation_commands=['python -c "import sys; sys.exit(1)"'],
+        validation_commands=['python -m py_compile missing_file_xyz.py'],
         max_retries=2,
         assigned_agent="flaky"
     )
