@@ -10,10 +10,15 @@ htmlcov/
 
 # Local databases and runtime state
 data/*.db
+data/orchestrator.db*
 *.sqlite3
+*.db
 logs/
 tmp/
 temp/
+
+# Git Worktrees
+.worktrees/
 
 # Environment
 .env
