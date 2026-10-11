@@ -5,6 +5,7 @@ from collections import defaultdict, deque
 from models.task import AgentTask, AgentResult, TaskStatus
 from app.coordinator import Coordinator
 from app.router import TaskRouter
+from app.validator import TaskValidator
 
 class CycleDetectedError(Exception):
     """Lançado quando há ciclo de dependência circular no grafo de tarefas."""
@@ -78,11 +79,13 @@ class DAGScheduler:
         self,
         router: TaskRouter,
         coordinator: Coordinator,
+        validator: Optional[TaskValidator] = None,
         max_concurrency: int = 2,
         on_feedback: Optional[Callable[[str], None]] = None
     ):
         self.router = router
         self.coordinator = coordinator
+        self.validator = validator or TaskValidator()
         self.max_concurrency = max_concurrency
         self.on_feedback = on_feedback
 
@@ -127,11 +130,21 @@ class DAGScheduler:
                 handle = await adapter.submit(task)
                 result = await adapter.collect(handle)
 
-                # 3. Validação
-                self.coordinator.start_validation(task.id, criteria_count=len(task.acceptance_criteria))
-                if result.status == TaskStatus.SUCCEEDED:
+                # 3. Validação objetiva
+                criteria_count = len(task.acceptance_criteria) + len(task.validation_commands)
+                self.coordinator.start_validation(task.id, criteria_count=criteria_count)
+
+                val_result = await self.validator.validate(task, result)
+                if val_result.passed:
+                    result.status = TaskStatus.SUCCEEDED
                     for crit in task.acceptance_criteria:
                         result.validation_evidence[crit] = True
+                    for cmd, rep in val_result.commands_executed.items():
+                        result.validation_evidence[cmd] = rep["passed"]
+                else:
+                    result.status = TaskStatus.FAILED
+                    result.summary = f"Reprovado na validação: {val_result.failure_summary}"
+                    result.error_message = val_result.failure_summary
 
                 # 4. Finalização no SQLite
                 self.coordinator.complete_task(task.id, result)
