@@ -155,3 +155,48 @@ tags: [orquestrador, decisao, adr]
 
         return filepath
 
+    def record_hitl_merge(
+        self,
+        task_id: str,
+        proposal_id: str,
+        merged_commit: str,
+        target_branch: str,
+        feature_branch: str,
+        diff_hash: str,
+        reviewer: str = "operator",
+    ) -> str:
+        """Registra nota de auditoria de merge aprovado via HITL no histórico."""
+        today_str = datetime.date.today().strftime("%Y-%m-%d")
+        filename = f"{today_str} — HITL Merge {proposal_id} — {task_id}.md"
+        filepath = os.path.join(self.history_dir, filename)
+
+        content = f"""---
+task_id: {task_id}
+proposal_id: {proposal_id}
+merged_commit: {merged_commit}
+target_branch: {target_branch}
+feature_branch: {feature_branch}
+diff_hash: {diff_hash}
+reviewer: {reviewer}
+tags: [orquestrador, hitl, merge, auditoria]
+---
+
+# 🛡️ Auditoria HITL: Merge Aprovado ({proposal_id})
+
+← [[Orquestrador — Home (MOC)]] · [[08 Histórico/Home]]
+
+- **Tarefa:** `{task_id}`
+- **Feature Branch:** `{feature_branch}`
+- **Target Branch:** `{target_branch}`
+- **Commit Resultante:** `{merged_commit}`
+- **SHA-256 do Diff:** `{diff_hash}`
+- **Revisor Humano:** `{reviewer}`
+
+> [!NOTE] Verificação Criptográfica
+> O merge foi autorizado após conferência integral de hash de diff e nonce de uso único.
+"""
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(content)
+
+        return filepath
+

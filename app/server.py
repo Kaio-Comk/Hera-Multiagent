@@ -35,6 +35,18 @@ from app.gateway.schemas import ChatCompletionRequest, ChatCompletionResponse
 from app.gateway.privacy import GatewayPrivacyManager
 from app.gateway.providers import OllamaGatewayAdapter, GatewayProviderError
 from app.gateway.tier_router import TierRouter
+
+from app.hitl.schemas import (
+    ApprovalRequest,
+    RejectRequest,
+    RequestChangesRequest,
+    DiffProposal,
+    MergeResult,
+)
+from app.hitl.service import HitlService
+from app.hitl.git_manager import GitManager
+from app.hitl.diff_analyzer import DiffAnalyzer
+from app.hitl.approval_engine import ApprovalEngine
 from contextlib import asynccontextmanager
 import httpx
 
@@ -98,6 +110,12 @@ gateway_tier_router = TierRouter(
     adapters=[ollama_gw_adapter],
     privacy_manager=gateway_privacy_mgr,
     max_concurrent_requests=cfg.get("gateway", {}).get("max_concurrent_requests", 10)
+)
+
+# Inicializar Serviço HITL (Human-in-the-Loop)
+hitl_service = HitlService(
+    state_store=store,
+    obsidian_writer=vault_writer
 )
 
 # Gerenciador de conexões WebSocket para logs ao vivo
@@ -460,6 +478,75 @@ async def chat_completions(req: ChatCompletionRequest):
     finally:
         if should_close and not req.stream:
             await client_to_use.aclose()
+
+# ==================== ENDPOINTS HITL (VISUAL DIFF & APPROVAL) ====================
+
+class CreateProposalPayload(BaseModel):
+    task_id: str
+    repo_path: Optional[str] = None
+    feature_branch: str
+    target_branch: str = "master"
+    worktree_id: Optional[str] = None
+    worktree_path: Optional[str] = None
+    allowed_paths: Optional[List[str]] = None
+
+@app.post("/api/hitl/proposals")
+async def create_hitl_proposal(payload: CreateProposalPayload):
+    repo = payload.repo_path or str(ROOT_DIR)
+    try:
+        prop = hitl_service.create_proposal(
+            task_id=payload.task_id,
+            repo_path=repo,
+            feature_branch=payload.feature_branch,
+            target_branch=payload.target_branch,
+            worktree_id=payload.worktree_id,
+            worktree_path=payload.worktree_path,
+            allowed_paths=payload.allowed_paths,
+        )
+        return prop
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/hitl/proposals")
+async def list_hitl_proposals(status: Optional[str] = None):
+    return hitl_service.list_proposals(status=status)
+
+@app.get("/api/hitl/proposals/{proposal_id}")
+async def get_hitl_proposal(proposal_id: str):
+    prop = hitl_service.get_proposal(proposal_id)
+    if not prop:
+        raise HTTPException(status_code=404, detail="Proposta não encontrada")
+    return prop
+
+@app.post("/api/hitl/nonces")
+async def issue_hitl_nonce():
+    nonce = hitl_service.approval_engine.generate_nonce()
+    return {"nonce": nonce, "expires_in_seconds": hitl_service.approval_engine.token_ttl_seconds}
+
+@app.post("/api/hitl/approve")
+async def approve_hitl_proposal(req: ApprovalRequest):
+    res = hitl_service.approve_and_merge(req)
+    if not res.success:
+        raise HTTPException(status_code=400, detail={"error": res.error, "message": res.message})
+    return res
+
+@app.post("/api/hitl/reject")
+async def reject_hitl_proposal(req: RejectRequest):
+    success = hitl_service.reject_proposal(req)
+    if not success:
+        raise HTTPException(status_code=404, detail="Proposta não encontrada")
+    return {"status": "rejected", "proposal_id": req.proposal_id}
+
+@app.post("/api/hitl/request-changes")
+async def request_hitl_changes(req: RequestChangesRequest):
+    success = hitl_service.request_changes(req)
+    if not success:
+        raise HTTPException(status_code=404, detail="Proposta não encontrada")
+    return {"status": "changes_requested", "proposal_id": req.proposal_id}
+
+@app.get("/api/hitl/worktrees")
+async def list_hitl_worktrees():
+    return [w.to_dict() for w in hitl_service.git_manager.registry.list_all()]
 
 if __name__ == "__main__":
     import uvicorn
