@@ -216,6 +216,15 @@ async def main():
     bench_parser.add_argument("--model", type=str, default="qwen2.5-coder:1.5b", help="Modelo Ollama a avaliar")
     bench_parser.add_argument("--prompt", type=str, default=None, help="Prompt de teste para o benchmark")
 
+    # Comando: web
+    web_parser = subparsers.add_parser("web", help="Iniciar interface Web no navegador")
+    web_parser.add_argument("--port", type=int, default=8000, help="Porta do servidor HTTP (padrão: 8000)")
+    web_parser.add_argument("--no-browser", action="store_true", help="Não abrir navegador automaticamente")
+
+    # Comando: gui
+    gui_parser = subparsers.add_parser("gui", help="Abrir interface Desktop nativa do Windows (1 clique)")
+    gui_parser.add_argument("--port", type=int, default=8000, help="Porta do servidor interno (padrão: 8000)")
+
     args = parser.parse_args()
 
     orchestrator = MultiagentOrchestrator()
@@ -308,6 +317,42 @@ async def main():
 
     elif args.command == "benchmark":
         await orchestrator.run_benchmark(model=args.model, prompt=args.prompt)
+
+    elif args.command == "web":
+        import uvicorn
+        import webbrowser
+        port = args.port
+        url = f"http://127.0.0.1:{port}"
+        print(f"\n👑 [HERA] Servidor Web iniciando em {url}...")
+        if not args.no_browser:
+            asyncio.get_event_loop().call_later(0.8, lambda: webbrowser.open(url))
+        config = uvicorn.Config("app.server:app", host="127.0.0.1", port=port, log_level="info")
+        server = uvicorn.Server(config)
+        await server.serve()
+
+    elif args.command == "gui":
+        import threading
+        import uvicorn
+        import webview
+        port = args.port
+        url = f"http://127.0.0.1:{port}"
+
+        def _run_server():
+            uvicorn.run("app.server:app", host="127.0.0.1", port=port, log_level="warning")
+
+        thread = threading.Thread(target=_run_server, daemon=True)
+        thread.start()
+        time.sleep(1.2)
+
+        print(f"👑 [HERA] Abrindo janela Desktop nativa...")
+        webview.create_window(
+            title="👑 HERA Multiagent — Mission Control",
+            url=url,
+            width=1340,
+            height=860,
+            resizable=True
+        )
+        webview.start()
 
 if __name__ == "__main__":
     asyncio.run(main())

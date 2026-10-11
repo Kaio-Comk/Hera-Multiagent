@@ -1,0 +1,90 @@
+import os
+import yaml
+from pathlib import Path
+from typing import Dict, Any, Optional
+
+DEFAULT_CONFIG: Dict[str, Any] = {
+    "general": {
+        "host": "127.0.0.1",
+        "port": 8000,
+        "default_offline": False,
+        "default_engine": "ollama",
+        "vault_dir": r"C:\Users\<usuario>\Documents\Obsidian Vault\Orquestrador Multiagente",
+        "db_path": "data/orchestrator.db"
+    },
+    "engines": {
+        "ollama": {
+            "enabled": True,
+            "base_url": "http://localhost:11434",
+            "default_model": "qwen2.5-coder:1.5b",
+            "timeout": 120.0
+        },
+        "nine_router": {
+            "enabled": True,
+            "base_url": "http://127.0.0.1:20128/v1",
+            "default_model": "alicode-intl/qwen3.5-plus",
+            "timeout": 60.0
+        },
+        "claude_code": {
+            "enabled": True,
+            "default_model": "claude-3-7-sonnet",
+            "timeout": 300.0
+        },
+        "antigravity": {
+            "enabled": True,
+            "default_model": "gemini-2.5-pro",
+            "timeout": 300.0
+        }
+    }
+}
+
+class ConfigManager:
+    """Gerenciador centralizado de configurações persistidas em config.yaml."""
+
+    def __init__(self, config_path: Optional[str] = None):
+        if config_path:
+            self.config_path = Path(config_path)
+        else:
+            self.config_path = Path(__file__).resolve().parent.parent / "config.yaml"
+        self._ensure_config()
+
+    def _ensure_config(self):
+        """Cria config.yaml inicial caso não exista."""
+        if not self.config_path.exists():
+            self.save_config(DEFAULT_CONFIG)
+
+    def load_config(self) -> Dict[str, Any]:
+        """Carrega e mescla a configuração do disco com os padrões seguros."""
+        if not self.config_path.exists():
+            return DEFAULT_CONFIG.copy()
+        try:
+            with open(self.config_path, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            
+            # Mesclagem defensiva com defaults
+            merged = DEFAULT_CONFIG.copy()
+            for section in ("general", "engines"):
+                if section in data and isinstance(data[section], dict):
+                    merged[section] = {**merged.get(section, {}), **data[section]}
+            return merged
+        except Exception:
+            return DEFAULT_CONFIG.copy()
+
+    def save_config(self, config_data: Dict[str, Any]):
+        """Persiste configurações no arquivo YAML com indentação limpa."""
+        self.config_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.config_path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(config_data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+    def update_engine_model(self, engine_name: str, model_name: str):
+        """Atualiza o modelo padrão de um motor específico."""
+        cfg = self.load_config()
+        if engine_name in cfg.get("engines", {}):
+            cfg["engines"][engine_name]["default_model"] = model_name
+            self.save_config(cfg)
+
+    def set_offline_mode(self, enabled: bool):
+        """Ativa ou desativa a política de execução 100% offline."""
+        cfg = self.load_config()
+        cfg["general"]["default_offline"] = enabled
+        self.save_config(cfg)

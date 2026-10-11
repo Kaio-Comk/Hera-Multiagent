@@ -4,14 +4,15 @@
 ### The Sovereign Local AI Orchestration Engine for Windows
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12%2B-blue.svg?logo=python&logoColor=white)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-64%2F64%20Passing%20(100%25)-success.svg?logo=pytest&logoColor=white)](https://github.com/Kaio-Comk/hera-multiagent)
-[![Architecture](https://img.shields.io/badge/Architecture-DAG%20%7C%20SQLite%20WAL-orange.svg)](https://github.com/Kaio-Comk/hera-multiagent)
+[![Tests](https://img.shields.io/badge/Tests-72%2F72%20Passing%20(100%25)-success.svg?logo=pytest&logoColor=white)](https://github.com/Kaio-Comk/hera-multiagent)
+[![Architecture](https://img.shields.io/badge/Architecture-DAG%20%7C%20FastAPI%20%7C%20WebSockets-orange.svg)](https://github.com/Kaio-Comk/hera-multiagent)
+[![Interface](https://img.shields.io/badge/Interface-Web%20%7C%20Desktop%20GUI-blueviolet.svg)](https://github.com/Kaio-Comk/hera-multiagent)
 [![Security](https://img.shields.io/badge/Security-Zero--Shell%20%7C%20Pre--flight%20DLP-red.svg)](https://github.com/Kaio-Comk/hera-multiagent)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Connect, route, validate, and orchestrate Ollama, Claude Code CLI, Antigravity CLI, 9Router, and Obsidian as permanent memory — with deterministic guardrails, zero-shell execution, and real-time feedback.**
+**Connect, route, validate, and orchestrate Ollama, Claude Code CLI, Antigravity CLI, 9Router, and Obsidian as permanent memory — featuring a modern Mission Control Web/Desktop interface, deterministic guardrails, zero-shell execution, and real-time streaming feedback.**
 
-[Key Features](#-key-features) • [Architecture](#-architecture) • [Security Model](#-hardened-security-model) • [Benchmark](#-hardware-benchmark) • [Quickstart](#-quickstart) • [CLI Cheatsheet](#-cli-cheatsheet)
+[Key Features](#-key-features) • [Mission Control GUI](#-mission-control-web--desktop-gui) • [Architecture](#-architecture) • [Security Model](#-hardened-security-model) • [Benchmark](#-hardware-benchmark) • [Quickstart](#-quickstart) • [CLI Cheatsheet](#-cli-cheatsheet)
 
 </div>
 
@@ -53,6 +54,38 @@
 * **💾 Resilient Persistence & Crash Recovery:**
   * SQLite WAL mode (`PRAGMA journal_mode = WAL;`, `foreign_keys = ON;`).
   * Startup crash recovery detecting orphaned tasks and transitioning them to `FAILED` with audit events in a single atomic transaction.
+* **🖥️ Mission Control Web & Desktop Interface:**
+  * FastAPI backend with full REST API and real-time WebSocket log streaming.
+  * Dark-mode responsive dashboard with 5 specialized operational tabs.
+  * Direct 1-click model download (`ollama pull`) with streaming progress bar.
+  * Native Windows Desktop Window (`pywebview`) or browser interface.
+
+---
+
+## 🖥️ Mission Control (Web & Desktop GUI)
+
+Hera is designed for both terminal power users and teams who want an intuitive graphical cockpit. You can launch the interface with a single command without installing Node.js, NPM, or complex build tools:
+
+```powershell
+# Launch in default browser (FastAPI + WebSockets on 127.0.0.1:8000)
+python main.py web
+
+# OR launch as a native Windows Desktop application (PyWebView)
+python main.py gui
+```
+
+### 🌟 What you can do from Mission Control:
+1. **🎨 Task Studio:** Create coding/research tasks, specify acceptance criteria, set automated test commands, and assign specific AI models or let autonomous scoring route them.
+2. **🎛️ AI Engine & Model Management:**
+   - Toggle **100% Offline Mode** for zero-cloud privacy.
+   - Configure base URLs and select default models for Ollama, 9Router, Claude Code, and Antigravity.
+   - **Download any Ollama model with 1 click:** Enter any model tag (e.g. `llama3.2`, `deepseek-r1`, `qwen2.5-coder:1.5b`) to download it directly with real-time streaming progress.
+3. **📊 Real-time Hardware & VRAM Telemetry:**
+   - Live GPU VRAM allocation gauge (total vs used).
+   - System RAM and CPU utilization gauges.
+   - Active WebSocket connections.
+4. **🧠 Obsidian Vault Explorer:** Search past architectural decisions (ADRs), persistent memories, and project documentation directly from the UI.
+5. **📜 Live Streaming Console & WAL History:** Real-time terminal log viewer streaming step-by-step progress, auto-fix loops, and task audit trail.
 
 ---
 
@@ -149,12 +182,21 @@ python -m pytest tests -v
 
 ## 💻 CLI Cheatsheet
 
-### 1. Health Check
+### 1. Launch Mission Control Interface
+```powershell
+# Web Dashboard in your browser (http://127.0.0.1:8000)
+python main.py web
+
+# Native Desktop Window
+python main.py gui
+```
+
+### 2. Health Check
 ```powershell
 python main.py health
 ```
 
-### 2. Run a Coding Task with Auto-Validation
+### 3. Run a Coding Task with Auto-Validation
 ```powershell
 python main.py run "Write a Python function to compute GCD with type hints" `
   --title "GCD Function" `
@@ -165,23 +207,23 @@ python main.py run "Write a Python function to compute GCD with type hints" `
   --val-cmd "python -m py_compile models/task.py"
 ```
 
-### 3. Run Multi-Task Parallel DAG Demo
+### 4. Run Multi-Task Parallel DAG Demo
 Executes parallel tasks concurrently, cancels downstream tasks on failure, and consolidates results:
 ```powershell
 python main.py dag-demo
 ```
 
-### 4. Search Second-Brain Memory in Obsidian
+### 5. Search Second-Brain Memory in Obsidian
 ```powershell
 python main.py vault-search "security"
 ```
 
-### 5. Benchmark Local GPU
+### 6. Benchmark Local GPU
 ```powershell
 python main.py benchmark
 ```
 
-### 6. List Recent Task History (SQLite WAL)
+### 7. List Recent Task History (SQLite WAL)
 ```powershell
 python main.py list
 ```
@@ -200,16 +242,19 @@ hera-multiagent/
 ├── app/
 │   ├── auto_fix.py            # Autonomous self-healing retry loop
 │   ├── benchmark.py           # Real-time GPU & throughput profiler (nvidia-smi)
+│   ├── config_manager.py      # Dynamic configuration manager (config.yaml)
 │   ├── coordinator.py         # Real-time terminal progress coordinator
 │   ├── dag_scheduler.py       # DAG engine (Kahn's topological sort + cancellation)
 │   ├── obsidian.py            # Obsidian Vault writer (execution notes & ADRs)
 │   ├── policy_engine.py       # Strict argv allowlist & zero-shell policy
 │   ├── privacy_guard.py       # Pre-flight DLP & credential leak prevention
 │   ├── router.py              # Privacy-first scoring matrix & fail-closed gate
+│   ├── server.py              # FastAPI REST server & WebSocket log streaming
 │   ├── state_store.py         # SQLite WAL persistence with atomic crash recovery
 │   ├── validator.py           # Objective test runner (create_subprocess_exec)
 │   ├── vault_memory.py        # Semantic memory, [[wikilinks]] & secret redaction
 │   └── worktree_manager.py    # Isolated Git Worktrees for concurrent agents
+├── config.yaml                # Editable configurations (offline mode, default models, URLs)
 ├── models/
 │   ├── agent.py               # Abstract adapter protocols & telemetry
 │   └── task.py                # Pydantic schemas (AgentTask, TaskStatus, AgentResult)
@@ -225,11 +270,14 @@ hera-multiagent/
 │   ├── test_ollama_adapter.py
 │   ├── test_router.py
 │   ├── test_security_audit.py # Dedicated test suite verifying 13 audit vectors
+│   ├── test_server.py         # REST & WebSocket API automated tests
 │   ├── test_state_store.py
 │   ├── test_validator.py
 │   ├── test_vault_memory.py
 │   └── test_worktree_manager.py
-├── main.py                    # Unified CLI entrypoint
+├── web/
+│   └── index.html             # Responsive Dark Mode Mission Control dashboard
+├── main.py                    # Unified CLI entrypoint (run, web, gui, health, etc.)
 └── pyproject.toml
 ```
 
