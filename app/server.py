@@ -31,7 +31,24 @@ from adapters.nine_router import NineRouterAdapter
 from adapters.claude_code import ClaudeCodeAdapter
 from adapters.antigravity import AntigravityAdapter
 
-app = FastAPI(title="Hera Multiagent API", version="1.0.0")
+from app.gateway.schemas import ChatCompletionRequest, ChatCompletionResponse
+from app.gateway.privacy import GatewayPrivacyManager
+from app.gateway.providers import OllamaGatewayAdapter, GatewayProviderError
+from app.gateway.tier_router import TierRouter
+from contextlib import asynccontextmanager
+import httpx
+
+gateway_http_client: Optional[httpx.AsyncClient] = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global gateway_http_client
+    gateway_http_client = httpx.AsyncClient(timeout=60.0)
+    yield
+    if gateway_http_client:
+        await gateway_http_client.aclose()
+
+app = FastAPI(title="Hera Multiagent API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -70,6 +87,18 @@ validator = TaskValidator()
 vault_dir = cfg["general"].get("vault_dir")
 vault_writer = ObsidianVaultWriter(vault_project_dir=vault_dir)
 memory_manager = ObsidianMemoryManager(vault_project_dir=vault_dir)
+
+# Inicializar Gateway Roteador em camadas
+ollama_gw_adapter = OllamaGatewayAdapter(
+    base_url=cfg["engines"]["ollama"].get("base_url", "http://localhost:11434"),
+    default_model=cfg["engines"]["ollama"].get("default_model", "qwen2.5-coder:1.5b")
+)
+gateway_privacy_mgr = GatewayPrivacyManager(default_offline=cfg["general"].get("default_offline", False))
+gateway_tier_router = TierRouter(
+    adapters=[ollama_gw_adapter],
+    privacy_manager=gateway_privacy_mgr,
+    max_concurrent_requests=cfg.get("gateway", {}).get("max_concurrent_requests", 10)
+)
 
 # Gerenciador de conexões WebSocket para logs ao vivo
 class ConnectionManager:
@@ -364,6 +393,54 @@ async def serve_index():
     if index_file.exists():
         return FileResponse(index_file)
     return HTMLResponse("<h1>Hera Multiagent — Frontend inicializando...</h1>")
+
+# Endpoints OpenAI-Compatible Gateway (/v1)
+@app.get("/v1/models")
+async def list_gateway_models():
+    """Retorna lista de modelos disponíveis conforme especificação OpenAI."""
+    models_list = []
+    default_ollama = cfg["engines"]["ollama"].get("default_model", "qwen2.5-coder:1.5b")
+    models_list.append({
+        "id": default_ollama,
+        "object": "model",
+        "created": 1700000000,
+        "owned_by": "hera-local"
+    })
+    for eng_name, eng_cfg in cfg.get("engines", {}).items():
+        if eng_cfg.get("enabled") and eng_cfg.get("default_model"):
+            m = eng_cfg.get("default_model")
+            if m not in [x["id"] for x in models_list]:
+                models_list.append({
+                    "id": m,
+                    "object": "model",
+                    "created": 1700000000,
+                    "owned_by": f"hera-{eng_name}"
+                })
+    return {"object": "list", "data": models_list}
+
+@app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
+async def chat_completions(req: ChatCompletionRequest):
+    """Endpoint OpenAI-compatible para chat completions (modo não-streaming com fallback e DLP)."""
+    global gateway_http_client
+    if gateway_http_client is None or gateway_http_client.is_closed:
+        client_to_use = httpx.AsyncClient(timeout=60.0)
+        should_close = True
+    else:
+        client_to_use = gateway_http_client
+        should_close = False
+
+    try:
+        resp = await gateway_tier_router.route_and_execute(
+            request=req,
+            client=client_to_use,
+            force_offline=router.default_offline
+        )
+        return resp
+    except GatewayProviderError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+    finally:
+        if should_close:
+            await client_to_use.aclose()
 
 if __name__ == "__main__":
     import uvicorn
