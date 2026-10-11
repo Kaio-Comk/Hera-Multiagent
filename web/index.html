@@ -73,6 +73,9 @@
       <button onclick="switchTab('hitl')" id="tab-btn-hitl" class="tab-btn px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/60 flex items-center gap-2">
         <i data-lucide="git-pull-request" class="w-4 h-4"></i> Diff Review (HITL)
       </button>
+      <button onclick="switchTab('arena')" id="tab-btn-arena" class="tab-btn px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/60 flex items-center gap-2">
+        <i data-lucide="swords" class="w-4 h-4"></i> Arena & MCP
+      </button>
     </nav>
 
     <!-- Indicador de Status WS -->
@@ -397,6 +400,65 @@
       </div>
     </section>
 
+    <!-- ==================== ABA 7: ARENA & MCP ==================== -->
+    <section id="tab-arena" class="tab-content hidden space-y-6">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- Multi-Model Arena (7 cols) -->
+        <div class="lg:col-span-7 space-y-4">
+          <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <i data-lucide="swords" class="w-5 h-5 text-amber-400"></i>
+                <h3 class="text-sm font-bold text-white">Multi-Model Arena (Benchmark)</h3>
+              </div>
+              <span class="text-xs text-zinc-500 font-mono">GPU 4GB Serializada</span>
+            </div>
+
+            <div class="space-y-3">
+              <div>
+                <label class="block text-xs font-semibold text-zinc-400 mb-1">Prompt de Avaliação</label>
+                <textarea id="arena-prompt" rows="3" placeholder="Digite o desafio ou instrução técnica para competir entre modelos..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-brand-500 font-mono"></textarea>
+              </div>
+
+              <div class="flex items-center justify-between">
+                <button onclick="runArenaBenchmark()" class="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-amber-500/20 flex items-center gap-2">
+                  <i data-lucide="play" class="w-4 h-4"></i> Iniciar Disputa na Arena
+                </button>
+                <span id="arena-status" class="text-xs text-zinc-400 font-mono"></span>
+              </div>
+            </div>
+
+            <!-- Resultados da Rodada -->
+            <div id="arena-results-container" class="space-y-3 pt-3 border-t border-zinc-800">
+              <p class="text-xs text-zinc-500 italic">Nenhuma rodada executada ainda.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- MCP Tools & Servidores (5 cols) -->
+        <div class="lg:col-span-5 space-y-4">
+          <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <i data-lucide="blocks" class="w-5 h-5 text-indigo-400"></i>
+                <h3 class="text-sm font-bold text-white">Model Context Protocol (MCP)</h3>
+              </div>
+              <button onclick="loadMcpTools()" class="text-xs text-zinc-400 hover:text-white flex items-center gap-1">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+
+            <div class="space-y-3">
+              <h4 class="text-xs font-semibold uppercase text-zinc-400 font-mono">Ferramentas Homologadas</h4>
+              <div id="mcp-tools-list" class="space-y-2 max-h-[450px] overflow-y-auto">
+                <p class="text-xs text-zinc-500 italic p-2">Carregando catálogo MCP...</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <!-- Script Lógico da Interface -->
@@ -412,6 +474,7 @@
       loadHardware();
       loadTasksHistory();
       loadHitlProposals();
+      loadMcpTools();
       setInterval(loadHardware, 4000);
     });
 
@@ -963,6 +1026,112 @@
 
     function escapeHtml(str) {
       return (str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    // ==================== ARENA & MCP LOGIC ====================
+    async function loadMcpTools() {
+      const container = document.getElementById("mcp-tools-list");
+      try {
+        const res = await fetch("/api/mcp/tools");
+        const tools = await res.json();
+        container.innerHTML = "";
+
+        if (!tools || tools.length === 0) {
+          container.innerHTML = '<p class="text-xs text-zinc-500 italic p-2">Nenhuma ferramenta MCP registrada.</p>';
+          return;
+        }
+
+        tools.forEach(t => {
+          let badgeCol = "bg-blue-500/10 text-blue-400 border-blue-500/20";
+          if (t.effect === "destructive") badgeCol = "bg-rose-500/10 text-rose-400 border-rose-500/20";
+          if (t.effect === "write") badgeCol = "bg-amber-500/10 text-amber-400 border-amber-500/20";
+
+          const card = document.createElement("div");
+          card.className = "p-3 bg-zinc-950 border border-zinc-800 rounded-xl space-y-1";
+          card.innerHTML = `
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-xs text-indigo-300 font-mono">${t.name}</span>
+              <span class="text-[10px] font-mono px-2 py-0.5 rounded-full border ${badgeCol}">${t.effect}</span>
+            </div>
+            <p class="text-xs text-zinc-400">${t.description}</p>
+            <div class="text-[10px] text-zinc-500 font-mono">Servidor: ${t.server_id} ${t.requires_hitl ? '· 🛡️ Requer HITL' : ''}</div>
+          `;
+          container.appendChild(card);
+        });
+      } catch (e) {
+        container.innerHTML = `<p class="text-xs text-rose-400 p-2">Erro ao carregar MCP: ${e}</p>`;
+      }
+    }
+
+    async function runArenaBenchmark() {
+      const promptEl = document.getElementById("arena-prompt");
+      const statusEl = document.getElementById("arena-status");
+      const resultsContainer = document.getElementById("arena-results-container");
+
+      const promptText = promptEl.value.trim();
+      if (!promptText) {
+        alert("Digite um prompt para a Arena!");
+        return;
+      }
+
+      statusEl.innerText = "⚡ Disputa em andamento...";
+      resultsContainer.innerHTML = '<div class="text-center text-xs text-zinc-400 py-6">Executando candidatos sob semáforo de GPU...</div>';
+
+      try {
+        const defaultOllama = globalHealth?.engines?.ollama?.default_model || "qwen2.5-coder:1.5b";
+        const res = await fetch("/api/arena/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: promptText,
+            candidates: [
+              { model_id: defaultOllama, adapter_name: "ollama", is_local: true },
+              { model_id: "alicode-intl/qwen3.5-plus", adapter_name: "9router", is_local: false },
+              { model_id: "claude-3-7-sonnet", adapter_name: "claude_code", is_local: false }
+            ]
+          })
+        });
+
+        const report = await res.json();
+        statusEl.innerText = `Concluído em ${((report.completed_at - report.started_at)).toFixed(2)}s`;
+        resultsContainer.innerHTML = "";
+
+        report.results.forEach(r => {
+          const isFastest = report.fastest_model === r.model_id;
+          const isHighestTps = report.highest_throughput_model === r.model_id;
+
+          let badge = "";
+          if (isFastest) badge += '<span class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">⚡ Mais Rápido</span> ';
+          if (isHighestTps) badge += '<span class="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold">🚀 Maior Vazão</span>';
+
+          const card = document.createElement("div");
+          card.className = "p-4 bg-zinc-950 border border-zinc-800 rounded-xl space-y-2";
+          card.innerHTML = `
+            <div class="flex items-center justify-between">
+              <div>
+                <span class="font-bold text-xs text-white">${r.model_id}</span>
+                <span class="text-xs text-zinc-500 font-mono">(${r.adapter_name})</span>
+              </div>
+              <div class="flex items-center gap-2">${badge}</div>
+            </div>
+            <div class="grid grid-cols-3 gap-2 text-xs font-mono bg-zinc-900/60 p-2.5 rounded-lg border border-zinc-800/80">
+              <div><span class="text-zinc-500">TTFT:</span> <strong class="text-zinc-300">${r.ttft_ms.toFixed(1)}ms</strong></div>
+              <div><span class="text-zinc-500">Duração:</span> <strong class="text-zinc-300">${(r.duration_ms / 1000).toFixed(2)}s</strong></div>
+              <div><span class="text-zinc-500">Vazão:</span> <strong class="text-amber-400">${r.tokens_per_second} tok/s</strong></div>
+            </div>
+            ${r.status === 'completed' ? `
+              <p class="text-xs text-zinc-300 line-clamp-3 bg-zinc-900/30 p-2 rounded border border-zinc-800/40 font-mono">${escapeHtml(r.output_text)}</p>
+            ` : `
+              <p class="text-xs text-rose-400 italic">${r.error || 'Falha na avaliação'}</p>
+            `}
+          `;
+          resultsContainer.appendChild(card);
+        });
+
+      } catch (e) {
+        statusEl.innerText = "Erro!";
+        resultsContainer.innerHTML = `<div class="text-xs text-rose-400 p-3">Erro na execução: ${e}</div>`;
+      }
     }
   </script>
 </body>

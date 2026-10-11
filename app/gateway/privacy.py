@@ -17,6 +17,8 @@ class DataClassification(str, Enum):
     INTERNAL = "internal"
     LOCAL_ONLY = "local_only"
 
+PrivacyClass = DataClassification
+
 @dataclass(frozen=True)
 class PrivacyInspectionResult:
     classification: DataClassification
@@ -97,3 +99,37 @@ class GatewayPrivacyManager:
             c for c in candidates
             if c.get("tier", "local") in privacy_result.allowed_tiers
         ]
+
+    def classify_prompt(
+        self,
+        text: str,
+        force_offline: Optional[bool] = None
+    ) -> PrivacyInspectionResult:
+        """Classifica o texto isolado de um prompt com relação a credenciais e privacidade."""
+        is_offline = self.default_offline if force_offline is None else force_offline
+        has_secrets, secret_types = PrivacyGuard.scan_content(text)
+
+        if has_secrets:
+            return PrivacyInspectionResult(
+                classification=DataClassification.LOCAL_ONLY,
+                has_secrets=True,
+                secret_types=secret_types,
+                allowed_tiers={"local"},
+                rejection_reason=f"Segredos/credenciais detectados no prompt: {', '.join(secret_types)}"
+            )
+
+        if is_offline:
+            return PrivacyInspectionResult(
+                classification=DataClassification.LOCAL_ONLY,
+                has_secrets=False,
+                secret_types=[],
+                allowed_tiers={"local"},
+                rejection_reason="Modo 100% offline ativado"
+            )
+
+        return PrivacyInspectionResult(
+            classification=DataClassification.PUBLIC,
+            has_secrets=False,
+            secret_types=[],
+            allowed_tiers={"cloud_premium", "cloud_cheap", "cloud_free", "local"}
+        )
