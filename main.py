@@ -11,6 +11,7 @@ from app.state_store import StateStore
 from app.coordinator import Coordinator
 from app.router import TaskRouter
 from app.obsidian import ObsidianVaultWriter
+from app.vault_memory import ObsidianMemoryManager
 from app.dag_scheduler import TaskDAG, DAGScheduler
 from app.worktree_manager import WorktreeManager
 from app.validator import TaskValidator
@@ -39,6 +40,7 @@ class MultiagentOrchestrator:
 
         v_dir = vault_dir or r"C:\Users\Kaio Lima\Documents\Obsidian Vault\Orquestrador Multiagente"
         self.vault_writer = ObsidianVaultWriter(vault_project_dir=v_dir)
+        self.memory_manager = ObsidianMemoryManager(vault_project_dir=v_dir)
 
         # Callbacks de feedback visual
         self.coordinator = Coordinator(store=self.store, on_progress=self._print_feedback)
@@ -95,11 +97,18 @@ class MultiagentOrchestrator:
         save_to_obsidian: bool = True
     ) -> AgentResult:
         """Ciclo completo e determinístico de execução de tarefa com auto-correção."""
+        # 1. Injetar contexto relevante do Obsidian Vault se aplicável
+        context_block = self.memory_manager.extract_context_from_instruction(instruction)
+        final_instruction = instruction
+        if context_block:
+            final_instruction = f"{context_block}\n{instruction}"
+            self._print_feedback("🧠 **[MEMÓRIA]** Contexto relevante injetado a partir do Obsidian Vault.")
+
         task_id = f"task-{uuid.uuid4().hex[:8]}"
         task = AgentTask(
             id=task_id,
             title=title,
-            instruction=instruction,
+            instruction=final_instruction,
             task_type=task_type,
             assigned_agent=assigned_agent,
             assigned_model=assigned_model,
@@ -168,6 +177,10 @@ async def main():
 
     # Comando: dag-demo
     subparsers.add_parser("dag-demo", help="Demonstração prática de paralelismo e dependências com DAG")
+
+    # Comando: vault-search
+    vault_parser = subparsers.add_parser("vault-search", help="Pesquisar notas e convenções no Obsidian Vault")
+    vault_parser.add_argument("query", type=str, help="Termo ou conceito a ser pesquisado no vault")
 
     # Comando: list
     subparsers.add_parser("list", help="Listar histórico recente de tarefas no SQLite")
@@ -248,6 +261,13 @@ async def main():
         print("RESULTADO FINAL:")
         print(result.output_text if result.output_text else result.summary)
         print("-" * 50)
+
+    elif args.command == "vault-search":
+        notes = orchestrator.memory_manager.search_context(args.query, max_notes=5)
+        print(f"\n🔍 Notas encontradas no Vault para '{args.query}': {len(notes)}")
+        for n in notes:
+            print(f"- 📄 [[{n['title']}]] (Relevância: {n['score']})")
+            print(f"  {n['content'][:180].strip()}...\n")
 
     elif args.command == "list":
         tasks = orchestrator.store.list_tasks(limit=10)
