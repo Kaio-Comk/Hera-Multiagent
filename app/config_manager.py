@@ -35,6 +35,17 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "default_model": "gemini-2.5-pro",
             "timeout": 300.0
         }
+    },
+    "feature_flags": {
+        "enable_gateway": True,
+        "enable_rtk": False,
+        "enable_arena": False,
+        "enable_mcp": False
+    },
+    "gateway": {
+        "max_concurrent_requests": 10,
+        "request_timeout_seconds": 60.0,
+        "default_tier_order": ["cloud_premium", "cloud_cheap", "cloud_free", "local"]
     }
 }
 
@@ -63,7 +74,7 @@ class ConfigManager:
             
             # Mesclagem defensiva com defaults
             merged = DEFAULT_CONFIG.copy()
-            for section in ("general", "engines"):
+            for section in ("general", "engines", "feature_flags", "gateway"):
                 if section in data and isinstance(data[section], dict):
                     merged[section] = {**merged.get(section, {}), **data[section]}
             return merged
