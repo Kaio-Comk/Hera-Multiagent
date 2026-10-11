@@ -1,6 +1,6 @@
-# Contributing to Local Multiagent Orchestrator
+# Contributing to HERA Multiagent
 
-Thank you for your interest in contributing to the **Local Multiagent Orchestrator**! We welcome bug reports, feature requests, adapter extensions, and documentation improvements.
+Thank you for your interest in contributing to **HERA Multiagent**! We welcome bug reports, feature requests, adapter extensions, and documentation improvements.
 
 ---
 
@@ -9,8 +9,8 @@ Thank you for your interest in contributing to the **Local Multiagent Orchestrat
 1. **Fork the Repository:** Create your own fork of the repo on GitHub.
 2. **Clone and Branch:**
    ```bash
-   git clone https://github.com/Kaio-Comk/multiagent-orchestrator.git
-   cd multiagent-orchestrator
+   git clone https://github.com/Kaio-Comk/hera-multiagent.git
+   cd hera-multiagent
    git checkout -b feat/my-new-feature
    ```
 3. **Set Up Development Environment:**

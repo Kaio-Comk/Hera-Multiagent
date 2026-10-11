@@ -5,11 +5,13 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 from models.task import AgentTask, TaskStatus
 
+DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "data" / "orchestrator.db"
+
 class StateStore:
     """Persistência determinística em SQLite para controle de fila e histórico."""
 
-    def __init__(self, db_path: str = "B:/multiagent-orchestrator/data/orchestrator.db"):
-        self.db_path = Path(db_path)
+    def __init__(self, db_path: Optional[str] = None):
+        self.db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
