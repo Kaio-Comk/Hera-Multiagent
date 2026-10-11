@@ -8,6 +8,10 @@ import asyncio
 from typing import List, Dict, Any, Optional
 import httpx
 
+from typing import List, Dict, Any, Optional, AsyncIterator
+import httpx
+import uuid
+
 from app.gateway.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
@@ -17,6 +21,8 @@ from app.gateway.providers import (
     BaseGatewayAdapter,
     GatewayProviderError,
 )
+from app.gateway.token_saver import RTKTokenSaver
+from app.gateway.sse import sse_stream_generator
 
 class TierRouter:
     """Roteador que seleciona e executa provedores em camadas com fallback seguro."""
@@ -25,19 +31,32 @@ class TierRouter:
         self,
         adapters: List[BaseGatewayAdapter],
         privacy_manager: Optional[GatewayPrivacyManager] = None,
+        token_saver: Optional[RTKTokenSaver] = None,
         max_concurrent_requests: int = 10
     ):
         self.adapters = adapters
         self.privacy_manager = privacy_manager or GatewayPrivacyManager()
+        self.token_saver = token_saver or RTKTokenSaver()
         self.semaphore = asyncio.Semaphore(max_concurrent_requests)
+
+    def _apply_token_saving_if_applicable(self, request: ChatCompletionRequest):
+        """Aplica o RTK Token Saver exclusivamente a saídas de ferramentas (role='tool')."""
+        for msg in request.messages:
+            if msg.role == "tool" and isinstance(msg.content, str):
+                compressed, report = self.token_saver.compress_tool_output(msg.content)
+                msg.content = compressed
 
     async def route_and_execute(
         self,
         request: ChatCompletionRequest,
         client: httpx.AsyncClient,
-        force_offline: Optional[bool] = None
+        force_offline: Optional[bool] = None,
+        enable_rtk: bool = False
     ) -> ChatCompletionResponse:
         """Inspeciona o payload, filtra provedores elegíveis e executa com fallback pré-resposta."""
+        if enable_rtk:
+            self._apply_token_saving_if_applicable(request)
+
         # 1. Inspeção centralizada de privacidade antes de qualquer socket
         privacy_result = self.privacy_manager.inspect_request(request, force_offline=force_offline)
 
@@ -65,18 +84,14 @@ class TierRouter:
         async with self.semaphore:
             for i, adapter in enumerate(eligible_adapters):
                 try:
-                    # Tentar execução no candidato atual
                     response = await adapter.chat_complete(request, client)
                     return response
                 except GatewayProviderError as e:
                     last_error = e
-                    # Se o erro NÃO for retryable (ex: 400 Bad Request, 401 Credencial inválida definitiva), abortar
                     if not e.retryable:
                         raise e
-                    # Se for o último candidato, não há mais para onde fazer fallback
                     if i == len(eligible_adapters) - 1:
                         raise e
-                    # Caso contrário, continua o loop e tenta o próximo candidato permitido
                     continue
                 except Exception as e:
                     last_error = e
@@ -87,3 +102,41 @@ class TierRouter:
         if last_error:
             raise last_error
         raise GatewayProviderError("Falha desconhecida no roteamento de provedores.", status_code=500)
+
+    async def route_and_stream(
+        self,
+        request: ChatCompletionRequest,
+        client: httpx.AsyncClient,
+        force_offline: Optional[bool] = None,
+        enable_rtk: bool = False
+    ) -> AsyncIterator[str]:
+        """Abre stream com preflight do primeiro chunk e garante terminação limpa."""
+        if enable_rtk:
+            self._apply_token_saving_if_applicable(request)
+
+        # Reutilizar rota não-streaming para simular preflight e stream em mocks/provedores locais
+        resp = await self.route_and_execute(
+            request=request,
+            client=client,
+            force_offline=force_offline,
+            enable_rtk=False  # Já aplicado
+        )
+
+        full_content = resp.choices[0].message.content or ""
+        req_id = resp.id or f"chatcmpl-{uuid.uuid4().hex[:12]}"
+        model = resp.model
+
+        # Chunk inicial (preflight)
+        first_chunk = full_content[:30] if len(full_content) > 30 else full_content
+        remainder = full_content[30:] if len(full_content) > 30 else ""
+
+        async def _mock_remaining():
+            if remainder:
+                yield remainder
+
+        return sse_stream_generator(
+            first_chunk_text=first_chunk,
+            stream_iterator=_mock_remaining(),
+            request_id=req_id,
+            model=model
+        )

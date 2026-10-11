@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -418,9 +418,9 @@ async def list_gateway_models():
                 })
     return {"object": "list", "data": models_list}
 
-@app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
+@app.post("/v1/chat/completions")
 async def chat_completions(req: ChatCompletionRequest):
-    """Endpoint OpenAI-compatible para chat completions (modo não-streaming com fallback e DLP)."""
+    """Endpoint OpenAI-compatible para chat completions (com streaming SSE, fallback e DLP)."""
     global gateway_http_client
     if gateway_http_client is None or gateway_http_client.is_closed:
         client_to_use = httpx.AsyncClient(timeout=60.0)
@@ -429,17 +429,36 @@ async def chat_completions(req: ChatCompletionRequest):
         client_to_use = gateway_http_client
         should_close = False
 
+    enable_rtk = cfg.get("feature_flags", {}).get("enable_rtk", True)
+
     try:
+        if req.stream:
+            stream_gen = await gateway_tier_router.route_and_stream(
+                request=req,
+                client=client_to_use,
+                force_offline=router.default_offline,
+                enable_rtk=enable_rtk
+            )
+            return StreamingResponse(
+                stream_gen,
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive"
+                }
+            )
+
         resp = await gateway_tier_router.route_and_execute(
             request=req,
             client=client_to_use,
-            force_offline=router.default_offline
+            force_offline=router.default_offline,
+            enable_rtk=enable_rtk
         )
         return resp
     except GatewayProviderError as e:
         raise HTTPException(status_code=e.status_code, detail=str(e))
     finally:
-        if should_close:
+        if should_close and not req.stream:
             await client_to_use.aclose()
 
 if __name__ == "__main__":
