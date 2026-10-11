@@ -1,4 +1,5 @@
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
+import time
 from pydantic import BaseModel, Field
 
 class HealthStatus(BaseModel):
@@ -14,3 +15,10 @@ class AgentCapabilities(BaseModel):
     supports_json_schema: bool = True
     supports_vision: bool = False
     is_local_offline: bool = False
+
+class RunHandle(BaseModel):
+    task_id: str
+    process_id: Optional[int] = None
+    start_time: float = Field(default_factory=lambda: 0.0)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
