@@ -47,6 +47,23 @@ from app.hitl.service import HitlService
 from app.hitl.git_manager import GitManager
 from app.hitl.diff_analyzer import DiffAnalyzer
 from app.hitl.approval_engine import ApprovalEngine
+
+from app.mcp.schemas import (
+    McpServerConfig,
+    McpToolDefinition,
+    McpToolCallRequest,
+    McpToolCallResult,
+)
+from app.mcp.catalog import McpCatalog, McpSecurityError, McpPermissionDeniedError
+from app.mcp.client import McpClientManager
+
+from app.arena.schemas import (
+    ArenaCandidate,
+    CandidateResult,
+    ArenaRunRequest,
+    ArenaRunReport,
+)
+from app.arena.runner import ArenaRunner
 from contextlib import asynccontextmanager
 import httpx
 
@@ -116,6 +133,22 @@ gateway_tier_router = TierRouter(
 hitl_service = HitlService(
     state_store=store,
     obsidian_writer=vault_writer
+)
+
+# Inicializar MCP Client Manager e Catálogo
+mcp_catalog = McpCatalog()
+mcp_client = McpClientManager(
+    catalog=mcp_catalog,
+    privacy_manager=gateway_privacy_mgr,
+    enabled=cfg.get("feature_flags", {}).get("enable_mcp", True)
+)
+
+# Inicializar Multi-Model Arena Runner
+arena_runner = ArenaRunner(
+    adapters=adapters,
+    privacy_manager=gateway_privacy_mgr,
+    state_store=store,
+    enabled=cfg.get("feature_flags", {}).get("enable_arena", True)
 )
 
 # Gerenciador de conexões WebSocket para logs ao vivo
@@ -547,6 +580,64 @@ async def request_hitl_changes(req: RequestChangesRequest):
 @app.get("/api/hitl/worktrees")
 async def list_hitl_worktrees():
     return [w.to_dict() for w in hitl_service.git_manager.registry.list_all()]
+
+# ==================== ENDPOINTS MCP (MODEL CONTEXT PROTOCOL) ====================
+
+@app.get("/api/mcp/servers")
+async def list_mcp_servers():
+    return mcp_client.catalog.list_servers()
+
+@app.post("/api/mcp/servers")
+async def register_mcp_server(cfg: McpServerConfig):
+    try:
+        return mcp_client.catalog.register_server(cfg)
+    except McpSecurityError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/mcp/tools")
+async def list_mcp_tools():
+    return mcp_client.catalog.list_tools()
+
+@app.post("/api/mcp/tools")
+async def register_mcp_tool(tool: McpToolDefinition):
+    try:
+        return mcp_client.catalog.register_tool(tool)
+    except McpSecurityError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/mcp/execute")
+async def execute_mcp_tool(req: McpToolCallRequest):
+    try:
+        return await mcp_client.execute_tool(req)
+    except McpPermissionDeniedError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except McpSecurityError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# ==================== ENDPOINTS MULTI-MODEL ARENA ====================
+
+@app.post("/api/arena/run")
+async def run_arena_benchmark(req: ArenaRunRequest):
+    try:
+        return await arena_runner.run_arena(req)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/arena/runs")
+async def list_arena_runs():
+    return arena_runner.list_runs()
+
+@app.get("/api/arena/runs/{run_id}")
+async def get_arena_run(run_id: str):
+    run = arena_runner.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Relatório da Arena não encontrado")
+    return run
+
+@app.post("/api/arena/runs/{run_id}/cancel")
+async def cancel_arena_run(run_id: str):
+    cancelled = arena_runner.cancel_run(run_id)
+    return {"run_id": run_id, "cancelled": cancelled}
 
 if __name__ == "__main__":
     import uvicorn
