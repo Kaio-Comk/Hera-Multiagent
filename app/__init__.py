@@ -4,6 +4,8 @@ from app.router import TaskRouter
 from app.obsidian import ObsidianVaultWriter
 from app.dag_scheduler import TaskDAG, DAGScheduler
 from app.worktree_manager import WorktreeManager
+from app.validator import TaskValidator, ValidationResult
+from app.auto_fix import AutoFixEngine
 
 __all__ = [
     "StateStore",
@@ -13,4 +15,7 @@ __all__ = [
     "TaskDAG",
     "DAGScheduler",
     "WorktreeManager",
+    "TaskValidator",
+    "ValidationResult",
+    "AutoFixEngine",
 ]

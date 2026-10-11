@@ -13,6 +13,8 @@ from app.router import TaskRouter
 from app.obsidian import ObsidianVaultWriter
 from app.dag_scheduler import TaskDAG, DAGScheduler
 from app.worktree_manager import WorktreeManager
+from app.validator import TaskValidator
+from app.auto_fix import AutoFixEngine
 from adapters.ollama import OllamaAdapter
 from adapters.nine_router import NineRouterAdapter
 from adapters.claude_code import ClaudeCodeAdapter
@@ -40,6 +42,15 @@ class MultiagentOrchestrator:
 
         # Callbacks de feedback visual
         self.coordinator = Coordinator(store=self.store, on_progress=self._print_feedback)
+
+        # Validador determinístico e motor de auto-correção
+        self.validator = TaskValidator()
+        self.autofix = AutoFixEngine(
+            router=self.router,
+            coordinator=self.coordinator,
+            validator=self.validator,
+            on_feedback=self._print_feedback
+        )
 
     def _print_feedback(self, msg: str):
         timestamp = time.strftime("%H:%M:%S")
@@ -78,9 +89,12 @@ class MultiagentOrchestrator:
         assigned_agent: Optional[str] = None,
         assigned_model: Optional[str] = None,
         acceptance_criteria: Optional[List[str]] = None,
+        validation_commands: Optional[List[str]] = None,
+        max_retries: int = 2,
+        workspace: Optional[str] = None,
         save_to_obsidian: bool = True
     ) -> AgentResult:
-        """Ciclo completo e determinístico de execução de tarefa."""
+        """Ciclo completo e determinístico de execução de tarefa com auto-correção."""
         task_id = f"task-{uuid.uuid4().hex[:8]}"
         task = AgentTask(
             id=task_id,
@@ -89,40 +103,15 @@ class MultiagentOrchestrator:
             task_type=task_type,
             assigned_agent=assigned_agent,
             assigned_model=assigned_model,
-            acceptance_criteria=acceptance_criteria or []
+            acceptance_criteria=acceptance_criteria or [],
+            validation_commands=validation_commands or [],
+            max_retries=max_retries,
+            workspace=workspace or ""
         )
 
-        # 1. Submeter à fila
-        self.coordinator.submit_task(task)
+        result = await self.autofix.execute_task_with_retry(task, workspace=workspace)
 
-        # 2. Roteamento inteligente
-        adapter, model_name, reason = await self.router.route(task)
-        task.assigned_agent = adapter.name
-        task.assigned_model = model_name
-        task.routing_reason = reason
-
-        self.coordinator.start_execution(
-            task_id=task.id,
-            agent_name=adapter.name,
-            model_name=model_name,
-            reason=reason
-        )
-
-        # 3. Execução via adaptador
-        handle = await adapter.submit(task)
-        result = await adapter.collect(handle)
-
-        # 4. Validação
-        self.coordinator.start_validation(task.id, criteria_count=len(task.acceptance_criteria))
-        # Se houve saída sem falha, aprova critérios
-        if result.status == TaskStatus.SUCCEEDED:
-            for crit in task.acceptance_criteria:
-                result.validation_evidence[crit] = True
-
-        # 5. Conclusão no SQLite
-        self.coordinator.complete_task(task.id, result)
-
-        # 6. Registro no Obsidian Vault
+        # Registro no Obsidian Vault
         if save_to_obsidian and result.status == TaskStatus.SUCCEEDED:
             note_path = self.vault_writer.record_execution(
                 task=task,
@@ -138,6 +127,7 @@ class MultiagentOrchestrator:
         scheduler = DAGScheduler(
             router=self.router,
             coordinator=self.coordinator,
+            validator=self.validator,
             max_concurrency=2,
             on_feedback=self._print_feedback
         )
@@ -172,6 +162,8 @@ async def main():
     run_parser.add_argument("--agent", type=str, default=None, choices=["ollama", "9router", "claude_code", "antigravity"])
     run_parser.add_argument("--model", type=str, default=None, help="Modelo específico")
     run_parser.add_argument("--criteria", type=str, nargs="*", default=[], help="Critérios de aceite")
+    run_parser.add_argument("--val-cmd", action="append", default=[], help="Comando de validação (repetível)")
+    run_parser.add_argument("--max-retries", type=int, default=2, help="Limite de tentativas de auto-correção")
     run_parser.add_argument("--no-obsidian", action="store_true", help="Não registrar no Obsidian")
 
     # Comando: dag-demo
@@ -248,6 +240,8 @@ async def main():
             assigned_agent=args.agent,
             assigned_model=args.model,
             acceptance_criteria=args.criteria,
+            validation_commands=args.val_cmd,
+            max_retries=args.max_retries,
             save_to_obsidian=not args.no_obsidian
         )
         print("\n" + "-" * 50)
