@@ -70,6 +70,9 @@
       <button onclick="switchTab('history')" id="tab-btn-history" class="tab-btn px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/60 flex items-center gap-2">
         <i data-lucide="history" class="w-4 h-4"></i> Histórico (WAL)
       </button>
+      <button onclick="switchTab('hitl')" id="tab-btn-hitl" class="tab-btn px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/60 flex items-center gap-2">
+        <i data-lucide="git-pull-request" class="w-4 h-4"></i> Diff Review (HITL)
+      </button>
     </nav>
 
     <!-- Indicador de Status WS -->
@@ -359,6 +362,41 @@
       </div>
     </section>
 
+    <!-- ==================== ABA 6: DIFF REVIEW (HITL) ==================== -->
+    <section id="tab-hitl" class="tab-content hidden space-y-6">
+      <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <i data-lucide="shield-check" class="w-5 h-5 text-indigo-400"></i>
+            <div>
+              <h3 class="text-sm font-bold text-white">Visual Diff Review & Human-in-the-Loop</h3>
+              <p class="text-xs text-zinc-400">Revisão e autorização criptográfica de patches antes do merge em disco</p>
+            </div>
+          </div>
+          <button onclick="loadHitlProposals()" class="text-xs text-zinc-400 hover:text-white flex items-center gap-1">
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Atualizar
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <!-- Lista de Propostas à esquerda (4 cols) -->
+          <div class="lg:col-span-4 space-y-3">
+            <h4 class="text-xs font-semibold uppercase text-zinc-400 font-mono">Propostas de Alteração</h4>
+            <div id="hitl-proposals-list" class="space-y-2 max-h-[550px] overflow-y-auto">
+              <p class="text-xs text-zinc-500 italic p-3">Nenhuma proposta carregada.</p>
+            </div>
+          </div>
+
+          <!-- Detalhes e Visual Diff à direita (8 cols) -->
+          <div class="lg:col-span-8 space-y-4" id="hitl-proposal-details">
+            <div class="bg-zinc-950/80 border border-zinc-800/80 rounded-xl p-8 text-center text-zinc-500 text-xs">
+              Selecione uma proposta de diff à esquerda para inspecionar estatísticas, alertas de segurança e autorizar o merge.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <!-- Script Lógico da Interface -->
@@ -373,6 +411,7 @@
       loadHealth();
       loadHardware();
       loadTasksHistory();
+      loadHitlProposals();
       setInterval(loadHardware, 4000);
     });
 
@@ -698,6 +737,232 @@
           tbody.appendChild(row);
         });
       } catch (e) {}
+    }
+
+    // ==================== HITL (VISUAL DIFF & APPROVAL) ====================
+    let currentProposal = null;
+
+    async function loadHitlProposals() {
+      const container = document.getElementById("hitl-proposals-list");
+      try {
+        const res = await fetch("/api/hitl/proposals");
+        const list = await res.json();
+        container.innerHTML = "";
+
+        if (!list || list.length === 0) {
+          container.innerHTML = '<p class="text-xs text-zinc-500 italic p-3">Nenhuma proposta registrada no momento.</p>';
+          return;
+        }
+
+        list.forEach(p => {
+          const card = document.createElement("div");
+          const isSelected = currentProposal && currentProposal.id === p.id;
+          let badgeColor = "bg-amber-500/10 text-amber-400 border-amber-500/20";
+          if (p.status === "merged") badgeColor = "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+          if (p.status === "rejected") badgeColor = "bg-rose-500/10 text-rose-400 border-rose-500/20";
+          if (p.status === "changes_requested") badgeColor = "bg-blue-500/10 text-blue-400 border-blue-500/20";
+
+          card.className = `p-3 rounded-xl border transition-all cursor-pointer ${isSelected ? 'bg-zinc-800/80 border-brand-500' : 'bg-zinc-950/60 border-zinc-800/80 hover:border-zinc-700'}`;
+          card.onclick = () => selectHitlProposal(p.id);
+          card.innerHTML = `
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="font-mono text-xs font-bold text-white">${p.feature_branch}</span>
+              <span class="text-[10px] font-mono px-2 py-0.5 rounded-full border ${badgeColor}">${p.status}</span>
+            </div>
+            <div class="flex items-center justify-between text-[11px] text-zinc-400">
+              <span>Task: ${p.task_id}</span>
+              <span>+${p.stats.insertions} / -${p.stats.deletions}</span>
+            </div>
+            <div class="text-[10px] text-zinc-500 font-mono mt-1">Hash: ${p.diff_hash.substring(0, 10)}...</div>
+          `;
+          container.appendChild(card);
+        });
+      } catch (e) {
+        container.innerHTML = `<p class="text-xs text-rose-400 p-3">Erro ao carregar propostas: ${e}</p>`;
+      }
+    }
+
+    async function selectHitlProposal(propId) {
+      const detailsContainer = document.getElementById("hitl-proposal-details");
+      detailsContainer.innerHTML = '<div class="text-center text-xs text-zinc-400 py-8">Carregando detalhes do diff...</div>';
+
+      try {
+        const res = await fetch(`/api/hitl/proposals/${propId}`);
+        const p = await res.json();
+        currentProposal = p;
+        loadHitlProposals(); // atualiza highlights
+
+        // Renderizar Alertas de Segurança
+        let alertsHtml = "";
+        if (p.alerts && p.alerts.length > 0) {
+          alertsHtml = `<div class="space-y-2 mb-4">` + p.alerts.map(a => {
+            const isDanger = a.level === "danger";
+            const borderCol = isDanger ? "border-rose-500/30 bg-rose-500/10 text-rose-300" : "border-amber-500/30 bg-amber-500/10 text-amber-300";
+            return `
+              <div class="p-2.5 rounded-lg border text-xs flex items-start gap-2 ${borderCol}">
+                <i data-lucide="${isDanger ? 'alert-triangle' : 'alert-circle'}" class="w-4 h-4 shrink-0 mt-0.5"></i>
+                <div>
+                  <span class="font-bold uppercase tracking-wider text-[10px]">${a.category} (${a.level}):</span>
+                  <span>${a.message}</span>
+                </div>
+              </div>
+            `;
+          }).join("") + `</div>`;
+        }
+
+        // Colorir Diff
+        const diffLines = (p.diff_content || "").split("\n");
+        const coloredDiff = diffLines.map(line => {
+          if (line.startsWith("+") && !line.startsWith("+++")) {
+            return `<div class="bg-emerald-950/40 text-emerald-300 px-2 py-0.5">${escapeHtml(line)}</div>`;
+          } else if (line.startsWith("-") && !line.startsWith("---")) {
+            return `<div class="bg-rose-950/40 text-rose-300 px-2 py-0.5">${escapeHtml(line)}</div>`;
+          } else if (line.startsWith("@@")) {
+            return `<div class="bg-indigo-950/40 text-indigo-300 px-2 py-0.5 font-bold">${escapeHtml(line)}</div>`;
+          }
+          return `<div class="px-2 py-0.5 text-zinc-400">${escapeHtml(line)}</div>`;
+        }).join("");
+
+        detailsContainer.innerHTML = `
+          <div class="bg-zinc-950 border border-zinc-800 rounded-xl p-5 space-y-4">
+            <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+              <div>
+                <h4 class="text-sm font-bold text-white flex items-center gap-2">
+                  <i data-lucide="git-branch" class="w-4 h-4 text-brand-400"></i> ${p.feature_branch} → ${p.target_branch}
+                </h4>
+                <p class="text-xs text-zinc-400 font-mono mt-0.5">Base: ${p.base_commit.substring(0, 8)} · Head: ${p.head_commit.substring(0, 8)}</p>
+              </div>
+              <div class="flex items-center gap-3 text-xs font-mono">
+                <span class="text-emerald-400">+${p.stats.insertions}</span>
+                <span class="text-rose-400">-${p.stats.deletions}</span>
+                <span class="text-zinc-400">${p.stats.files_changed} arq</span>
+              </div>
+            </div>
+
+            ${alertsHtml}
+
+            <!-- Diff Content Viewer -->
+            <div class="space-y-1">
+              <div class="flex items-center justify-between text-xs text-zinc-400 font-mono">
+                <span>Diff Unificado</span>
+                <span class="text-[11px] text-zinc-500">SHA-256: ${p.diff_hash}</span>
+              </div>
+              <div class="bg-zinc-900/90 border border-zinc-800 rounded-lg p-3 font-mono text-xs overflow-x-auto max-h-[350px] leading-relaxed">
+                ${coloredDiff || '<p class="text-zinc-600 italic">Nenhum diff detectado.</p>'}
+              </div>
+            </div>
+
+            <!-- Botões de Ação HITL -->
+            ${p.status === 'pending_review' ? `
+              <div class="flex items-center justify-end gap-3 pt-3 border-t border-zinc-800">
+                <button onclick="requestHitlChanges('${p.id}')" class="px-3.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-medium transition-all flex items-center gap-1.5">
+                  <i data-lucide="message-square" class="w-3.5 h-3.5"></i> Pedir Correção
+                </button>
+                <button onclick="rejectHitlProposal('${p.id}')" class="px-3.5 py-1.5 bg-rose-950/60 hover:bg-rose-900 border border-rose-800/60 text-rose-300 rounded-xl text-xs font-medium transition-all flex items-center gap-1.5">
+                  <i data-lucide="x" class="w-3.5 h-3.5"></i> Rejeitar & Limpar
+                </button>
+                <button onclick="approveHitlProposal('${p.id}', '${p.diff_hash}')" class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-emerald-600/20 flex items-center gap-1.5">
+                  <i data-lucide="check-check" class="w-4 h-4"></i> Aprovar & Merge
+                </button>
+              </div>
+            ` : `
+              <div class="p-3 bg-zinc-900/40 rounded-xl border border-zinc-800/60 text-xs text-zinc-400 flex items-center gap-2">
+                <i data-lucide="info" class="w-4 h-4 text-zinc-500"></i>
+                <span>Esta proposta já foi finalizada com status <strong class="text-white">${p.status}</strong>.</span>
+              </div>
+            `}
+          </div>
+        `;
+        lucide.createIcons();
+      } catch (e) {
+        detailsContainer.innerHTML = `<div class="text-xs text-rose-400 p-4">Erro ao carregar proposta: ${e}</div>`;
+      }
+    }
+
+    async function approveHitlProposal(propId, diffHash) {
+      if (!confirm("Confirmar aprovação humana e integração definitiva do patch ao código?")) return;
+
+      try {
+        // 1. Obter Nonce Criptográfico
+        const nonceRes = await fetch("/api/hitl/nonces", { method: "POST" });
+        const nonceData = await nonceRes.json();
+
+        // 2. Enviar Aprovação com Verificação de Hash
+        const res = await fetch("/api/hitl/approve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            proposal_id: propId,
+            user_id: "operator",
+            session_id: "gui-session",
+            nonce: nonceData.nonce,
+            expected_diff_hash: diffHash,
+            comments: "Aprovado via Mission Control GUI"
+          })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          alert(`Merge realizado com sucesso no commit ${data.merged_commit.substring(0, 8)}!`);
+          selectHitlProposal(propId);
+          loadHitlProposals();
+        } else {
+          alert(`Erro na aprovação: ${data.detail?.message || data.detail || 'Falha no merge'}`);
+        }
+      } catch (e) {
+        alert(`Erro de rede: ${e}`);
+      }
+    }
+
+    async function rejectHitlProposal(propId) {
+      const reason = prompt("Informe o motivo da rejeição:", "Código não aderente aos requisitos");
+      if (!reason) return;
+
+      try {
+        const res = await fetch("/api/hitl/reject", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            proposal_id: propId,
+            user_id: "operator",
+            reason: reason,
+            cleanup_worktree: true
+          })
+        });
+        if (res.ok) {
+          selectHitlProposal(propId);
+          loadHitlProposals();
+        }
+      } catch (e) {
+        alert(`Erro ao rejeitar: ${e}`);
+      }
+    }
+
+    async function requestHitlChanges(propId) {
+      const feedback = prompt("Quais alterações o agente deve realizar?");
+      if (!feedback) return;
+
+      try {
+        const res = await fetch("/api/hitl/request-changes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            proposal_id: propId,
+            user_id: "operator",
+            feedback: feedback
+          })
+        });
+        if (res.ok) {
+          selectHitlProposal(propId);
+          loadHitlProposals();
+        }
+      } catch (e) {
+        alert(`Erro ao solicitar alterações: ${e}`);
+      }
+    }
+
+    function escapeHtml(str) {
+      return (str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
   </script>
 </body>
