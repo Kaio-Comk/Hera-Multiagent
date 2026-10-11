@@ -4,17 +4,22 @@ import datetime
 from typing import List, Optional
 from models.task import AgentTask, AgentResult
 
+from app.vault_memory import ObsidianMemoryManager
+
 class ObsidianVaultWriter:
     """Módulo de persistência durável no Obsidian Vault.
     
-    Salva notas de histórico, lições aprendidas e evidências de execução
-    na pasta '08 Histórico' do projeto no segundo cérebro.
+    Salva notas de histórico, lições aprendidas, decisões aprovadas e evidências de execução
+    na pasta do projeto no segundo cérebro.
     """
 
     def __init__(self, vault_project_dir: str = r"C:\Users\<usuario>\Documents\Obsidian Vault\Orquestrador Multiagente"):
-        self.vault_project_dir = vault_project_dir
-        self.history_dir = os.path.join(vault_project_dir, "08 Histórico")
+        self.vault_project_dir = os.path.abspath(vault_project_dir)
+        self.history_dir = os.path.join(self.vault_project_dir, "08 Histórico")
+        self.decisions_dir = os.path.join(self.vault_project_dir, "04 Decisões")
         os.makedirs(self.history_dir, exist_ok=True)
+        os.makedirs(self.decisions_dir, exist_ok=True)
+        self.memory_manager = ObsidianMemoryManager(vault_project_dir=self.vault_project_dir)
 
     def _sanitize_filename(self, name: str) -> str:
         # Remover caracteres proibidos no Windows: <>:"/\|?*
@@ -63,6 +68,9 @@ class ObsidianVaultWriter:
             f"Roteamento: {task.routing_reason or 'Direto'}."
         )
 
+        raw_output = result.output_text.strip() if result.output_text else result.summary
+        sanitized_output = self.memory_manager.sanitize_content(raw_output)
+
         content = f"""---
 task_id: {task.id}
 status: {status_str}
@@ -85,7 +93,7 @@ tags: [orquestrador, execucao, historico]
 
 ### Saída:
 ```text
-{result.output_text.strip() if result.output_text else result.summary}
+{sanitized_output}
 ```
 
 ## ✅ Validação e Critérios
@@ -98,7 +106,52 @@ tags: [orquestrador, execucao, historico]
 {lessons_md}
 """
 
+        # Verificar se já existe nota duplicada
+        if not os.path.exists(filepath) and self.memory_manager.is_duplicate_note(self.history_dir, content):
+            return filepath
+
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(content)
 
         return filepath
+
+    def record_decision(
+        self,
+        decision_id: str,
+        title: str,
+        context: str,
+        decision: str,
+        consequences: str
+    ) -> str:
+        """Registra uma Nota de Decisão Arquitetural (ADR) na pasta 04 Decisões."""
+        today_str = datetime.date.today().strftime("%Y-%m-%d")
+        safe_title = self._sanitize_filename(title)
+        filename = f"ADR-{decision_id.upper()} — {safe_title}.md"
+        filepath = os.path.join(self.decisions_dir, filename)
+
+        content = f"""---
+adr: {decision_id.upper()}
+status: aprovada
+data: {today_str}
+tags: [orquestrador, decisao, adr]
+---
+
+# ADR-{decision_id.upper()}: {title}
+
+← [[Orquestrador — Home (MOC)]] · [[Decisões e Riscos]]
+
+## 1. Contexto e Problema
+{context.strip()}
+
+## 2. Decisão Adotada
+{decision.strip()}
+
+## 3. Consequências e Impactos
+{consequences.strip()}
+"""
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(content)
+
+        return filepath
+
