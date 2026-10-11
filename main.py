@@ -16,6 +16,7 @@ from app.dag_scheduler import TaskDAG, DAGScheduler
 from app.worktree_manager import WorktreeManager
 from app.validator import TaskValidator
 from app.auto_fix import AutoFixEngine
+from app.benchmark import LocalBenchmark
 from adapters.ollama import OllamaAdapter
 from adapters.nine_router import NineRouterAdapter
 from adapters.claude_code import ClaudeCodeAdapter
@@ -54,9 +55,33 @@ class MultiagentOrchestrator:
             on_feedback=self._print_feedback
         )
 
+        # Recuperação determinística de falhas (Crash Recovery)
+        recovered = self.store.recover_interrupted_tasks()
+        if recovered:
+            self._print_feedback(f"⚠️ [RECOVERY] {len(recovered)} tarefas interrompidas foram recuperadas e marcadas como FAILED.")
+
     def _print_feedback(self, msg: str):
         timestamp = time.strftime("%H:%M:%S")
         print(f"[{timestamp}] {msg}", flush=True)
+
+    async def run_benchmark(self, model: str = "qwen2.5-coder:1.5b", prompt: Optional[str] = None):
+        """Executa medição de throughput e latência de inferência na GPU local."""
+        print("\n" + "=" * 60)
+        print("⚡ BENCHMARK DE HARDWARE E INFERÊNCIA LOCAL (OLLAMA)")
+        print("=" * 60)
+        bm = LocalBenchmark()
+        p = prompt or "Escreva uma implementação concisa de quicksort em Python com type hints."
+        self._print_feedback(f"Iniciando benchmark com modelo '{model}'...")
+        res = await bm.run_benchmark(model=model, prompt=p)
+        print(f"GPU Detectada:       {res.gpu_name or 'N/A'}")
+        if res.vram_used_mb and res.vram_total_mb:
+            print(f"VRAM Utilizada:      {res.vram_used_mb} MiB / {res.vram_total_mb} MiB")
+        print(f"Tokens Gerados:      {res.tokens_generated}")
+        print(f"Tempo de Geração:    {res.eval_duration_sec}s")
+        print(f"Velocidade:          {res.tokens_per_second} tokens/s")
+        print(f"Tempo Total:         {res.total_duration_sec}s")
+        print("=" * 60 + "\n")
+        return res
 
     async def check_all_health(self):
         """Verifica a saúde e prontidão de todos os 4 motores/adaptadores."""
@@ -185,6 +210,11 @@ async def main():
     # Comando: list
     subparsers.add_parser("list", help="Listar histórico recente de tarefas no SQLite")
 
+    # Comando: benchmark
+    bench_parser = subparsers.add_parser("benchmark", help="Medir throughput e latência de inferência local na GPU")
+    bench_parser.add_argument("--model", type=str, default="qwen2.5-coder:1.5b", help="Modelo Ollama a avaliar")
+    bench_parser.add_argument("--prompt", type=str, default=None, help="Prompt de teste para o benchmark")
+
     args = parser.parse_args()
 
     orchestrator = MultiagentOrchestrator()
@@ -274,6 +304,9 @@ async def main():
         print(f"\nTotal de tarefas registradas: {len(tasks)}")
         for t in tasks:
             print(f"- [{t.status.value:<9}] {t.id} | {t.assigned_agent or 'none'} | {t.title}")
+
+    elif args.command == "benchmark":
+        await orchestrator.run_benchmark(model=args.model, prompt=args.prompt)
 
 if __name__ == "__main__":
     asyncio.run(main())

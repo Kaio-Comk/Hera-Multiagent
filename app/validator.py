@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Tuple, Any
 from pydantic import BaseModel, Field
 
 from models.task import AgentTask, AgentResult, TaskStatus
+from app.policy_engine import PolicyEngine
 
 class ValidationResult(BaseModel):
     """Resultado da validação objetiva de uma tarefa."""
@@ -16,11 +17,16 @@ class ValidationResult(BaseModel):
 class TaskValidator:
     """Validador determinístico de critérios de aceite e comandos de teste."""
 
-    def __init__(self, command_timeout: float = 60.0):
+    def __init__(self, command_timeout: float = 60.0, policy_engine: Optional[PolicyEngine] = None):
         self.command_timeout = command_timeout
+        self.policy_engine = policy_engine or PolicyEngine()
 
     async def _run_command(self, cmd: str, cwd: Optional[str] = None) -> Tuple[int, str, str]:
         """Executa um comando de teste/validação em subprocesso com ambiente PYTHONPATH configurado."""
+        is_allowed, reason = self.policy_engine.evaluate_command(cmd)
+        if not is_allowed:
+            return (-403, "", f"Violação de política de segurança: {reason}")
+
         working_dir = cwd or os.getcwd()
         env = os.environ.copy()
         current_pp = env.get("PYTHONPATH", "")
