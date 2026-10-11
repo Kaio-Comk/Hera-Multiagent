@@ -1,7 +1,7 @@
 general:
   host: 127.0.0.1
   port: 8000
-  default_offline: false
+  default_offline: true
   default_engine: ollama
   vault_dir: C:\Users\Kaio Lima\Documents\Obsidian Vault\Orquestrador Multiagente
   db_path: data/orchestrator.db

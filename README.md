@@ -4,14 +4,15 @@
 ### The Sovereign Local AI Orchestration Engine for Windows
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12%2B-blue.svg?logo=python&logoColor=white)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-108%2F108%20Passing%20(100%25)-success.svg?logo=pytest&logoColor=white)](https://github.com/Kaio-Comk/hera-multiagent)
+[![Tests](https://img.shields.io/badge/Tests-114%2F114%20Passing%20(100%25)-success.svg?logo=pytest&logoColor=white)](https://github.com/Kaio-Comk/hera-multiagent)
 [![Architecture](https://img.shields.io/badge/Architecture-DAG%20%7C%20FastAPI%20%7C%20WebSockets-orange.svg)](https://github.com/Kaio-Comk/hera-multiagent)
 [![Interface](https://img.shields.io/badge/Interface-Web%20%7C%20Desktop%20GUI-blueviolet.svg)](https://github.com/Kaio-Comk/hera-multiagent)
 [![Gateway](https://img.shields.io/badge/Gateway-OpenAI%20%28%2Fv1%29%20%7C%20RTK%20Token%20Saver-green.svg)](https://github.com/Kaio-Comk/hera-multiagent)
+[![Context](https://img.shields.io/badge/Context-Repo--Map%20AST%20%7C%204GB%20VRAM%20Optimized-teal.svg)](https://github.com/Kaio-Comk/hera-multiagent)
 [![Security](https://img.shields.io/badge/Security-Zero--Shell%20%7C%20Pre--flight%20DLP-red.svg)](https://github.com/Kaio-Comk/hera-multiagent)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Connect, route, validate, and orchestrate Ollama, Claude Code CLI, Antigravity CLI, 9Router, and Obsidian as permanent memory — featuring a native Python OpenAI-compatible gateway (`/v1`), RTK Token Saver (20-40% context savings), modern Mission Control Web/Desktop interface, deterministic guardrails, and real-time streaming feedback.**
+**Connect, route, validate, and orchestrate Ollama, Claude Code CLI, Antigravity CLI, 9Router, and Obsidian as permanent memory — featuring a native Python OpenAI-compatible gateway (`/v1`), RTK Token Saver, AST Repo-Map for 4GB VRAM GPUs, modern Mission Control Web/Desktop interface, deterministic guardrails, and real-time streaming feedback.**
 
 [Key Features](#-key-features) • [Mission Control GUI](#-mission-control-web--desktop-gui) • [Architecture](#-architecture) • [Security Model](#-hardened-security-model) • [Benchmark](#-hardware-benchmark) • [Quickstart](#-quickstart) • [CLI Cheatsheet](#-cli-cheatsheet)
 
@@ -176,7 +177,7 @@ python main.py health
 ### 3. Run Test Suite
 ```powershell
 python -m pytest tests -v
-# 108 passed in ~76s (100% green)
+# 114 passed in ~25s (100% green)
 ```
 
 ---
