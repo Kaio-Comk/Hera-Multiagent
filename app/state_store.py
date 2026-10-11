@@ -142,12 +142,15 @@ class StateStore:
                 return None
             return self._row_to_task(row)
 
-    def list_tasks(self, status: Optional[TaskStatus] = None) -> List[AgentTask]:
+    def list_tasks(self, status: Optional[TaskStatus] = None, limit: Optional[int] = None) -> List[AgentTask]:
         with self._get_connection() as conn:
+            limit_clause = f" LIMIT {int(limit)}" if limit else ""
             if status:
-                rows = conn.execute("SELECT * FROM tasks WHERE status = ? ORDER BY created_at ASC", (status.value,)).fetchall()
+                query = f"SELECT * FROM tasks WHERE status = ? ORDER BY created_at DESC{limit_clause}"
+                rows = conn.execute(query, (status.value,)).fetchall()
             else:
-                rows = conn.execute("SELECT * FROM tasks ORDER BY created_at ASC").fetchall()
+                query = f"SELECT * FROM tasks ORDER BY created_at DESC{limit_clause}"
+                rows = conn.execute(query).fetchall()
             return [self._row_to_task(r) for r in rows]
 
     def record_event(self, task_id: str, event_type: str, message: str, payload: Optional[Dict[str, Any]] = None):
