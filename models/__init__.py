@@ -1,5 +1,5 @@
 from models.task import TaskStatus, AgentTask, AgentResult
-from models.agent import HealthStatus, AgentCapabilities
+from models.agent import HealthStatus, AgentCapabilities, RunHandle
 
 __all__ = [
     "TaskStatus",
@@ -7,4 +7,5 @@ __all__ = [
     "AgentResult",
     "HealthStatus",
     "AgentCapabilities",
+    "RunHandle",
 ]
