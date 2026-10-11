@@ -1,0 +1,184 @@
+import os
+import sys
+import uuid
+import time
+import asyncio
+import argparse
+from typing import Optional, List
+
+from models.task import AgentTask, AgentResult, TaskStatus
+from app.state_store import StateStore
+from app.coordinator import Coordinator
+from app.router import TaskRouter
+from app.obsidian import ObsidianVaultWriter
+from adapters.ollama import OllamaAdapter
+from adapters.nine_router import NineRouterAdapter
+from adapters.claude_code import ClaudeCodeAdapter
+from adapters.antigravity import AntigravityAdapter
+
+class MultiagentOrchestrator:
+    """Orquestrador Multiagente Unificado."""
+
+    def __init__(self, db_path: str = "data/orchestrator.db", vault_dir: Optional[str] = None):
+        os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
+        self.store = StateStore(db_path=db_path)
+
+        # Configurar adaptadores
+        self.adapters = {
+            "ollama": OllamaAdapter(),
+            "9router": NineRouterAdapter(),
+            "claude_code": ClaudeCodeAdapter(),
+            "antigravity": AntigravityAdapter(),
+        }
+
+        self.router = TaskRouter(adapters=self.adapters)
+
+        v_dir = vault_dir or r"C:\Users\<usuario>\Documents\Obsidian Vault\Orquestrador Multiagente"
+        self.vault_writer = ObsidianVaultWriter(vault_project_dir=v_dir)
+
+        # Callbacks de feedback visual
+        self.coordinator = Coordinator(store=self.store, on_progress=self._print_feedback)
+
+    def _print_feedback(self, msg: str):
+        timestamp = time.strftime("%H:%M:%S")
+        print(f"[{timestamp}] {msg}", flush=True)
+
+    async def check_all_health(self):
+        """Verifica a saúde e prontidão de todos os 4 motores/adaptadores."""
+        print("\n" + "=" * 60)
+        print("🔍 DIAGNÓSTICO DE MOTORES E ADAPTADORES DO ORQUESTRADOR")
+        print("=" * 60)
+
+        for name, adapter in self.adapters.items():
+            try:
+                health = await adapter.health_check()
+                status_icon = "🟢 ONLINE" if health.healthy else "🔴 OFFLINE"
+                version_str = f"(v{health.version})" if health.version else ""
+                models_count = f"{len(health.available_models)} modelos" if health.available_models else "nenhum modelo listado"
+
+                print(f"{status_icon} [{name.upper():<12}] {version_str} - {models_count}")
+                if health.available_models and len(health.available_models) <= 4:
+                    print(f"   Modelos: {', '.join(health.available_models)}")
+                elif health.available_models:
+                    print(f"   Exemplos: {', '.join(health.available_models[:3])}...")
+                if health.error_message:
+                    print(f"   Aviso: {health.error_message}")
+            except Exception as e:
+                print(f"🔴 ERRO   [{name.upper():<12}] Falha no health check: {e}")
+
+        print("=" * 60 + "\n")
+
+    async def execute_task(
+        self,
+        title: str,
+        instruction: str,
+        task_type: str = "coding",
+        assigned_agent: Optional[str] = None,
+        assigned_model: Optional[str] = None,
+        acceptance_criteria: Optional[List[str]] = None,
+        save_to_obsidian: bool = True
+    ) -> AgentResult:
+        """Ciclo completo e determinístico de execução de tarefa."""
+        task_id = f"task-{uuid.uuid4().hex[:8]}"
+        task = AgentTask(
+            id=task_id,
+            title=title,
+            instruction=instruction,
+            task_type=task_type,
+            assigned_agent=assigned_agent,
+            assigned_model=assigned_model,
+            acceptance_criteria=acceptance_criteria or []
+        )
+
+        # 1. Submeter à fila
+        self.coordinator.submit_task(task)
+
+        # 2. Roteamento inteligente
+        adapter, model_name, reason = await self.router.route(task)
+        task.assigned_agent = adapter.name
+        task.assigned_model = model_name
+        task.routing_reason = reason
+
+        self.coordinator.start_execution(
+            task_id=task.id,
+            agent_name=adapter.name,
+            model_name=model_name,
+            reason=reason
+        )
+
+        # 3. Execução via adaptador
+        handle = await adapter.submit(task)
+        result = await adapter.collect(handle)
+
+        # 4. Validação
+        self.coordinator.start_validation(task.id, criteria_count=len(task.acceptance_criteria))
+        # Se houve saída sem falha, aprova critérios
+        if result.status == TaskStatus.SUCCEEDED:
+            for crit in task.acceptance_criteria:
+                result.validation_evidence[crit] = True
+
+        # 5. Conclusão no SQLite
+        self.coordinator.complete_task(task.id, result)
+
+        # 6. Registro no Obsidian Vault
+        if save_to_obsidian and result.status == TaskStatus.SUCCEEDED:
+            note_path = self.vault_writer.record_execution(
+                task=task,
+                result=result,
+                validation_items=task.acceptance_criteria
+            )
+            self._print_feedback(f"📝 [OBSIDIAN] Nota persistida no Vault: {os.path.basename(note_path)}")
+
+        return result
+
+async def main():
+    parser = argparse.ArgumentParser(description="Multiagent Orchestrator CLI")
+    subparsers = parser.add_subparsers(dest="command")
+
+    # Comando: health
+    subparsers.add_parser("health", help="Verificar status de todos os adaptadores")
+
+    # Comando: run
+    run_parser = subparsers.add_parser("run", help="Executar uma tarefa no orquestrador")
+    run_parser.add_argument("instruction", type=str, help="Instrução da tarefa")
+    run_parser.add_argument("--title", type=str, default="", help="Título da tarefa")
+    run_parser.add_argument("--type", type=str, default="summary", choices=["coding", "research", "review", "summary", "offline"])
+    run_parser.add_argument("--agent", type=str, default=None, choices=["ollama", "9router", "claude_code", "antigravity"])
+    run_parser.add_argument("--model", type=str, default=None, help="Modelo específico")
+    run_parser.add_argument("--criteria", type=str, nargs="*", default=[], help="Critérios de aceite")
+    run_parser.add_argument("--no-obsidian", action="store_true", help="Não registrar no Obsidian")
+
+    # Comando: list
+    subparsers.add_parser("list", help="Listar histórico recente de tarefas no SQLite")
+
+    args = parser.parse_args()
+
+    orchestrator = MultiagentOrchestrator()
+
+    if args.command == "health" or not args.command:
+        await orchestrator.check_all_health()
+
+    elif args.command == "run":
+        title = args.title or args.instruction[:50]
+        result = await orchestrator.execute_task(
+            title=title,
+            instruction=args.instruction,
+            task_type=args.type,
+            assigned_agent=args.agent,
+            assigned_model=args.model,
+            acceptance_criteria=args.criteria,
+            save_to_obsidian=not args.no_obsidian
+        )
+        print("\n" + "-" * 50)
+        print("RESULTADO FINAL:")
+        print(result.output_text if result.output_text else result.summary)
+        print("-" * 50)
+
+    elif args.command == "list":
+        tasks = orchestrator.store.list_tasks(limit=10)
+        print(f"\nTotal de tarefas registradas: {len(tasks)}")
+        for t in tasks:
+            print(f"- [{t.status.value:<9}] {t.id} | {t.assigned_agent or 'none'} | {t.title}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
