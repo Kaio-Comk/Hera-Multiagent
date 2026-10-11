@@ -1,36 +1,26 @@
-app:
-  workspace: "B:/multiagent-workspace"
-  max_parallel_tasks: 2
-  default_timeout_seconds: 900
-  max_retries: 2
-  feedback_mode: "chat" # Emite progresso em tempo real formatado para o chat
-
-providers:
+general:
+  host: 127.0.0.1
+  port: 8000
+  default_offline: false
+  default_engine: ollama
+  vault_dir: C:\Users\Kaio Lima\Documents\Obsidian Vault\Orquestrador Multiagente
+  db_path: data/orchestrator.db
+engines:
   ollama:
     enabled: true
-    base_url: "http://127.0.0.1:11434"
-    default_model: "qwen2.5-coder:1.5b"
-    fallback_model: "qwen3.5:4b"
-
+    base_url: http://localhost:11434
+    default_model: qwen2.5-coder:1.5b
+    timeout: 120.0
   nine_router:
     enabled: true
-    base_url: "http://127.0.0.1:20128/v1"
-    default_model: null
-
+    base_url: http://127.0.0.1:20128/v1
+    default_model: alicode-intl/qwen3.5-plus
+    timeout: 60.0
   claude_code:
     enabled: true
-    executable: "C:/Users/Kaio Lima/.local/bin/claude.EXE"
-
+    default_model: claude-3-7-sonnet
+    timeout: 300.0
   antigravity:
     enabled: true
-    executable: "C:/Users/Kaio Lima/AppData/Local/agy/bin/agy.EXE"
-
-obsidian:
-  vault_path: "C:/Users/Kaio Lima/Documents/Obsidian Vault"
-  write_mode: "diff_first"
-  history_dir: "Orquestrador Multiagente/08 Histórico"
-
-security:
-  require_approval_for_destructive_commands: true
-  allow_shell_by_default: false
-  redact_secrets_in_logs: true
+    default_model: gemini-2.5-pro
+    timeout: 300.0

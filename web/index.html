@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>👑 HERA Multiagent — Mission Control</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f5f3ff',
+              500: '#8b5cf6',
+              600: '#7c3aed',
+              700: '#6d28d9',
+              900: '#4c1d95'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #09090b; }
+    ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+  </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen flex flex-col antialiased selection:bg-brand-500 selection:text-white">
+
+  <!-- Header Superior -->
+  <header class="border-b border-zinc-800/80 bg-zinc-900/60 backdrop-blur-md sticky top-0 z-50 px-6 py-3.5 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-brand-500/20 text-white font-bold text-xl">
+        👑
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-lg font-bold tracking-tight text-white">HERA Multiagent</h1>
+          <span class="px-2 py-0.5 text-xs font-semibold rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20">v1.0.0</span>
+        </div>
+        <p class="text-xs text-zinc-400">Sovereign Local AI Orchestrator for Windows</p>
+      </div>
+    </div>
+
+    <!-- Navegação por Abas -->
+    <nav class="flex items-center gap-1 bg-zinc-900/80 p-1 rounded-xl border border-zinc-800">
+      <button onclick="switchTab('studio')" id="tab-btn-studio" class="tab-btn active px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all bg-brand-600 text-white shadow-sm flex items-center gap-2">
+        <i data-lucide="play" class="w-4 h-4"></i> Task Studio
+      </button>
+      <button onclick="switchTab('engines')" id="tab-btn-engines" class="tab-btn px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/60 flex items-center gap-2">
+        <i data-lucide="cpu" class="w-4 h-4"></i> Motores & IAs
+      </button>
+      <button onclick="switchTab('hardware')" id="tab-btn-hardware" class="tab-btn px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/60 flex items-center gap-2">
+        <i data-lucide="activity" class="w-4 h-4"></i> GPU & Hardware
+      </button>
+      <button onclick="switchTab('vault')" id="tab-btn-vault" class="tab-btn px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/60 flex items-center gap-2">
+        <i data-lucide="book-open" class="w-4 h-4"></i> Obsidian Vault
+      </button>
+      <button onclick="switchTab('history')" id="tab-btn-history" class="tab-btn px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/60 flex items-center gap-2">
+        <i data-lucide="history" class="w-4 h-4"></i> Histórico (WAL)
+      </button>
+    </nav>
+
+    <!-- Indicador de Status WS -->
+    <div class="flex items-center gap-3">
+      <div id="ws-badge" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span>Conectado</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Container Principal -->
+  <main class="flex-1 p-6 max-w-7xl w-full mx-auto">
+
+    <!-- ==================== ABA 1: TASK STUDIO ==================== -->
+    <section id="tab-studio" class="tab-content block space-y-6">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Formulário de Envio (5 cols) -->
+        <div class="lg:col-span-5 space-y-4">
+          <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4 backdrop-blur-sm">
+            <h2 class="text-base font-bold text-white flex items-center gap-2">
+              <i data-lucide="sparkles" class="w-5 h-5 text-brand-400"></i> Nova Tarefa Soberana
+            </h2>
+
+            <div>
+              <label class="block text-xs font-semibold text-zinc-400 mb-1">Título da Tarefa (opcional)</label>
+              <input type="text" id="task-title" placeholder="Ex: Criar API de Autenticação JWT" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-brand-500">
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-zinc-400 mb-1">Instrução / Prompt Detalhado *</label>
+              <textarea id="task-instruction" rows="4" placeholder="Descreva exatamente o que o agente deve construir ou analisar..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-brand-500"></textarea>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-semibold text-zinc-400 mb-1">Tipo de Tarefa</label>
+                <select id="task-type" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-brand-500">
+                  <option value="coding">💻 Coding</option>
+                  <option value="research">🔍 Research</option>
+                  <option value="review">👀 Code Review</option>
+                  <option value="summary">📝 Summary</option>
+                  <option value="offline">🔒 Strict Offline</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-zinc-400 mb-1">Motor de IA</label>
+                <select id="task-agent" onchange="onAgentSelectChange()" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-brand-500">
+                  <option value="">⚡ Automático (Hera Roteia)</option>
+                  <option value="ollama">🦙 Ollama (Local)</option>
+                  <option value="9router">🌐 9Router (Gateway)</option>
+                  <option value="claude_code">⚙️ Claude Code CLI</option>
+                  <option value="antigravity">🚀 Antigravity CLI</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-zinc-400 mb-1">Modelo Selecionado</label>
+              <select id="task-model" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-brand-500">
+                <option value="">Padrão do Motor Selecionado</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-zinc-400 mb-1">Critérios de Aceite (um por linha)</label>
+              <textarea id="task-criteria" rows="2" placeholder="Ex: Código compila com sucesso&#10;Função tem type hints" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-2.5 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-brand-500"></textarea>
+            </div>
+
+            <div class="flex items-center justify-between pt-2">
+              <label class="flex items-center gap-2 cursor-pointer text-xs text-zinc-300">
+                <input type="checkbox" id="save-obsidian" checked class="rounded bg-zinc-950 border-zinc-800 text-brand-600 focus:ring-0">
+                Salvar no Obsidian Vault
+              </label>
+
+              <button onclick="submitTask()" id="btn-run-task" class="px-5 py-2.5 bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-brand-500/25 transition-all flex items-center gap-2">
+                <i data-lucide="play" class="w-4 h-4"></i> Executar Tarefa
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Terminal de Logs em Tempo Real & Resultados (7 cols) -->
+        <div class="lg:col-span-7 flex flex-col space-y-4">
+          <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl flex-1 flex flex-col backdrop-blur-sm">
+            <div class="flex items-center justify-between pb-3 border-b border-zinc-800">
+              <div class="flex items-center gap-2">
+                <div class="w-3 h-3 rounded-full bg-red-500/80"></div>
+                <div class="w-3 h-3 rounded-full bg-amber-500/80"></div>
+                <div class="w-3 h-3 rounded-full bg-emerald-500/80"></div>
+                <span class="text-xs font-mono text-zinc-400 ml-2">hera-orchestrator.log</span>
+              </div>
+              <button onclick="clearConsole()" class="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">Limpar Terminal</button>
+            </div>
+
+            <!-- Janela de Console -->
+            <div id="console-logs" class="font-mono text-xs text-zinc-300 space-y-1.5 overflow-y-auto max-h-[380px] min-h-[280px] p-3 mt-3 bg-zinc-950/80 rounded-xl border border-zinc-800/80">
+              <div class="text-zinc-500">[00:00:00] 👑 Hera Multiagent pronto para execução. Aguardando tarefas...</div>
+            </div>
+
+            <!-- Card de Saída do Agente -->
+            <div id="result-box" class="mt-4 p-4 bg-zinc-950 border border-zinc-800 rounded-xl hidden">
+              <div class="flex items-center justify-between mb-2">
+                <span id="result-status" class="px-2.5 py-0.5 rounded-full text-xs font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Sucesso</span>
+                <span id="result-id" class="text-xs text-zinc-500 font-mono"></span>
+              </div>
+              <div id="result-content" class="text-xs text-zinc-200 whitespace-pre-wrap font-mono max-h-60 overflow-y-auto p-2 bg-zinc-900/50 rounded-lg"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ==================== ABA 2: MOTORES & IAs ==================== -->
+    <section id="tab-engines" class="tab-content hidden space-y-6">
+      
+      <!-- Cards de Saúde dos Motores -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" id="engines-cards-container">
+        <!-- Renderizado dinamicamente via JS -->
+      </div>
+
+      <!-- Gerenciador de Download do Ollama & Políticas -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        <!-- Baixar Nova IA no Ollama -->
+        <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+              <i data-lucide="download-cloud" class="w-5 h-5 text-indigo-400"></i> Baixar Novo Modelo Local (Ollama)
+            </h3>
+            <span class="text-xs text-zinc-500">ollama pull</span>
+          </div>
+          <p class="text-xs text-zinc-400">
+            Digite o nome de qualquer modelo do catálogo oficial do Ollama (ex: <code class="text-brand-400">llama3.2:3b</code>, <code class="text-brand-400">deepseek-r1:1.5b</code>, <code class="text-brand-400">mistral:7b</code>).
+          </p>
+          
+          <div class="flex gap-2">
+            <input type="text" id="pull-model-name" placeholder="Ex: deepseek-coder:1.3b" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-sm text-zinc-100 focus:outline-none focus:border-brand-500">
+            <button onclick="pullOllamaModel()" id="btn-pull" class="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-sm font-semibold transition-all flex items-center gap-2">
+              <i data-lucide="download" class="w-4 h-4"></i> Baixar
+            </button>
+          </div>
+
+          <!-- Barra de Progresso de Download -->
+          <div id="pull-progress-container" class="hidden space-y-2 pt-2 border-t border-zinc-800">
+            <div class="flex justify-between text-xs">
+              <span id="pull-status-text" class="text-zinc-400">Baixando...</span>
+              <span id="pull-pct-text" class="font-mono text-brand-400 font-bold">0%</span>
+            </div>
+            <div class="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
+              <div id="pull-progress-bar" class="h-full bg-gradient-to-r from-brand-600 to-indigo-500 w-0 transition-all duration-300"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Políticas Soberanas e Privacidade -->
+        <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
+          <h3 class="text-sm font-bold text-white flex items-center gap-2">
+            <i data-lucide="shield-check" class="w-5 h-5 text-emerald-400"></i> Políticas de Privacidade & Gate DLP
+          </h3>
+          <p class="text-xs text-zinc-400">
+            Controle a soberania dos dados da sua máquina. Quando o modo estrito está ativo, nenhuma instrução sai para servidores de nuvem.
+          </p>
+
+          <div class="space-y-3 pt-2">
+            <div class="flex items-center justify-between p-3 bg-zinc-950 rounded-xl border border-zinc-800">
+              <div>
+                <div class="text-sm font-semibold text-zinc-200">Modo 100% Offline (Soberano)</div>
+                <div class="text-xs text-zinc-500">Força todas as rotas para o Ollama na GPU local</div>
+              </div>
+              <input type="checkbox" id="toggle-strict-offline" onchange="toggleOfflineMode()" class="w-5 h-5 accent-brand-600 cursor-pointer">
+            </div>
+
+            <div class="p-3 bg-zinc-950 rounded-xl border border-zinc-800 flex items-center justify-between">
+              <div>
+                <div class="text-sm font-semibold text-zinc-200">Gate DLP de Credenciais</div>
+                <div class="text-xs text-zinc-500">Intercepta API keys, tokens e senhas no prompt</div>
+              </div>
+              <span class="px-2 py-0.5 text-xs font-bold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">ATIVO</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ==================== ABA 3: HARDWARE & GPU ==================== -->
+    <section id="tab-hardware" class="tab-content hidden space-y-6">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        <!-- Card GPU -->
+        <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+              <i data-lucide="zap" class="w-5 h-5 text-amber-400"></i> GPU Local
+            </h3>
+            <span id="gpu-temp" class="text-xs font-mono text-zinc-400">--°C</span>
+          </div>
+          <div id="gpu-name" class="text-sm font-semibold text-zinc-200">Detectando GPU...</div>
+          
+          <div class="space-y-1.5 pt-2">
+            <div class="flex justify-between text-xs text-zinc-400">
+              <span>VRAM Alocada</span>
+              <span id="vram-text" class="font-mono text-white font-bold">0 / 0 MiB</span>
+            </div>
+            <div class="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
+              <div id="vram-bar" class="h-full bg-amber-500 w-0 transition-all duration-500"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card CPU -->
+        <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-3">
+          <h3 class="text-sm font-bold text-white flex items-center gap-2">
+            <i data-lucide="cpu" class="w-5 h-5 text-blue-400"></i> Processador (CPU)
+          </h3>
+          <div id="cpu-pct" class="text-2xl font-bold font-mono text-white">0%</div>
+          <div class="text-xs text-zinc-400">Utilização de todos os núcleos</div>
+        </div>
+
+        <!-- Card RAM -->
+        <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-3">
+          <h3 class="text-sm font-bold text-white flex items-center gap-2">
+            <i data-lucide="hard-drive" class="w-5 h-5 text-purple-400"></i> Memória RAM
+          </h3>
+          <div id="ram-text" class="text-2xl font-bold font-mono text-white">0 / 0 GB</div>
+          <div id="ram-pct" class="text-xs text-zinc-400">0% utilizada pelo sistema</div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ==================== ABA 4: OBSIDIAN VAULT ==================== -->
+    <section id="tab-vault" class="tab-content hidden space-y-6">
+      <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <i data-lucide="search" class="w-5 h-5 text-brand-400"></i> Busca Semântica no Segundo Cérebro (Obsidian)
+        </h3>
+        <p class="text-xs text-zinc-400">
+          Pesquise convenções, decisões arquiteturais (ADRs) e memórias de tarefas passadas indexadas no Vault.
+        </p>
+
+        <div class="flex gap-2">
+          <input type="text" id="vault-query" placeholder="Ex: seguranca, sqlite wal, regras de commit..." class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-sm text-zinc-100 focus:outline-none focus:border-brand-500">
+          <button onclick="searchVault()" class="px-5 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-sm font-semibold transition-all flex items-center gap-2">
+            <i data-lucide="search" class="w-4 h-4"></i> Buscar
+          </button>
+        </div>
+
+        <div id="vault-results" class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
+          <!-- Resultados dinâmicos da pesquisa -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== ABA 5: HISTÓRICO (WAL) ==================== -->
+    <section id="tab-history" class="tab-content hidden space-y-6">
+      <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-bold text-white flex items-center gap-2">
+            <i data-lucide="database" class="w-5 h-5 text-emerald-400"></i> Histórico Persistido no SQLite WAL
+          </h3>
+          <button onclick="loadTasksHistory()" class="text-xs text-zinc-400 hover:text-white flex items-center gap-1">
+            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Atualizar
+          </button>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-zinc-300">
+            <thead class="bg-zinc-950 border-b border-zinc-800 text-zinc-400 uppercase font-mono">
+              <tr>
+                <th class="py-2.5 px-4">Status</th>
+                <th class="py-2.5 px-4">ID Tarefa</th>
+                <th class="py-2.5 px-4">Título</th>
+                <th class="py-2.5 px-4">Motor / Modelo</th>
+                <th class="py-2.5 px-4">Data/Hora</th>
+              </tr>
+            </thead>
+            <tbody id="history-table-body" class="divide-y divide-zinc-800/60">
+              <!-- Linhas geradas dinamicamente -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Script Lógico da Interface -->
+  <script>
+    let globalHealth = {};
+    let ws = null;
+
+    // Inicialização
+    document.addEventListener("DOMContentLoaded", () => {
+      lucide.createIcons();
+      initWebSocket();
+      loadHealth();
+      loadHardware();
+      loadTasksHistory();
+      setInterval(loadHardware, 4000);
+    });
+
+    // Alternância de Abas
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.tab-btn').forEach(el => {
+        el.classList.remove('bg-brand-600', 'text-white', 'shadow-sm');
+        el.classList.add('text-zinc-400');
+      });
+
+      const activeSection = document.getElementById(`tab-${tabId}`);
+      const activeBtn = document.getElementById(`tab-btn-${tabId}`);
+      if (activeSection && activeBtn) {
+        activeSection.classList.remove('hidden');
+        activeBtn.classList.add('bg-brand-600', 'text-white', 'shadow-sm');
+        activeBtn.classList.remove('text-zinc-400');
+      }
+      lucide.createIcons();
+    }
+
+    // Conexão WebSocket
+    function initWebSocket() {
+      const loc = window.location;
+      const wsUrl = `ws://${loc.hostname || '127.0.0.1'}:${loc.port || '8000'}/ws/events`;
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        const badge = document.getElementById("ws-badge");
+        badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span><span>Conectado</span>`;
+        badge.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        handleWsEvent(data);
+      };
+
+      ws.onclose = () => {
+        const badge = document.getElementById("ws-badge");
+        badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-500"></span><span>Reconectando...</span>`;
+        badge.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20";
+        setTimeout(initWebSocket, 3000);
+      };
+    }
+
+    // Processamento de Eventos WebSocket
+    function handleWsEvent(data) {
+      if (data.type === "log") {
+        appendConsoleLog(data.timestamp, data.message, data.level);
+      } else if (data.type === "pull_progress") {
+        const cont = document.getElementById("pull-progress-container");
+        cont.classList.remove("hidden");
+        document.getElementById("pull-status-text").innerText = `${data.model}: ${data.status}`;
+        document.getElementById("pull-pct-text").innerText = `${data.percent}%`;
+        document.getElementById("pull-progress-bar").style.width = `${data.percent}%`;
+      } else if (data.type === "pull_completed") {
+        document.getElementById("pull-status-text").innerText = `Concluído: ${data.model}`;
+        document.getElementById("pull-progress-bar").style.width = `100%`;
+        loadHealth(); // recarrega lista de modelos
+      } else if (data.type === "task_finished") {
+        showTaskResult(data);
+        loadTasksHistory();
+      }
+    }
+
+    function appendConsoleLog(time, msg, level) {
+      const consoleEl = document.getElementById("console-logs");
+      const row = document.createElement("div");
+      let color = "text-zinc-300";
+      if (level === "error") color = "text-rose-400 font-bold";
+      if (level === "success") color = "text-emerald-400";
+      if (level === "warning") color = "text-amber-400";
+
+      row.className = `${color} leading-relaxed`;
+      row.innerHTML = `<span class="text-zinc-600">[${time}]</span> ${msg}`;
+      consoleEl.appendChild(row);
+      consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+
+    function clearConsole() {
+      document.getElementById("console-logs").innerHTML = "";
+    }
+
+    function showTaskResult(data) {
+      const box = document.getElementById("result-box");
+      box.classList.remove("hidden");
+      document.getElementById("result-id").innerText = data.task_id;
+      const statusBadge = document.getElementById("result-status");
+      statusBadge.innerText = data.status.toUpperCase();
+      if (data.status === "succeeded") {
+        statusBadge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+      } else {
+        statusBadge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold uppercase bg-rose-500/10 text-rose-400 border border-rose-500/20";
+      }
+      document.getElementById("result-content").innerText = data.output_text || data.summary || "Tarefa concluída.";
+    }
+
+    // Carregar Saúde e Modelos
+    async function loadHealth() {
+      try {
+        const res = await fetch("/api/health");
+        const data = await res.json();
+        globalHealth = data.engines;
+        renderEngineCards(data.engines);
+        updateModelDropdown();
+        
+        // Modo offline
+        document.getElementById("toggle-strict-offline").checked = data.default_offline;
+      } catch (e) {
+        console.error("Falha ao carregar saúde:", e);
+      }
+    }
+
+    function renderEngineCards(engines) {
+      const container = document.getElementById("engines-cards-container");
+      container.innerHTML = "";
+
+      const icons = {
+        ollama: "cpu",
+        "9router": "globe",
+        claude_code: "terminal",
+        antigravity: "rocket"
+      };
+
+      for (const [name, info] of Object.entries(engines)) {
+        const statusColor = info.healthy ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-rose-400 bg-rose-500/10 border-rose-500/20";
+        const statusText = info.healthy ? "ONLINE" : "OFFLINE";
+        const modelCount = info.available_models ? `${info.available_models.length} modelos` : "0 modelos";
+
+        const card = document.createElement("div");
+        card.className = "bg-zinc-900/60 border border-zinc-800 rounded-2xl p-4 shadow-xl space-y-3";
+        card.innerHTML = `
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-bold text-white uppercase tracking-wider">${name}</span>
+            <span class="px-2 py-0.5 rounded-full text-xs font-bold border ${statusColor}">${statusText}</span>
+          </div>
+          <div class="text-xs text-zinc-400 font-mono">${modelCount}</div>
+          <div class="text-[11px] text-zinc-500 truncate">${info.error_message || (info.available_models ? info.available_models.slice(0, 2).join(', ') : '')}</div>
+        `;
+        container.appendChild(card);
+      }
+      lucide.createIcons();
+    }
+
+    function onAgentSelectChange() {
+      updateModelDropdown();
+    }
+
+    function updateModelDropdown() {
+      const agent = document.getElementById("task-agent").value;
+      const modelSelect = document.getElementById("task-model");
+      modelSelect.innerHTML = '<option value="">Padrão do Motor Selecionado</option>';
+
+      if (agent && globalHealth[agent] && globalHealth[agent].available_models) {
+        globalHealth[agent].available_models.forEach(m => {
+          const opt = document.createElement("option");
+          opt.value = m;
+          opt.innerText = m;
+          modelSelect.appendChild(opt);
+        });
+      } else if (!agent && globalHealth["ollama"] && globalHealth["ollama"].available_models) {
+        // Sugerir modelos do Ollama se automático
+        globalHealth["ollama"].available_models.forEach(m => {
+          const opt = document.createElement("option");
+          opt.value = m;
+          opt.innerText = `Ollama: ${m}`;
+          modelSelect.appendChild(opt);
+        });
+      }
+    }
+
+    // Executar Tarefa
+    async function submitTask() {
+      const instruction = document.getElementById("task-instruction").value.trim();
+      if (!instruction) {
+        alert("Digite uma instrução para a tarefa!");
+        return;
+      }
+
+      const payload = {
+        title: document.getElementById("task-title").value.trim(),
+        instruction: instruction,
+        task_type: document.getElementById("task-type").value,
+        assigned_agent: document.getElementById("task-agent").value || null,
+        assigned_model: document.getElementById("task-model").value || null,
+        acceptance_criteria: document.getElementById("task-criteria").value.split("\n").filter(x => x.trim()),
+        save_to_obsidian: document.getElementById("save-obsidian").checked
+      };
+
+      try {
+        const res = await fetch("/api/tasks/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        appendConsoleLog(new Date().toLocaleTimeString(), `🚀 Tarefa enviada para a fila: ${data.title} (${data.task_id})`, "info");
+      } catch (e) {
+        alert("Erro ao disparar tarefa: " + e);
+      }
+    }
+
+    // Baixar Modelo no Ollama
+    async function pullOllamaModel() {
+      const modelName = document.getElementById("pull-model-name").value.trim();
+      if (!modelName) {
+        alert("Informe o nome do modelo para download!");
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/ollama/pull", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: modelName })
+        });
+        const data = await res.json();
+        document.getElementById("pull-progress-container").classList.remove("hidden");
+        document.getElementById("pull-status-text").innerText = `Download solicitado: ${modelName}`;
+      } catch (e) {
+        alert("Erro ao solicitar download: " + e);
+      }
+    }
+
+    // Telemetria de Hardware
+    async function loadHardware() {
+      try {
+        const res = await fetch("/api/hardware");
+        const data = await res.json();
+
+        // CPU & RAM
+        document.getElementById("cpu-pct").innerText = `${data.cpu_pct}%`;
+        document.getElementById("ram-text").innerText = `${data.ram_used_gb} / ${data.ram_total_gb} GB`;
+        document.getElementById("ram-pct").innerText = `${data.ram_pct}% utilizada`;
+
+        // GPU
+        if (data.gpu && data.gpu.available) {
+          document.getElementById("gpu-name").innerText = data.gpu.name;
+          document.getElementById("gpu-temp").innerText = `${data.gpu.temperature_c}°C`;
+          document.getElementById("vram-text").innerText = `${data.gpu.vram_used_mb} / ${data.gpu.vram_total_mb} MiB`;
+          const pct = Math.round((data.gpu.vram_used_mb / data.gpu.vram_total_mb) * 100);
+          document.getElementById("vram-bar").style.width = `${pct}%`;
+        }
+      } catch (e) {}
+    }
+
+    // Alternar Modo Offline
+    async function toggleOfflineMode() {
+      const isOffline = document.getElementById("toggle-strict-offline").checked;
+      try {
+        const cfgRes = await fetch("/api/config");
+        const cfg = await cfgRes.json();
+        cfg.general.default_offline = isOffline;
+        await fetch("/api/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(cfg)
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    // Busca no Obsidian
+    async function searchVault() {
+      const q = document.getElementById("vault-query").value.trim();
+      if (!q) return;
+
+      const container = document.getElementById("vault-results");
+      container.innerHTML = '<div class="text-xs text-zinc-500">Buscando...</div>';
+
+      try {
+        const res = await fetch(`/api/vault/search?q=${encodeURIComponent(q)}`);
+        const notes = await res.json();
+        container.innerHTML = "";
+
+        if (notes.length === 0) {
+          container.innerHTML = '<div class="text-xs text-zinc-500">Nenhuma nota encontrada.</div>';
+          return;
+        }
+
+        notes.forEach(n => {
+          const card = document.createElement("div");
+          card.className = "p-4 bg-zinc-950 border border-zinc-800 rounded-xl space-y-2";
+          card.innerHTML = `
+            <div class="flex items-center justify-between">
+              <span class="font-bold text-sm text-brand-300">📄 [[${n.title}]]</span>
+              <span class="text-xs text-zinc-500 font-mono">Score: ${n.score}</span>
+            </div>
+            <p class="text-xs text-zinc-400 line-clamp-3">${n.content}</p>
+          `;
+          container.appendChild(card);
+        });
+      } catch (e) {
+        container.innerHTML = `<div class="text-xs text-rose-400">Erro: ${e}</div>`;
+      }
+    }
+
+    // Histórico de Tarefas
+    async function loadTasksHistory() {
+      try {
+        const res = await fetch("/api/tasks");
+        const tasks = await res.json();
+        const tbody = document.getElementById("history-table-body");
+        tbody.innerHTML = "";
+
+        tasks.forEach(t => {
+          const row = document.createElement("tr");
+          row.className = "hover:bg-zinc-900/40 transition-colors";
+          
+          let badgeColor = "text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
+          if (t.status === "failed") badgeColor = "text-rose-400 bg-rose-500/10 border-rose-500/20";
+          if (t.status === "running") badgeColor = "text-amber-400 bg-amber-500/10 border-amber-500/20 animate-pulse";
+
+          row.innerHTML = `
+            <td class="py-2.5 px-4"><span class="px-2 py-0.5 rounded-full font-mono text-[11px] font-bold border ${badgeColor}">${t.status}</span></td>
+            <td class="py-2.5 px-4 font-mono text-zinc-400">${t.id}</td>
+            <td class="py-2.5 px-4 font-medium text-white">${t.title}</td>
+            <td class="py-2.5 px-4 text-zinc-400">${t.assigned_agent || 'auto'} (${t.assigned_model || 'default'})</td>
+            <td class="py-2.5 px-4 font-mono text-zinc-500">${new Date(t.created_at * 1000).toLocaleTimeString()}</td>
+          `;
+          tbody.appendChild(row);
+        });
+      } catch (e) {}
+    }
+  </script>
+</body>
+</html>
