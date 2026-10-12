@@ -4,7 +4,7 @@
 ### The Sovereign Local AI Orchestration Engine for Windows
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12%2B-blue.svg?logo=python&logoColor=white)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-132%2F132%20Passing%20(100%25)-success.svg?logo=pytest&logoColor=white)](https://github.com/Kaio-Comk/hera-multiagent)
+[![Tests](https://img.shields.io/badge/Tests-130%20passing%20%7C%202%20skipped%20(need%20Ollama%2F9Router)-success.svg?logo=pytest&logoColor=white)](https://github.com/Kaio-Comk/hera-multiagent)
 [![Architecture](https://img.shields.io/badge/Architecture-DAG%20%7C%20FastAPI%20%7C%20WebSockets-orange.svg)](https://github.com/Kaio-Comk/hera-multiagent)
 [![Interface](https://img.shields.io/badge/Interface-Web%20%7C%20Desktop%20GUI-blueviolet.svg)](https://github.com/Kaio-Comk/hera-multiagent)
 [![Gateway](https://img.shields.io/badge/Gateway-OpenAI%20%28%2Fv1%29%20%7C%20RTK%20Token%20Saver-green.svg)](https://github.com/Kaio-Comk/hera-multiagent)
@@ -179,7 +179,7 @@ python main.py health
 ### 3. Run Test Suite
 ```powershell
 python -m pytest tests -v
-# 132 passed in ~20s (100% green)
+# 130 passed, 2 skipped (Ollama / 9Router offline) in ~30s
 ```
 
 ---
