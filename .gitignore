@@ -34,3 +34,7 @@ venv/
 # Config local da pessoa (copie de config.example.yaml); contem caminhos da sua maquina
 config.yaml
 config.yaml.local-backup
+
+# Token local da API (fase 1)
+data/.hera_token
+*.egg-info/
