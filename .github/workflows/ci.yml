@@ -28,3 +28,25 @@ jobs:
     - name: Run test suite with pytest
       run: |
         python -m pytest tests -v
+
+  security:
+    # Fase 5: varredura estatica (bandit) e de dependencias (pip-audit) a cada push/PR.
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]" bandit pip-audit
+
+    - name: bandit (severidade media ou maior)
+      run: bandit -r app adapters models main.py -ll -q
+
+    - name: pip-audit (dependencias)
+      run: pip-audit --skip-editable
