@@ -169,6 +169,22 @@ token, so a website open in your browser cannot talk to your Hera:
 - Expensive routes are rate-limited per token (`/v1/chat/completions` 60/min, tasks 20/min, arena 10/min).
 - Only `/` (the UI) and `/healthz` (no data) are public.
 
+### 🧑‍⚖️ Human approval code (HITL / MCP)
+
+Approving a merge (`/api/hitl/approve`) or running an MCP tool that needs human confirmation requires a
+short **approval code that only a human at the machine can see**:
+
+- The code is printed in the **server console** when an approval is requested (like a `sudo` prompt), or
+  run `python main.py approval-code` at any time. The web UI asks you to type it.
+- It changes every 5 minutes (the previous one is still accepted briefly). Five wrong tries block further
+  attempts for 5 minutes (HTTP 429).
+- The code is **never** returned by the API, the approver identity is decided by the server (the `user_id`
+  and `confirmed_hitl` sent by a client are ignored), nonces must have been issued by the server, expire
+  with the token, are capped in number, and consumed nonces survive restarts.
+- Threat model: it protects against someone who holds the API token but cannot see your console or files
+  (a malicious site, a browser extension, injected script). Malware that already reads your user files can
+  read the secret (`data/.hera_approval_secret`) too, which is out of scope.
+
 ## 🚀 Quickstart
 
 ### 1. Clone & Setup

@@ -210,6 +210,7 @@ async def main():
 
     # Comando: list
     subparsers.add_parser("list", help="Listar histórico recente de tarefas no SQLite")
+    subparsers.add_parser("approval-code", help="Mostrar o código de aprovação humana atual (HITL / MCP)")
 
     # Comando: benchmark
     bench_parser = subparsers.add_parser("benchmark", help="Medir throughput e latência de inferência local na GPU")
@@ -308,6 +309,12 @@ async def main():
         for n in notes:
             print(f"- 📄 [[{n['title']}]] (Relevância: {n['score']})")
             print(f"  {n['content'][:180].strip()}...\n")
+
+    elif args.command == "approval-code":
+        from app.security.data_dir import data_dir
+        from app.security.human_code import HumanApprovalCode, load_or_create_secret
+        hc = HumanApprovalCode(load_or_create_secret(data_dir() / ".hera_approval_secret"))
+        print(f"🔑 Código de aprovação humana: {hc.current()}  (válido por ~{hc.seconds_left()}s)")
 
     elif args.command == "list":
         tasks = orchestrator.store.list_tasks(limit=10)

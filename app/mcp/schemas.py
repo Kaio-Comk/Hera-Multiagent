@@ -32,7 +32,8 @@ class McpToolCallRequest(BaseModel):
     arguments: Dict[str, Any] = Field(default_factory=dict)
     task_id: Optional[str] = None
     user_id: str = "operator"
-    confirmed_hitl: bool = False
+    confirmed_hitl: bool = False          # IGNORADO da API: o servidor decide pelo `human_code`
+    human_code: Optional[str] = None
 
 
 class McpToolCallResult(BaseModel):

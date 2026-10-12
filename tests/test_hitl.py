@@ -32,7 +32,7 @@ from app.hitl.approval_engine import (
 )
 from app.hitl.service import HitlService
 from fastapi.testclient import TestClient
-from app.server import app
+from app.server import HUMAN_CODE, app
 from helpers import AUTH_HEADERS, TEST_BASE_URL
 
 
@@ -392,6 +392,7 @@ def test_hitl_api_endpoints_integration(test_git_repo: Path, monkeypatch):
         "session_id": "session-test",
         "nonce": nonce,
         "expected_diff_hash": diff_hash,
+        "human_code": HUMAN_CODE.current(),      # fase 2: prova humana
         "comments": "Aprovado via teste de integração"
     })
     assert resp_approve.status_code == 200

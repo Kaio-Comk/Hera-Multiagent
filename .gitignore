@@ -32,5 +32,5 @@ venv/
 *.swp
 
 # Token local da API (fase 1)
-data/.hera_token
+data/.hera_*
 *.egg-info/
