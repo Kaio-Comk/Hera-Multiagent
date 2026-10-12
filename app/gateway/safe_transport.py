@@ -55,8 +55,19 @@ class SafeNetworkBackend(httpcore.AsyncNetworkBackend):
             if restricted and not (local_ok and ipaddress.ip_address(ip).is_loopback):
                 raise BlockedDestinationError(
                     f"Conexão bloqueada: {host!r}:{port} resolve para {ip} (destino interno/restrito)")
-        return await self._inner.connect_tcp(ips[0], port, timeout=timeout,
-                                             local_address=local_address, socket_options=socket_options)
+        # TODOS os IPs ja foram validados acima. `localhost` costuma resolver para ::1 ANTES de 127.0.0.1 e o
+        # Ollama so escuta em IPv4: tenta IPv4 primeiro e, se um endereco recusar, o proximo validado
+        # (antes so o primeiro era tentado e `http://localhost:11434` falhava com ConnectError).
+        ordered = sorted(dict.fromkeys(ips), key=lambda ip: ":" in ip)       # IPv4 antes de IPv6, ordem estavel
+        last_exc: Optional[BaseException] = None
+        for ip in ordered:
+            try:
+                return await self._inner.connect_tcp(ip, port, timeout=timeout,
+                                                     local_address=local_address, socket_options=socket_options)
+            except (httpcore.ConnectError, httpcore.ConnectTimeout, OSError) as exc:
+                last_exc = exc
+        assert last_exc is not None
+        raise last_exc
 
     async def connect_unix_socket(self, path: str, timeout: Optional[float] = None,
                                   socket_options: Optional[Iterable] = None):
