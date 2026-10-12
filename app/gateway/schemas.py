@@ -99,6 +99,7 @@ class NormalizedDelta:
     finish_reason: Optional[FinishReason] = None
     usage_input_tokens: Optional[int] = None
     usage_output_tokens: Optional[int] = None
+    usage_cached_tokens: Optional[int] = None
 
 class ChatChoice(BaseModel):
     index: int = 0
