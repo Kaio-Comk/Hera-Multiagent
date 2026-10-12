@@ -64,6 +64,7 @@ def build_gateway_adapters(cfg: Mapping[str, Any], environ: Optional[Mapping[str
                 tier=tier,
                 timeout=float(p.get("timeout", 60.0)),
                 models=[str(m) for m in (p.get("models") or [])],
+                stream_usage=bool(p.get("stream_usage", False)),
             ))
         except (SSRFSecurityError, ValueError) as exc:
             log.warning("[gateway] provedor %r ignorado: %s", name, exc)
