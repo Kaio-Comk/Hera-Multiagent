@@ -136,6 +136,8 @@ gateway_tier_router = TierRouter(
     max_concurrent_requests=cfg.get("gateway", {}).get("max_concurrent_requests", 10),
     total_timeout_seconds=float(cfg.get("gateway", {}).get("total_timeout_seconds", 180.0)),
     tier_order=cfg.get("gateway", {}).get("default_tier_order"),
+    stream_idle_timeout_seconds=float(cfg.get("gateway", {}).get("stream_idle_timeout_seconds", 60.0)),
+    stream_total_timeout_seconds=float(cfg.get("gateway", {}).get("stream_total_timeout_seconds", 900.0)),
 )
 
 # Inicializar Serviço HITL (Human-in-the-Loop)
@@ -611,6 +613,13 @@ async def list_gateway_models():
             if m not in [x["id"] for x in models_list]:
                 models_list.append({"id": m, "object": "model", "created": 1700000000, "owned_by": f"hera-{ad.name}"})
     return {"object": "list", "data": models_list}
+
+
+@app.get("/api/gateway/telemetry")
+async def gateway_stream_telemetry(limit: int = 50):
+    """Telemetria dos últimos streams (sem conteúdo): TTFB, fragmentos, fallbacks, resultado."""
+    limit = max(1, min(int(limit), 200))
+    return {"summary": gateway_tier_router.telemetry.summary(), "recent": gateway_tier_router.telemetry.recent(limit)}
 
 
 @app.get("/api/gateway/providers")

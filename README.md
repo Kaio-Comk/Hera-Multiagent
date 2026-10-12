@@ -199,9 +199,6 @@ short **approval code that only a human at the machine can see**:
   and fallbacks.
 - CI runs `bandit` (medium+) and `pip-audit` on every push and pull request.
 
-> Note: the gateway's "streaming" currently runs the full completion and then slices it into SSE events; it is
-> not token-by-token streaming from the provider yet.
-
 ### ☁️ Cloud providers (optional)
 
 The gateway always has local Ollama; you can add OpenAI-compatible cloud providers in `config.yaml`
@@ -226,6 +223,27 @@ providers:
   for the provider's `Retry-After` (it is *not* rotated around limits); a rejected key (401/403) is disabled; optional
   `daily_request_limit` per key. Secrets are never logged or returned.
 - `GET /api/gateway/providers` shows tiers, models and key states (no secrets); `GET /v1/models` lists the enabled models.
+
+### 🌊 Real streaming (`stream: true`)
+
+Tokens are forwarded **as the provider generates them** (Ollama NDJSON and OpenAI-compatible SSE), not after the
+whole answer is ready:
+
+- **Pre-flight:** the gateway opens the provider stream and reads up to the first useful chunk *before* answering.
+  A failure here (HTTP error, rate limit, bad first event) still falls back to the next provider, or becomes a real
+  HTTP error for the client.
+- **No fallback after the first byte:** a failure mid-stream ends with an SSE error event + `[DONE]`; it never stitches
+  text from another model.
+- **Client disconnects** close the provider connection immediately (the provider stops generating) and free the
+  concurrency slot.
+- **Keep-alive** comments while the provider is quiet; HTTP 504 error event if it stays silent for
+  `gateway.stream_idle_timeout_seconds` (60 s); `gateway.stream_total_timeout_seconds` caps a stream (900 s).
+- Tool-call fragments are forwarded as they arrive (arguments are *not* assumed to be complete JSON per chunk).
+- Providers without native streaming still work (the full answer is sliced) and are flagged `native: false`.
+- Prompt caching: the gateway does not rewrite the conversation prefix (RTK only touches tool outputs), so the
+  providers' own prefix caches keep working; reported cached tokens appear in the telemetry.
+- `GET /api/gateway/telemetry`: last streams (provider, time to first byte, chunks, fallbacks, outcome, token
+  usage) and p50/p95 TTFB. It never stores prompt or answer text.
 
 ## 🚀 Quickstart
 
