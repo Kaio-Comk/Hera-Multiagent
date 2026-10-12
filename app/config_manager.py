@@ -9,7 +9,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "port": 8000,
         "default_offline": False,
         "default_engine": "ollama",
-        "vault_dir": r"C:\Users\<usuario>\Documents\Obsidian Vault\Orquestrador Multiagente",
+        "vault_dir": "",  # vazio = $HERA_VAULT_DIR ou ~/Documents/Obsidian Vault/Orquestrador Multiagente
         "db_path": "data/orchestrator.db"
     },
     "engines": {
