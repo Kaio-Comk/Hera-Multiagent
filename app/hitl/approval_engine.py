@@ -1,6 +1,8 @@
 import time
 import uuid
 import hmac
+import json
+from pathlib import Path
 import hashlib
 import secrets
 from typing import Set, Dict, Optional
@@ -40,18 +42,54 @@ class DiffMutatedError(ApprovalSecurityError):
 class ApprovalEngine:
     """Motor de emissão, assinatura criptográfica e validação de tokens HITL."""
 
+    MAX_ISSUED_NONCES = 1000   # teto: POST /api/hitl/nonces nao pode encher a memoria
+
     def __init__(
         self,
         secret_key: Optional[str] = None,
-        token_ttl_seconds: float = 300.0  # 5 minutos por padrão
+        token_ttl_seconds: float = 300.0,  # 5 minutos por padrão
+        state_path: Optional[Path] = None,
     ):
         self.secret_key = (secret_key or secrets.token_hex(32)).encode("utf-8")
         self.token_ttl_seconds = token_ttl_seconds
         self._consumed_nonces: Set[str] = set()
         self._issued_nonces: Dict[str, float] = {}
+        # Nonces consumidos sobrevivem a reinicios (antes um restart permitia reusar um nonce
+        # ainda valido): nonce -> instante a partir do qual pode ser esquecido.
+        self._state_path = Path(state_path) if state_path else None
+        self._consumed_until: Dict[str, float] = {}
+        self._load_state()
+
+    def _load_state(self) -> None:
+        if not self._state_path:
+            return
+        try:
+            data = json.loads(self._state_path.read_text(encoding="utf-8"))
+            now = time.time()
+            self._consumed_until = {n: float(t) for n, t in (data.get("consumed") or {}).items() if float(t) > now}
+            self._consumed_nonces = set(self._consumed_until)
+        except (OSError, ValueError, TypeError, AttributeError):
+            self._consumed_until = {}
+
+    def _save_state(self) -> None:
+        if not self._state_path:
+            return
+        try:
+            self._state_path.parent.mkdir(parents=True, exist_ok=True)
+            self._state_path.write_text(json.dumps({"consumed": self._consumed_until}), encoding="utf-8")
+        except OSError:
+            pass
+
+    def _purge_issued(self) -> None:
+        now = time.time()
+        for n in [n for n, exp in self._issued_nonces.items() if exp < now]:
+            del self._issued_nonces[n]
 
     def generate_nonce(self) -> str:
         """Gera um nonce de uso único criptograficamente seguro e rastreável."""
+        self._purge_issued()
+        while len(self._issued_nonces) >= self.MAX_ISSUED_NONCES:      # descarta o mais antigo
+            del self._issued_nonces[min(self._issued_nonces, key=self._issued_nonces.get)]
         nonce = f"nonce-{uuid.uuid4().hex}"
         self._issued_nonces[nonce] = time.time() + self.token_ttl_seconds
         return nonce
@@ -84,6 +122,11 @@ class ApprovalEngine:
         """Cria e assina um token de aprovação imutável para a proposta."""
         if nonce in self._consumed_nonces:
             raise ReplayAttackError(f"Nonce '{nonce}' já foi consumido anteriormente.")
+        # O nonce precisa ter sido EMITIDO por este servidor e nao ter vencido (antes qualquer
+        # texto servia como nonce).
+        issued_exp = self._issued_nonces.get(nonce)
+        if issued_exp is None or time.time() > issued_exp:
+            raise ApprovalSecurityError("Nonce não emitido por este servidor, ou expirado.")
 
         now = time.time()
         ttl = custom_ttl if custom_ttl is not None else self.token_ttl_seconds
@@ -181,6 +224,9 @@ class ApprovalEngine:
                 f"Hash aprovado: {token.diff_hash}, Hash recalculado: {current_diff_hash}."
             )
 
-        # Consome nonce
+        # Consome nonce (e persiste: um reinicio nao pode "devolver" o nonce)
         self._consumed_nonces.add(token.nonce)
+        self._issued_nonces.pop(token.nonce, None)
+        self._consumed_until[token.nonce] = time.time() + 2 * self.token_ttl_seconds
+        self._save_state()
         return True

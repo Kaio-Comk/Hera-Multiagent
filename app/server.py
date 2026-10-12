@@ -19,6 +19,8 @@ from typing_extensions import Annotated
 from app.config_manager import ConfigManager
 from app.security import LocalSecurityMiddleware, SecuritySettings
 from app.security.paths import PathNotAllowedError, ensure_inside, ensure_safe_relative_list
+from app.security.human_code import HumanApprovalCode, HumanCodeLockedError, load_or_create_secret
+from app.security.data_dir import data_dir
 from models.task import AgentTask, TaskStatus, AgentResult
 from models.agent import HealthStatus
 from app.state_store import StateStore
@@ -87,7 +89,8 @@ app = FastAPI(title="Hera Multiagent API", version="1.0.0", lifespan=lifespan)
 # Antes era `allow_origins=["*"]` sem autenticacao: qualquer site aberto no navegador podia
 # chamar esta API em 127.0.0.1. A UI e servida pela propria origem, entao nao precisa de CORS.
 # O token fica em data/.hera_token (ou HERA_API_KEY); a UI o recebe embutido em "/".
-SECURITY = SecuritySettings.from_env(Path(__file__).resolve().parent.parent / "data" / ".hera_token")
+DATA_DIR = data_dir()
+SECURITY = SecuritySettings.from_env(DATA_DIR / ".hera_token")
 app.state.security = SECURITY
 app.add_middleware(LocalSecurityMiddleware, settings=SECURITY)
 
@@ -134,10 +137,53 @@ gateway_tier_router = TierRouter(
 )
 
 # Inicializar Serviço HITL (Human-in-the-Loop)
+# Código de aprovação humana (fase 2): segredo persistente; o código aparece só no console / CLI.
+HUMAN_CODE = HumanApprovalCode(load_or_create_secret(DATA_DIR / ".hera_approval_secret"))
+OPERATOR_ID = "local-operator"      # identidade da aprovação: decidida pelo servidor, nunca pelo cliente
 hitl_service = HitlService(
     state_store=store,
-    obsidian_writer=vault_writer
+    obsidian_writer=vault_writer,
+    approval_engine=ApprovalEngine(
+        secret_key=load_or_create_secret(DATA_DIR / ".hera_hmac_secret").decode("utf-8"),
+        state_path=DATA_DIR / ".hera_nonces.json",
+    ),
 )
+_last_code_announce = 0.0
+
+
+def _announce_human_code(reason: str) -> None:
+    """Mostra o código no CONSOLE do servidor (no máximo 1x a cada 30 s). Quem só tem o token da
+    API nunca vê o console; o humano que pediu a ação vê e digita na UI."""
+    global _last_code_announce
+    now = time.monotonic()
+    if now - _last_code_announce < 30:
+        return
+    _last_code_announce = now
+    line = (f"[HERA] {reason}. Código de aprovação humana: {HUMAN_CODE.current()} "
+            f"(válido por ~{HUMAN_CODE.seconds_left()}s; ou rode: python main.py approval-code)")
+    try:
+        print("\n🔑 " + line + "\n", flush=True)
+    except UnicodeEncodeError:
+        print("\n" + line.encode("ascii", "replace").decode("ascii") + "\n", flush=True)
+
+
+def _require_human_code(code: Optional[str], reason: str) -> None:
+    """403 sem código válido; 429 se bloqueado por tentativas erradas."""
+    if not code:
+        _announce_human_code(reason)
+        raise HTTPException(status_code=403, detail={
+            "error": "human_code_required",
+            "message": "Digite o código de aprovação exibido no console do servidor "
+                       "(ou rode `python main.py approval-code`)."})
+    try:
+        valid = HUMAN_CODE.verify(code)
+    except HumanCodeLockedError as exc:
+        raise HTTPException(status_code=429, detail={"error": "human_code_locked", "message": str(exc)},
+                            headers={"Retry-After": str(exc.retry_after)})
+    if not valid:
+        _announce_human_code(reason)
+        raise HTTPException(status_code=403, detail={"error": "human_code_invalid",
+                                                     "message": "Código de aprovação incorreto ou expirado."})
 
 # Inicializar MCP Client Manager e Catálogo
 mcp_catalog = McpCatalog()
@@ -663,6 +709,8 @@ async def issue_hitl_nonce():
 
 @app.post("/api/hitl/approve")
 async def approve_hitl_proposal(req: ApprovalRequest):
+    _require_human_code(req.human_code, f"Aprovação do merge da proposta {req.proposal_id} solicitada")
+    req.user_id = OPERATOR_ID           # a identidade vem do servidor, não do corpo da requisição
     res = hitl_service.approve_and_merge(req)
     if not res.success:
         raise HTTPException(status_code=400, detail={"error": res.error, "message": res.message})
@@ -712,10 +760,16 @@ async def register_mcp_tool(tool: McpToolDefinition):
 
 @app.post("/api/mcp/execute")
 async def execute_mcp_tool(req: McpToolCallRequest):
+    # `confirmed_hitl` do corpo NUNCA vale: só um código humano válido confirma (fase 2).
+    req.confirmed_hitl = False
+    if req.human_code:
+        _require_human_code(req.human_code, f"Ferramenta MCP '{req.tool_name}' exige aprovação humana")
+        req.confirmed_hitl = True
     try:
         return await mcp_client.execute_tool(req)
     except McpPermissionDeniedError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+        _announce_human_code(f"Ferramenta MCP '{req.tool_name}' exige aprovação humana")
+        raise HTTPException(status_code=403, detail={"error": "human_code_required", "message": str(e)})
     except McpSecurityError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

@@ -48,6 +48,8 @@ class ApprovalRequest(BaseModel):
     nonce: str
     expected_diff_hash: str
     comments: Optional[str] = None
+    # Código mostrado SÓ no console do servidor (fase 2). `user_id` é sobrescrito pelo servidor.
+    human_code: Optional[str] = None
 
 
 class ApprovalToken(BaseModel):
