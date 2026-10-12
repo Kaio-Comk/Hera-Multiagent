@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "hera-multiagent"
 version = "1.0.0"
@@ -9,9 +13,27 @@ dependencies = [
     "pydantic>=2.0.0",
     "pyyaml>=6.0.0",
     "httpx>=0.27.0",
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.0"
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.29.0",
+    "psutil>=5.9.0",
 ]
+
+[project.optional-dependencies]
+# Janela desktop nativa (`python main.py gui`). Sem isso, use `python main.py web`.
+gui = ["pywebview>=5.0"]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+# Layout "flat" com vários pacotes de topo: o setuptools não adivinha, então listamos
+# (sem isso `pip install -e .` falha com "Multiple top-level packages discovered").
+[tool.setuptools]
+py-modules = ["main"]
+
+[tool.setuptools.packages.find]
+include = ["app*", "adapters*", "models*"]
+namespaces = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
