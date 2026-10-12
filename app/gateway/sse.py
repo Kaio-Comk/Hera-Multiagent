@@ -16,7 +16,8 @@ def format_openai_sse_chunk(
     model: str,
     content: Optional[str] = None,
     finish_reason: Optional[str] = None,
-    role: Optional[str] = None
+    role: Optional[str] = None,
+    tool_calls: Optional[list] = None
 ) -> str:
     """Serializa um fragmento de stream no formato OpenAI SSE."""
     delta: Dict[str, Any] = {}
@@ -24,6 +25,8 @@ def format_openai_sse_chunk(
         delta["role"] = role
     if content is not None:
         delta["content"] = content
+    if tool_calls:
+        delta["tool_calls"] = tool_calls
 
     payload = {
         "id": request_id,

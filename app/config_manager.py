@@ -52,6 +52,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "gateway": {
         "max_concurrent_requests": 10,
         "request_timeout_seconds": 60.0,
+        "stream_idle_timeout_seconds": 60.0,     # sem dados do provedor por este tempo: erro 504 no stream
+        "stream_total_timeout_seconds": 900.0,   # duração máxima de um stream
         "total_timeout_seconds": 180.0,  # prazo TOTAL de uma requisição (todas as tentativas/fallbacks)
         "default_tier_order": ["cloud_premium", "cloud_cheap", "cloud_free", "local"]
     }
