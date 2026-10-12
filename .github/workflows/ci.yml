@@ -3,8 +3,7 @@ name: CI - Multiagent Orchestrator Tests
 on:
   push:
     branches: [ master, main ]
-  pull_request:
-    branches: [ master, main ]
+  pull_request:          # qualquer base: PRs empilhados (fase sobre fase) tambem rodam o CI
 
 jobs:
   test:
