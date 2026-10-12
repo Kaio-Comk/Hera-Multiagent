@@ -39,7 +39,11 @@ async def test_api_health_endpoint():
         assert "9router" in data["engines"]
 
 @pytest.mark.asyncio
-async def test_api_config_endpoints():
+async def test_api_config_endpoints(tmp_path, monkeypatch):
+    # Isolado: antes este teste gravava no config.yaml REAL e deixava o roteador global em modo offline.
+    import app.server as server_module
+    monkeypatch.setattr(server_module, "config_mgr", ConfigManager(config_path=str(tmp_path / "config.yaml")))
+    monkeypatch.setattr(server_module.router, "default_offline", server_module.router.default_offline)
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url=TEST_BASE_URL, headers=AUTH_HEADERS) as client:
         # GET
