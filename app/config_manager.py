@@ -42,6 +42,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "enable_arena": False,
         "enable_mcp": False
     },
+    # Provedores de nuvem do gateway (desligados por padrão). As CHAVES ficam em variáveis de ambiente
+    # (api_key_env), nunca neste arquivo. Exemplos em config.example.yaml.
+    "providers": {},
     "mcp": {
         # Executáveis permitidos para servidores MCP stdio (nome simples, sem caminho).
         "allowed_commands": ["python", "python3", "py"]
@@ -79,7 +82,7 @@ class ConfigManager:
             
             # Mesclagem defensiva com defaults
             merged = DEFAULT_CONFIG.copy()
-            for section in ("general", "engines", "feature_flags", "gateway", "mcp"):
+            for section in ("general", "engines", "feature_flags", "gateway", "mcp", "providers"):
                 if section in data and isinstance(data[section], dict):
                     merged[section] = {**merged.get(section, {}), **data[section]}
             return merged

@@ -5,7 +5,7 @@ Normaliza requisições e respostas entre Ollama local e provedores cloud compat
 
 import time
 import uuid
-from typing import Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 import httpx
 
 from app.gateway.schemas import (
@@ -16,6 +16,7 @@ from app.gateway.schemas import (
     UsageStats,
 )
 from app.gateway.provider_policy import validate_provider_url
+from app.gateway.key_manager import KeyManager, NoKeyAvailableError, parse_retry_after
 
 class GatewayProviderError(Exception):
     """Erro levantado durante execução de chamada upstream ao provedor."""
@@ -29,6 +30,8 @@ class BaseGatewayAdapter:
     name: str = "base"
     tier: str = "local"
     is_local: bool = True
+    # Modelos que ESTE provedor atende (nuvem). None = local: atende o que nenhuma nuvem reivindica.
+    served_models: Optional[frozenset] = None
 
     async def chat_complete(
         self,
@@ -114,24 +117,34 @@ class OllamaGatewayAdapter(BaseGatewayAdapter):
             raise GatewayProviderError(f"Falha de conexão com Ollama: {str(e)}", status_code=502, retryable=True)
 
 class CloudOpenAIGatewayAdapter(BaseGatewayAdapter):
-    """Adaptador para provedores de nuvem compatíveis com a API OpenAI (DeepSeek, Groq, OpenRouter, etc.)."""
+    """Adaptador para provedores de nuvem compatíveis com a API OpenAI (DeepSeek, Groq, OpenRouter, etc.).
+
+    As chaves vêm de um `KeyManager` (rodízio só entre chaves autorizadas pelo usuário; 429 põe a chave em
+    espera pelo `Retry-After`; 401/403 desativa a chave). O segredo nunca aparece em mensagens de erro."""
     is_local = False
 
     def __init__(
         self,
         name: str,
         base_url: str,
-        api_key: str,
-        default_model: str,
+        api_key: Optional[str] = None,
+        default_model: str = "default",
         tier: str = "cloud_cheap",
-        timeout: float = 60.0
+        timeout: float = 60.0,
+        key_manager: Optional[KeyManager] = None,
+        models: Optional[List[str]] = None,
     ):
         self.name = name
         self.base_url = validate_provider_url(base_url, is_local_profile=False)
-        self.api_key = api_key
+        if key_manager is None:
+            if not api_key:
+                raise ValueError(f"Provedor {name!r} sem chave de API")
+            key_manager = KeyManager([api_key], label=name)
+        self.key_manager = key_manager
         self.default_model = default_model
         self.tier = tier
         self.timeout = timeout
+        self.served_models = frozenset([default_model, *(models or [])])
 
     async def chat_complete(
         self,
@@ -139,7 +152,7 @@ class CloudOpenAIGatewayAdapter(BaseGatewayAdapter):
         client: httpx.AsyncClient
     ) -> ChatCompletionResponse:
         model = request.model if request.model and request.model != "default" else self.default_model
-        
+
         payload: Dict[str, Any] = {
             "model": model,
             "messages": [m.model_dump(exclude_none=True) for m in request.messages],
@@ -152,25 +165,47 @@ class CloudOpenAIGatewayAdapter(BaseGatewayAdapter):
         if request.stop:
             payload["stop"] = request.stop
 
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-
         url = f"{self.base_url}/chat/completions"
-        try:
-            resp = await client.post(url, json=payload, headers=headers, timeout=self.timeout)
-            if resp.status_code != 200:
-                is_retryable = resp.status_code in (429, 500, 502, 503, 504)
+        last_error: Optional[GatewayProviderError] = None
+        for _ in range(max(1, len(self.key_manager))):
+            try:
+                lease = self.key_manager.acquire()
+            except NoKeyAvailableError as exc:
+                if last_error is not None:
+                    raise last_error
+                wait = f" (tente em {int(exc.retry_after)}s)" if exc.retry_after else ""
                 raise GatewayProviderError(
-                    f"Provedor {self.name} retornou HTTP {resp.status_code}",
-                    status_code=resp.status_code,
-                    retryable=is_retryable
-                )
-            
-            data = resp.json()
-            return ChatCompletionResponse.model_validate(data)
-        except httpx.TimeoutException as e:
-            raise GatewayProviderError(f"Timeout ao comunicar com {self.name}: {str(e)}", status_code=504, retryable=True)
-        except httpx.RequestError as e:
-            raise GatewayProviderError(f"Erro de rede com {self.name}: {str(e)}", status_code=502, retryable=True)
+                    f"Todas as chaves de {self.name} estão em espera ou desativadas{wait}",
+                    status_code=429 if exc.retry_after else 503, retryable=True)
+
+            headers = {"Authorization": f"Bearer {lease.secret}", "Content-Type": "application/json"}
+            try:
+                resp = await client.post(url, json=payload, headers=headers, timeout=self.timeout)
+            except httpx.TimeoutException as e:
+                raise GatewayProviderError(f"Timeout ao comunicar com {self.name}: {type(e).__name__}",
+                                           status_code=504, retryable=True)
+            except httpx.RequestError as e:
+                raise GatewayProviderError(f"Erro de rede com {self.name}: {type(e).__name__}",
+                                           status_code=502, retryable=True)
+
+            if resp.status_code == 200:
+                return ChatCompletionResponse.model_validate(resp.json())
+
+            if resp.status_code == 429:
+                # Respeita o Retry-After: esta chave descansa; só tenta outra chave que o usuário autorizou.
+                self.key_manager.report_rate_limited(lease.key_id, parse_retry_after(resp.headers.get("retry-after")))
+                last_error = GatewayProviderError(f"Provedor {self.name} retornou HTTP 429 (limite de uso)",
+                                                  status_code=429, retryable=True)
+                continue
+            if resp.status_code in (401, 403):
+                self.key_manager.report_auth_failure(lease.key_id)
+                last_error = GatewayProviderError(
+                    f"Provedor {self.name} recusou a chave {lease.key_id} (HTTP {resp.status_code}); chave desativada",
+                    status_code=resp.status_code, retryable=True)   # retryable: o roteador cai para o próximo provedor
+                continue
+            raise GatewayProviderError(
+                f"Provedor {self.name} retornou HTTP {resp.status_code}",
+                status_code=resp.status_code,
+                retryable=resp.status_code in (500, 502, 503, 504))
+
+        raise last_error or GatewayProviderError(f"Falha desconhecida com {self.name}", status_code=502, retryable=True)
