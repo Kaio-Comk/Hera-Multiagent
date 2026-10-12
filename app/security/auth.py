@@ -34,6 +34,8 @@ ALLOWED_HOSTS_ENV = "HERA_ALLOWED_HOSTS"
 _MIN_TOKEN_LEN = 24
 
 DEFAULT_PUBLIC_PATHS = frozenset({"/", "/healthz"})
+DEFAULT_MAX_BODY_BYTES = 1 * 1024 * 1024                       # 1 MiB para a maioria das rotas
+DEFAULT_BODY_LIMITS: Dict[str, int] = {"/v1/chat/completions": 8 * 1024 * 1024}   # conversas longas
 DEFAULT_RATE_LIMITS: Dict[str, Tuple[int, float]] = {
     "/v1/chat/completions": (60, 60.0),
     "/api/tasks/run": (20, 60.0),
@@ -77,6 +79,8 @@ class SecuritySettings:
     allowed_hosts: Set[str] = field(default_factory=lambda: {"127.0.0.1", "localhost", "::1"})
     public_paths: frozenset = DEFAULT_PUBLIC_PATHS
     rate_limits: Dict[str, Tuple[int, float]] = field(default_factory=lambda: dict(DEFAULT_RATE_LIMITS))
+    max_body_bytes: int = DEFAULT_MAX_BODY_BYTES
+    body_limits: Dict[str, int] = field(default_factory=lambda: dict(DEFAULT_BODY_LIMITS))
 
     @classmethod
     def from_env(cls, token_file: Path, environ: Optional[Mapping[str, str]] = None) -> "SecuritySettings":
@@ -178,5 +182,44 @@ class LocalSecurityMiddleware:
                                         {"Retry-After": str(retry)})
 
         if scope["type"] == "http":
+            if scope.get("method") in ("POST", "PUT", "PATCH", "DELETE"):
+                limit = self.settings.body_limits.get(path, self.settings.max_body_bytes)
+                length = headers.get("content-length", "")
+                if length.isdigit() and int(length) > limit:
+                    return await self._deny(scope, receive, send, 413, f"Corpo maior que o limite de {limit} bytes")
+                if not length:                                  # chunked: sem Content-Length, bufferiza até o limite
+                    body = await self._read_limited(receive, limit)
+                    if body is None:
+                        return await self._deny(scope, receive, send, 413,
+                                                f"Corpo maior que o limite de {limit} bytes")
+                    receive = self._replay(body, receive)
             return await self.app(scope, receive, self._with_security_headers(send))
         return await self.app(scope, receive, send)
+
+    @staticmethod
+    async def _read_limited(receive, limit: int):
+        """Lê o corpo inteiro até `limit` bytes; devolve None se passar (e para de ler)."""
+        chunks, total = [], 0
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return b"".join(chunks)
+            chunk = message.get("body", b"")
+            total += len(chunk)
+            if total > limit:
+                return None
+            chunks.append(chunk)
+            if not message.get("more_body", False):
+                return b"".join(chunks)
+
+    @staticmethod
+    def _replay(body: bytes, original_receive):
+        sent = False
+
+        async def receive():
+            nonlocal sent
+            if not sent:
+                sent = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            return await original_receive()
+        return receive

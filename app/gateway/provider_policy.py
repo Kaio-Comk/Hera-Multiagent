@@ -112,7 +112,8 @@ def validate_provider_url(url: str, is_local_profile: bool = False) -> str:
         raise SSRFSecurityError(f"Provedores de nuvem devem obrigatoriamente usar HTTPS: {clean_url}")
 
     # Bloquear nomes ou IPs de loopback em conexões cloud
-    if hostname_lower in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):
+    # Esta lista e de BLOQUEIO de destinos, nao um bind em todas as interfaces (B104 e falso positivo).
+    if hostname_lower in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):  # nosec B104
         raise SSRFSecurityError(f"Tentativa de conectar em loopback via perfil cloud: {clean_url}")
 
     # Verificar se o hostname é um IP direto restrito
