@@ -156,6 +156,19 @@ Following an independent application security audit, the orchestrator implements
 
 ---
 
+### 🔐 Local API authentication
+
+The API listens only on `127.0.0.1`, **and** every route (`/api/*`, `/v1/*`, `/ws/events`) requires a
+token, so a website open in your browser cannot talk to your Hera:
+
+- The token is generated on first start and stored in `data/.hera_token` (git-ignored). Set `HERA_API_KEY`
+  (24+ chars) to choose your own. The web UI receives it automatically; nothing to configure.
+- External OpenAI-compatible clients: `Authorization: Bearer <token>` (or `X-Hera-Token`) against `http://127.0.0.1:8000/v1`.
+- `Host` must be local and `Origin` (when a browser sends one) must be the server itself. There is **no CORS**.
+  To reach Hera through another hostname, add it to `HERA_ALLOWED_HOSTS` (comma-separated).
+- Expensive routes are rate-limited per token (`/v1/chat/completions` 60/min, tasks 20/min, arena 10/min).
+- Only `/` (the UI) and `/healthz` (no data) are public.
+
 ## 🚀 Quickstart
 
 ### 1. Clone & Setup
