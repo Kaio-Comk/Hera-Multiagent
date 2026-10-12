@@ -1,8 +1,16 @@
+import os
+import shutil
+
 import pytest
 from models.task import AgentTask, TaskStatus
 from adapters.base import AgentAdapter
 from adapters.claude_code import ClaudeCodeAdapter
 from adapters.antigravity import AntigravityAdapter
+
+def _binary_available(adapter) -> bool:
+    """Os testes "live" precisam do CLI real instalado (nao existe no runner do CI)."""
+    path = getattr(adapter, "binary_path", "") or ""
+    return bool(path) and (os.path.exists(path) or shutil.which(path) is not None)
 
 # --- Claude Code Tests ---
 
@@ -22,6 +30,8 @@ async def test_claude_code_capabilities():
 @pytest.mark.asyncio
 async def test_claude_code_live_health():
     adapter = ClaudeCodeAdapter()
+    if not _binary_available(adapter):
+        pytest.skip(f"Claude Code CLI nao encontrado: {adapter.binary_path}")
     health = await adapter.health_check()
     assert health.healthy is True
     assert "Claude Code" in health.version
@@ -44,6 +54,8 @@ async def test_antigravity_capabilities():
 @pytest.mark.asyncio
 async def test_antigravity_live_health():
     adapter = AntigravityAdapter()
+    if not _binary_available(adapter):
+        pytest.skip(f"Antigravity CLI (agy) nao encontrado: {adapter.binary_path}")
     health = await adapter.health_check()
     assert health.healthy is True
-    assert "1.3.3" in health.version
+    assert health.version  # nao fixa a versao do CLI (mudava a cada atualizacao)
