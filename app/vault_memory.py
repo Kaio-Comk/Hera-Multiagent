@@ -1,4 +1,5 @@
 import os
+from app.locations import resolve_vault_dir
 import re
 import glob
 import hashlib
@@ -19,8 +20,8 @@ class ObsidianMemoryManager:
         re.compile(r'(glpat-[a-zA-Z0-9_\-]{20,})')
     ]
 
-    def __init__(self, vault_project_dir: str = r"C:\Users\Kaio Lima\Documents\Obsidian Vault\Orquestrador Multiagente"):
-        self.vault_project_dir = os.path.abspath(vault_project_dir)
+    def __init__(self, vault_project_dir: Optional[str] = None):
+        self.vault_project_dir = os.path.abspath(resolve_vault_dir(vault_project_dir))
         self._note_cache: Dict[str, str] = {}
         self._index_vault()
 

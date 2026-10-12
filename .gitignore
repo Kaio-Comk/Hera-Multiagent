@@ -30,3 +30,7 @@ venv/
 .idea/
 .vscode/
 *.swp
+
+# Config local da pessoa (copie de config.example.yaml); contem caminhos da sua maquina
+config.yaml
+config.yaml.local-backup
