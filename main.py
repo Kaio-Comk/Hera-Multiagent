@@ -325,6 +325,7 @@ async def main():
         port = args.port
         url = f"http://127.0.0.1:{port}"
         print(f"\n👑 [HERA] Servidor Web iniciando em {url}...")
+        print("🔐 [HERA] API protegida por token. A interface web já o recebe sozinha; para ferramentas externas (/v1) use o conteúdo de data/.hera_token como Bearer (ou defina HERA_API_KEY).")
         if not args.no_browser:
             asyncio.get_event_loop().call_later(0.8, lambda: webbrowser.open(url))
         config = uvicorn.Config("app.server:app", host="127.0.0.1", port=port, log_level="info")
