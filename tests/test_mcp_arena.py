@@ -236,11 +236,22 @@ def test_mcp_and_arena_fastapi_endpoints():
     assert isinstance(resp_tools.json(), list)
 
     # 2. Registrar servidor e ferramenta via API
+    # Servidor stdio e CODIGO que roda na maquina (fase MCP real): exige script dentro da raiz permitida
+    # e o codigo de aprovacao humana.
+    from pathlib import Path
+    from app.server import HUMAN_CODE
+    script = str(Path(__file__).parent / "fixtures" / "fake_mcp_server.py")
+    resp_sem_codigo = client.post("/api/mcp/servers", json={
+        "id": "srv-api-test", "name": "Servidor Teste API", "transport": "stdio",
+        "command": "python", "args": [script]})
+    assert resp_sem_codigo.status_code == 403
     resp_reg_srv = client.post("/api/mcp/servers", json={
         "id": "srv-api-test",
         "name": "Servidor Teste API",
         "transport": "stdio",
-        "command": "python"
+        "command": "python",
+        "args": [script],
+        "human_code": HUMAN_CODE.current(),
     })
     assert resp_reg_srv.status_code == 200
 

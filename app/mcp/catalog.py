@@ -1,3 +1,5 @@
+import hashlib
+import json
 import os
 import re
 from typing import Dict, Iterable, List, Optional
@@ -85,6 +87,45 @@ class McpCatalog:
 
         self._tools[tool.name] = tool
         return tool
+
+    def register_discovered_tools(self, server_id: str, remote_tools) -> List[McpToolDefinition]:
+        """Registra as ferramentas descobertas via `tools/list`. O servidor é NÃO CONFIÁVEL, então toda
+        ferramenta nova nasce DESLIGADA, com efeito `write` e exigindo HITL, até um humano liberá-la
+        (`set_tool_policy`). Se a descrição ou o schema mudarem depois, a aprovação é invalidada."""
+        if server_id not in self._servers:
+            raise McpSecurityError(f"Servidor '{server_id}' não está registrado no catálogo.")
+        registered: List[McpToolDefinition] = []
+        for rt in remote_tools:
+            name = f"{server_id}.{rt.name}"
+            fp = hashlib.sha256(json.dumps([rt.description, rt.input_schema], sort_keys=True).encode()).hexdigest()
+            previous = self._tools.get(name)
+            if previous is not None and previous.fingerprint == fp:
+                registered.append(previous)                        # nada mudou: mantém a decisão humana
+                continue
+            tool = McpToolDefinition(
+                name=name, description=rt.description, server_id=server_id, parameters_schema=rt.input_schema,
+                effect="write", requires_hitl=True, enabled=False, remote_name=rt.name, fingerprint=fp)
+            self._tools[name] = tool
+            registered.append(tool)
+        return registered
+
+    def set_tool_policy(self, tool_name: str, *, enabled: bool, effect: Optional[str] = None,
+                        requires_hitl: Optional[bool] = None) -> McpToolDefinition:
+        """Decisão HUMANA sobre uma ferramenta (liberar/bloquear, efeito, exigir confirmação)."""
+        tool = self._tools.get(tool_name)
+        if tool is None:
+            raise McpSecurityError(f"Ferramenta MCP desconhecida: '{tool_name}'")
+        data = tool.model_dump()
+        data["enabled"] = enabled
+        if effect is not None:
+            data["effect"] = effect
+        if requires_hitl is not None:
+            data["requires_hitl"] = requires_hitl
+        updated = McpToolDefinition(**data)
+        if updated.effect in ("write", "network", "destructive") and not updated.requires_hitl:
+            raise McpSecurityError("Ferramentas com efeito write/network/destructive precisam exigir HITL.")
+        self._tools[tool_name] = updated
+        return updated
 
     def get_tool(self, tool_name: str) -> Optional[McpToolDefinition]:
         return self._tools.get(tool_name)

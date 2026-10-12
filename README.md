@@ -245,6 +245,27 @@ whole answer is ready:
 - `GET /api/gateway/telemetry`: last streams (provider, time to first byte, chunks, fallbacks, outcome, token
   usage) and p50/p95 TTFB. It never stores prompt or answer text.
 
+### 🔌 MCP client (real servers)
+
+Hera speaks the Model Context Protocol (JSON-RPC 2.0) over **stdio** and **streamable HTTP**: `initialize` handshake
+(protocol 2025-06-18 / 2025-03-26 / 2024-11-05), `tools/list` (paginated) and `tools/call`.
+
+An MCP server is **code**, so the flow is deliberately gated by the [human approval code](#-human-approval-code-hitl--mcp):
+
+1. `POST /api/mcp/servers` registers a stdio server (needs `human_code`). The command must be `python`/`python3`/`py` and the
+   first argument a `.py` script **inside an allowed root** (no `-c`, `-m`, `-`); env vars that inject code (`PYTHONPATH`,
+   `PATH`, ...) are refused. The process gets a **minimal environment**: your API keys and Hera secrets are not inherited.
+2. `POST /api/mcp/servers/{id}/discover` launches it and lists its tools (needs `human_code`). Discovered tools are
+   namespaced (`server.tool`) and are born **disabled, `effect: write`, requiring HITL**; descriptions are sanitised
+   (server text is untrusted) and a changed description/schema revokes an earlier approval.
+3. `POST /api/mcp/tools/policy` enables a tool (needs `human_code`; write/network/destructive tools must keep HITL).
+4. `POST /api/mcp/execute`: schema-validated arguments, per-call timeout (a silent server is killed and restarted on the
+   next call), output capped at 100k chars and passed through DLP redaction. Requests the server makes *to the client*
+   (sampling, roots, elicitation) are always refused. Arguments containing secrets are never sent to remote HTTP servers
+   (their connections go through the anti-SSRF client).
+
+Servers are closed when Hera shuts down; `GET /api/mcp/servers` never returns env var values.
+
 ## 🚀 Quickstart
 
 ### 1. Clone & Setup
