@@ -224,3 +224,63 @@ async def test_requisicao_rapida_passa_dentro_do_prazo():
 
 def test_config_padrao_tem_prazo_total():
     assert DEFAULT_CONFIG["gateway"]["total_timeout_seconds"] == 180.0
+
+
+# ── regressão: `localhost` resolve para ::1 antes de 127.0.0.1 (Ollama só escuta em IPv4) ──────────────
+class FlakyInner(FakeInner):
+    """Recusa os IPs listados em `refuse`; registra todas as tentativas."""
+
+    def __init__(self, refuse=()):
+        super().__init__()
+        self.refuse = set(refuse)
+
+    async def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
+        self.calls.append((host, port))
+        if host in self.refuse:
+            raise httpcore.ConnectError(f"recusado {host}")
+        return "STREAM"
+
+
+@pytest.mark.asyncio
+async def test_localhost_tenta_ipv4_primeiro_mesmo_que_o_dns_devolva_ipv6_antes(monkeypatch):
+    def fake(host, port, *a, **k):
+        return [(socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("::1", port, 0, 0)),
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))]
+    monkeypatch.setattr(socket, "getaddrinfo", fake)
+    inner = FlakyInner()
+    assert await SafeNetworkBackend(inner).connect_tcp("localhost", 11434) == "STREAM"
+    assert inner.calls == [("127.0.0.1", 11434)]                   # IPv4 primeiro: sem esperar o ::1 recusar
+
+
+@pytest.mark.asyncio
+async def test_se_um_ip_validado_recusa_cai_para_o_proximo_e_se_todos_recusam_levanta(monkeypatch):
+    _resolve_to(monkeypatch, "8.8.8.8", "8.8.4.4")
+    inner = FlakyInner(refuse={"8.8.8.8"})
+    assert await SafeNetworkBackend(inner).connect_tcp("api.openai.com", 443) == "STREAM"
+    assert inner.calls == [("8.8.8.8", 443), ("8.8.4.4", 443)]
+    inner = FlakyInner(refuse={"8.8.8.8", "8.8.4.4"})
+    with pytest.raises(httpcore.ConnectError):
+        await SafeNetworkBackend(inner).connect_tcp("api.openai.com", 443)
+    assert len(inner.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_localhost_de_verdade_com_servidor_so_em_ipv4(monkeypatch):
+    """O cenário real do bug: servidor escutando só em 127.0.0.1 e o cliente chamando `localhost`."""
+    import app.gateway.safe_transport as st
+
+    async def handle(reader, writer):
+        await reader.readuntil(b"\r\n\r\n")
+        writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+        await writer.drain()
+        writer.close()
+    srv = await asyncio.start_server(handle, "127.0.0.1", 0)
+    port = srv.sockets[0].getsockname()[1]
+    monkeypatch.setattr(st, "ALLOWED_LOCAL_PORTS", {port})
+    try:
+        async with make_safe_async_client(timeout=5.0) as c:
+            r = await c.get(f"http://localhost:{port}/")
+        assert r.status_code == 200 and r.text == "ok"
+    finally:
+        srv.close()
+        await srv.wait_closed()
