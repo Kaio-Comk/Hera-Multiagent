@@ -957,6 +957,9 @@
 
     async function approveHitlProposal(propId, diffHash) {
       if (!confirm("Confirmar aprovação humana e integração definitiva do patch ao código?")) return;
+      // Prova humana (fase 2): o código aparece SÓ no console do servidor (ou: python main.py approval-code).
+      const humanCode = prompt("Digite o código de aprovação humana mostrado no console do servidor\n(ou rode: python main.py approval-code)");
+      if (!humanCode) return;
 
       try {
         // 1. Obter Nonce Criptográfico
@@ -969,10 +972,10 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             proposal_id: propId,
-            user_id: "operator",
             session_id: "gui-session",
             nonce: nonceData.nonce,
             expected_diff_hash: diffHash,
+            human_code: humanCode,
             comments: "Aprovado via Mission Control GUI"
           })
         });
