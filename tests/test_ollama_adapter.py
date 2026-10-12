@@ -101,6 +101,8 @@ async def test_ollama_live_e2e():
 
     handle = await adapter.submit(task)
     result = await adapter.collect(handle)
+    if result.status != TaskStatus.SUCCEEDED and "memory" in (result.error_message or "").lower():
+        pytest.skip(f"Ollama sem memoria para carregar o modelo: {result.error_message}")
 
     assert result.status == TaskStatus.SUCCEEDED
     assert len(result.output_text) > 0
