@@ -24,6 +24,10 @@ class McpToolDefinition(BaseModel):
     effect: Literal["read", "write", "network", "destructive"] = "read"
     requires_hitl: bool = False
     enabled: bool = True
+    # Ferramenta descoberta num servidor MCP real: nome na origem e impressão digital (descrição+schema)
+    # para detectar mudança e invalidar a aprovação.
+    remote_name: Optional[str] = None
+    fingerprint: Optional[str] = None
 
 
 class McpToolCallRequest(BaseModel):
