@@ -32,8 +32,10 @@ class TierRouter:
         adapters: List[BaseGatewayAdapter],
         privacy_manager: Optional[GatewayPrivacyManager] = None,
         token_saver: Optional[RTKTokenSaver] = None,
-        max_concurrent_requests: int = 10
+        max_concurrent_requests: int = 10,
+        total_timeout_seconds: float = 180.0,
     ):
+        self.total_timeout_seconds = total_timeout_seconds
         self.adapters = adapters
         self.privacy_manager = privacy_manager or GatewayPrivacyManager()
         self.token_saver = token_saver or RTKTokenSaver()
@@ -47,6 +49,25 @@ class TierRouter:
                 msg.content = compressed
 
     async def route_and_execute(
+        self,
+        request: ChatCompletionRequest,
+        client: httpx.AsyncClient,
+        force_offline: Optional[bool] = None,
+        enable_rtk: bool = False
+    ) -> ChatCompletionResponse:
+        """Executa com PRAZO TOTAL: tentativas e fallbacks somados não passam de `total_timeout_seconds`
+        (antes cada tentativa tinha o seu timeout e N provedores somavam N vezes)."""
+        try:
+            return await asyncio.wait_for(
+                self._route_and_execute(request, client, force_offline, enable_rtk),
+                timeout=self.total_timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            raise GatewayProviderError(
+                f"Requisição excedeu o prazo total de {self.total_timeout_seconds:.0f}s.",
+                status_code=504, retryable=False)
+
+    async def _route_and_execute(
         self,
         request: ChatCompletionRequest,
         client: httpx.AsyncClient,

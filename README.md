@@ -185,6 +185,23 @@ short **approval code that only a human at the machine can see**:
   (a malicious site, a browser extension, injected script). Malware that already reads your user files can
   read the secret (`data/.hera_approval_secret`) too, which is out of scope.
 
+### 🧱 Extra hardening
+
+- **MCP stdio servers** are an allowlist (`mcp.allowed_commands`, default `python`, `python3`, `py`): the
+  command must be a bare executable name (no path, arguments or shell metacharacters).
+- **Request size limits**: 1 MiB for most routes, 8 MiB for `/v1/chat/completions` (enforced before the body
+  is parsed, including chunked uploads without `Content-Length`).
+- **Anti-SSRF at connection time**: the gateway HTTP client resolves the hostname, validates *every* IP and
+  connects to the validated IP (TLS still verifies the original hostname), so DNS rebinding cannot swap in an
+  internal address between the check and the connection. Loopback is only allowed for `localhost` on the
+  Ollama / 9Router ports. The client ignores proxy environment variables (`trust_env=False`).
+- **Total deadline** per gateway request (`gateway.total_timeout_seconds`, default 180 s) across all retries
+  and fallbacks.
+- CI runs `bandit` (medium+) and `pip-audit` on every push and pull request.
+
+> Note: the gateway's "streaming" currently runs the full completion and then slices it into SSE events; it is
+> not token-by-token streaming from the provider yet.
+
 ## 🚀 Quickstart
 
 ### 1. Clone & Setup

@@ -42,9 +42,14 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "enable_arena": False,
         "enable_mcp": False
     },
+    "mcp": {
+        # Executáveis permitidos para servidores MCP stdio (nome simples, sem caminho).
+        "allowed_commands": ["python", "python3", "py"]
+    },
     "gateway": {
         "max_concurrent_requests": 10,
         "request_timeout_seconds": 60.0,
+        "total_timeout_seconds": 180.0,  # prazo TOTAL de uma requisição (todas as tentativas/fallbacks)
         "default_tier_order": ["cloud_premium", "cloud_cheap", "cloud_free", "local"]
     }
 }
@@ -74,7 +79,7 @@ class ConfigManager:
             
             # Mesclagem defensiva com defaults
             merged = DEFAULT_CONFIG.copy()
-            for section in ("general", "engines", "feature_flags", "gateway"):
+            for section in ("general", "engines", "feature_flags", "gateway", "mcp"):
                 if section in data and isinstance(data[section], dict):
                     merged[section] = {**merged.get(section, {}), **data[section]}
             return merged

@@ -40,6 +40,7 @@ from app.gateway.schemas import ChatCompletionRequest, ChatCompletionResponse
 from app.gateway.privacy import GatewayPrivacyManager
 from app.gateway.providers import OllamaGatewayAdapter, GatewayProviderError
 from app.gateway.provider_policy import SSRFSecurityError, validate_provider_url
+from app.gateway.safe_transport import make_safe_async_client
 from app.gateway.tier_router import TierRouter
 
 from app.hitl.schemas import (
@@ -78,7 +79,7 @@ gateway_http_client: Optional[httpx.AsyncClient] = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global gateway_http_client
-    gateway_http_client = httpx.AsyncClient(timeout=60.0)
+    gateway_http_client = make_safe_async_client(timeout=60.0)   # valida o destino na conexão (anti-rebinding)
     yield
     if gateway_http_client:
         await gateway_http_client.aclose()
@@ -133,7 +134,8 @@ gateway_privacy_mgr = GatewayPrivacyManager(default_offline=cfg["general"].get("
 gateway_tier_router = TierRouter(
     adapters=[ollama_gw_adapter],
     privacy_manager=gateway_privacy_mgr,
-    max_concurrent_requests=cfg.get("gateway", {}).get("max_concurrent_requests", 10)
+    max_concurrent_requests=cfg.get("gateway", {}).get("max_concurrent_requests", 10),
+    total_timeout_seconds=float(cfg.get("gateway", {}).get("total_timeout_seconds", 180.0)),
 )
 
 # Inicializar Serviço HITL (Human-in-the-Loop)
@@ -186,7 +188,7 @@ def _require_human_code(code: Optional[str], reason: str) -> None:
                                                      "message": "Código de aprovação incorreto ou expirado."})
 
 # Inicializar MCP Client Manager e Catálogo
-mcp_catalog = McpCatalog()
+mcp_catalog = McpCatalog(allowed_commands=cfg.get("mcp", {}).get("allowed_commands"))
 mcp_client = McpClientManager(
     catalog=mcp_catalog,
     privacy_manager=gateway_privacy_mgr,
@@ -611,7 +613,7 @@ async def chat_completions(req: ChatCompletionRequest):
     """Endpoint OpenAI-compatible para chat completions (com streaming SSE, fallback e DLP)."""
     global gateway_http_client
     if gateway_http_client is None or gateway_http_client.is_closed:
-        client_to_use = httpx.AsyncClient(timeout=60.0)
+        client_to_use = make_safe_async_client(timeout=60.0)
         should_close = True
     else:
         client_to_use = gateway_http_client

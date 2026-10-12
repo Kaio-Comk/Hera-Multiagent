@@ -1,12 +1,15 @@
 import os
 import re
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 from urllib.parse import urlsplit
 
 from app.mcp.schemas import McpServerConfig, McpToolDefinition
 from app.gateway.provider_policy import validate_provider_url, SSRFSecurityError
 
 FORBIDDEN_COMMANDS = frozenset({"npx", "npm", "cmd.exe", "cmd", "powershell.exe", "powershell", "bash", "sh"})
+# Fase 5: lista de PERMITIDOS (a lista negra acima fica só para dar a mensagem certa). Um servidor
+# MCP stdio só pode ser um destes executáveis, citado pelo NOME (sem caminho nem argumentos).
+DEFAULT_ALLOWED_STDIO_COMMANDS = frozenset({"python", "python3", "py"})
 
 
 class McpSecurityError(RuntimeError):
@@ -22,9 +25,11 @@ class McpPermissionDeniedError(McpSecurityError):
 class McpCatalog:
     """Catálogo central de servidores e ferramentas MCP com controle de acesso."""
 
-    def __init__(self):
+    def __init__(self, allowed_commands: Optional[Iterable[str]] = None):
         self._servers: Dict[str, McpServerConfig] = {}
         self._tools: Dict[str, McpToolDefinition] = {}
+        self.allowed_commands = frozenset(c.strip().lower() for c in (allowed_commands or DEFAULT_ALLOWED_STDIO_COMMANDS)
+                                          if isinstance(c, str) and c.strip())
 
     def register_server(self, cfg: McpServerConfig) -> McpServerConfig:
         """Registra um servidor MCP após validação de sintaxe e restrições de segurança."""
@@ -36,6 +41,20 @@ class McpCatalog:
                 raise McpSecurityError(
                     f"Comando proibido para servidor MCP stdio: '{base_cmd}'. "
                     f"Execuções arbitrárias de shell e gerenciadores de pacotes não são permitidas."
+                )
+            command = cfg.command.strip()
+            if any(ch in command for ch in ("/", "\\", " ", ";", "|", "&", "\"", "'")) or command.startswith("-"):
+                raise McpSecurityError(
+                    "O comando de um servidor MCP stdio deve ser só o NOME do executável "
+                    "(sem caminho, argumentos nem metacaracteres)."
+                )
+            name = command.lower()
+            if name.endswith(".exe"):
+                name = name[:-4]
+            if name not in self.allowed_commands:
+                raise McpSecurityError(
+                    f"Comando '{command}' fora da lista de permitidos para servidores MCP "
+                    f"stdio: {sorted(self.allowed_commands)}."
                 )
         elif cfg.transport == "streamable_http":
             if not cfg.url:

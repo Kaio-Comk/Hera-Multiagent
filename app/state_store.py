@@ -129,7 +129,8 @@ class StateStore:
 
         values.append(task_id)
 
-        query = f"UPDATE tasks SET {', '.join(fields)} WHERE id = ?"
+        # Colunas literais; valores parametrizados; limit via int(): sem injecao (B608 e falso positivo).
+        query = f"UPDATE tasks SET {', '.join(fields)} WHERE id = ?"  # nosec B608
 
         with self._get_connection() as conn:
             cursor = conn.execute(query, values)
@@ -151,10 +152,12 @@ class StateStore:
         with self._get_connection() as conn:
             limit_clause = f" LIMIT {int(limit)}" if limit else ""
             if status:
-                query = f"SELECT * FROM tasks WHERE status = ? ORDER BY created_at DESC{limit_clause}"
+                # Colunas literais; valores parametrizados; limit via int(): sem injecao (B608 e falso positivo).
+                query = f"SELECT * FROM tasks WHERE status = ? ORDER BY created_at DESC{limit_clause}"  # nosec B608
                 rows = conn.execute(query, (status.value,)).fetchall()
             else:
-                query = f"SELECT * FROM tasks ORDER BY created_at DESC{limit_clause}"
+                # Colunas literais; valores parametrizados; limit via int(): sem injecao (B608 e falso positivo).
+                query = f"SELECT * FROM tasks ORDER BY created_at DESC{limit_clause}"  # nosec B608
                 rows = conn.execute(query).fetchall()
             return [self._row_to_task(r) for r in rows]
 
