@@ -17,6 +17,7 @@ from app.arena.schemas import (
 from app.arena.runner import ArenaRunner
 from app.gateway.privacy import GatewayPrivacyManager
 from app.server import app
+from helpers import AUTH_HEADERS, TEST_BASE_URL
 
 
 # ==================== TESTES MCP ====================
@@ -223,7 +224,7 @@ async def test_arena_feature_flag_disabled():
 
 def test_mcp_and_arena_fastapi_endpoints():
     """Verifica endpoints REST de MCP e Arena via TestClient."""
-    client = TestClient(app)
+    client = TestClient(app, base_url=TEST_BASE_URL, headers=AUTH_HEADERS)
 
     # 1. MCP Servers & Tools
     resp_servers = client.get("/api/mcp/servers")

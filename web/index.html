@@ -496,10 +496,23 @@
       lucide.createIcons();
     }
 
+    // Autenticação local (fase 1): o servidor embute window.HERA_TOKEN ao servir "/".
+    // Todo fetch para a própria origem (rotas que começam com "/") leva o token.
+    (function () {
+      const nativeFetch = window.fetch.bind(window);
+      window.fetch = (input, init = {}) => {
+        const url = typeof input === "string" ? input : (input && input.url) || "";
+        if (url.startsWith("/") && window.HERA_TOKEN) {
+          init = { ...init, headers: { ...(init.headers || {}), "X-Hera-Token": window.HERA_TOKEN } };
+        }
+        return nativeFetch(input, init);
+      };
+    })();
+
     // Conexão WebSocket
     function initWebSocket() {
       const loc = window.location;
-      const wsUrl = `ws://${loc.hostname || '127.0.0.1'}:${loc.port || '8000'}/ws/events`;
+      const wsUrl = `ws://${loc.hostname || '127.0.0.1'}:${loc.port || '8000'}/ws/events?token=${encodeURIComponent(window.HERA_TOKEN || '')}`;
       ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {

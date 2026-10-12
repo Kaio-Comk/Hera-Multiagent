@@ -33,6 +33,7 @@ from app.hitl.approval_engine import (
 from app.hitl.service import HitlService
 from fastapi.testclient import TestClient
 from app.server import app
+from helpers import AUTH_HEADERS, TEST_BASE_URL
 
 
 @pytest.fixture
@@ -349,7 +350,7 @@ def test_hitl_service_merge_conflict_aborts_cleanly(test_git_repo: Path):
 
 def test_hitl_api_endpoints_integration(test_git_repo: Path):
     """Testa endpoints HTTP FastAPI (/api/hitl/*) com TestClient."""
-    client = TestClient(app)
+    client = TestClient(app, base_url=TEST_BASE_URL, headers=AUTH_HEADERS)
     repo_path = str(test_git_repo)
 
     # Criar branch

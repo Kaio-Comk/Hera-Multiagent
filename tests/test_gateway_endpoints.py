@@ -13,12 +13,13 @@ from app.gateway.providers import (
 )
 from app.gateway.privacy import GatewayPrivacyManager
 from app.gateway.tier_router import TierRouter
+from helpers import AUTH_HEADERS, TEST_BASE_URL
 
 @pytest.mark.asyncio
 async def test_get_v1_models():
     """Valida que o endpoint GET /v1/models retorne a lista de modelos no formato OpenAI."""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url=TEST_BASE_URL, headers=AUTH_HEADERS) as client:
         resp = await client.get("/v1/models")
         assert resp.status_code == 200
         data = resp.json()
@@ -122,7 +123,7 @@ async def test_tier_router_dlp_blocks_cloud_on_secret():
 async def test_post_v1_chat_completions_dlp_rejection():
     """Valida rejeição com HTTP 403 no endpoint /v1/chat/completions se houver segredo e nenhum motor local."""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url=TEST_BASE_URL, headers=AUTH_HEADERS) as client:
         payload = {
             "model": "qwen2.5-coder:1.5b",
             "messages": [

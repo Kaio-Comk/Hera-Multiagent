@@ -12,10 +12,10 @@ from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.config_manager import ConfigManager
+from app.security import LocalSecurityMiddleware, SecuritySettings
 from models.task import AgentTask, TaskStatus, AgentResult
 from models.agent import HealthStatus
 from app.state_store import StateStore
@@ -79,13 +79,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Hera Multiagent API", version="1.0.0", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Seguranca local (fase 1, 12/10/2026): token + Host/Origin + limite de taxa, e NENHUM CORS.
+# Antes era `allow_origins=["*"]` sem autenticacao: qualquer site aberto no navegador podia
+# chamar esta API em 127.0.0.1. A UI e servida pela propria origem, entao nao precisa de CORS.
+# O token fica em data/.hera_token (ou HERA_API_KEY); a UI o recebe embutido em "/".
+SECURITY = SecuritySettings.from_env(Path(__file__).resolve().parent.parent / "data" / ".hera_token")
+app.state.security = SECURITY
+app.add_middleware(LocalSecurityMiddleware, settings=SECURITY)
 
 config_mgr = ConfigManager()
 cfg = config_mgr.load_config()
@@ -438,11 +438,21 @@ async def websocket_endpoint(websocket: WebSocket):
         ws_manager.disconnect(websocket)
 
 # Servir Frontend
+@app.get("/healthz")
+async def healthz():
+    """Verificacao de vida SEM dados (publica). O estado dos motores fica em /api/health (autenticada)."""
+    return {"status": "ok"}
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
+    """Serve a UI com o token da sessao embutido. A pagina so e legivel pela propria origem
+    (Host/Origin checados no middleware, sem CORS), entao outro site nao consegue le-lo."""
     index_file = WEB_DIR / "index.html"
     if index_file.exists():
-        return FileResponse(index_file)
+        html = index_file.read_text(encoding="utf-8")
+        inject = f"<script>window.HERA_TOKEN = {json.dumps(SECURITY.token)};</script>"
+        html = html.replace("</head>", inject + "</head>", 1)
+        return HTMLResponse(html, headers={"Cache-Control": "no-store"})
     return HTMLResponse("<h1>Hera Multiagent — Frontend inicializando...</h1>")
 
 # Endpoints OpenAI-Compatible Gateway (/v1)

@@ -7,6 +7,7 @@ from httpx import ASGITransport, AsyncClient
 from app.server import app
 from app.gateway.token_saver import RTKTokenSaver
 from app.gateway.sse import format_openai_sse_chunk, format_sse_error, format_sse_done, sse_stream_generator
+from helpers import AUTH_HEADERS, TEST_BASE_URL
 
 # ============================================================================
 # 1. Testes do RTK Token Saver Conservador
@@ -107,7 +108,7 @@ async def test_sse_stream_generator_normal_flow():
 async def test_endpoint_streaming_chat_completions():
     """Testa chamada E2E com stream=True no endpoint /v1/chat/completions."""
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    async with AsyncClient(transport=transport, base_url=TEST_BASE_URL, headers=AUTH_HEADERS) as client:
         payload = {
             "model": "qwen2.5-coder:1.5b",
             "messages": [
