@@ -348,8 +348,11 @@ def test_hitl_service_merge_conflict_aborts_cleanly(test_git_repo: Path):
     assert status_out.strip() == ""
 
 
-def test_hitl_api_endpoints_integration(test_git_repo: Path):
+def test_hitl_api_endpoints_integration(test_git_repo: Path, monkeypatch):
     """Testa endpoints HTTP FastAPI (/api/hitl/*) com TestClient."""
+    # Fase 3: repo_path precisa estar numa raiz permitida; o repo de teste e temporario.
+    import app.server as server_module
+    monkeypatch.setattr(server_module, "_allowed_repo_roots", lambda: [server_module.ROOT_DIR, test_git_repo])
     client = TestClient(app, base_url=TEST_BASE_URL, headers=AUTH_HEADERS)
     repo_path = str(test_git_repo)
 
