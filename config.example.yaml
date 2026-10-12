@@ -31,3 +31,25 @@ engines:
     enabled: true
     default_model: gemini-2.5-pro
     timeout: 300.0
+
+# Provedores de nuvem do gateway (/v1). TODOS desligados por padrão.
+# As CHAVES ficam em variáveis de ambiente (api_key_env), nunca neste arquivo nem na API. Várias chaves
+# AUTORIZADAS por você podem ir separadas por vírgula (rodízio); uma chave que recebe 429 descansa pelo
+# Retry-After e uma recusada (401/403) é desativada.
+# Ordem de tentativa: gateway.default_tier_order. Prompt com segredo ou modo offline NUNCA vai à nuvem.
+providers: {}
+#  deepseek:
+#    enabled: true
+#    tier: cloud_cheap            # cloud_premium | cloud_cheap | cloud_free
+#    base_url: https://api.deepseek.com/v1
+#    api_key_env: DEEPSEEK_API_KEY
+#    default_model: deepseek-chat
+#    models: [deepseek-chat, deepseek-reasoner]
+#    timeout: 60
+#    daily_request_limit: 1000    # opcional, por chave
+#  groq:
+#    enabled: true
+#    tier: cloud_free
+#    base_url: https://api.groq.com/openai/v1
+#    api_key_env: GROQ_API_KEY
+#    default_model: llama-3.3-70b-versatile
