@@ -1,4 +1,5 @@
 import os
+from app.locations import resolve_vault_dir
 import sys
 import uuid
 import time
@@ -39,7 +40,7 @@ class MultiagentOrchestrator:
 
         self.router = TaskRouter(adapters=self.adapters)
 
-        v_dir = vault_dir or r"C:\Users\Kaio Lima\Documents\Obsidian Vault\Orquestrador Multiagente"
+        v_dir = resolve_vault_dir(vault_dir)
         self.vault_writer = ObsidianVaultWriter(vault_project_dir=v_dir)
         self.memory_manager = ObsidianMemoryManager(vault_project_dir=v_dir)
 

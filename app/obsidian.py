@@ -1,4 +1,5 @@
 import os
+from app.locations import resolve_vault_dir
 import re
 import datetime
 from typing import List, Optional
@@ -13,8 +14,8 @@ class ObsidianVaultWriter:
     na pasta do projeto no segundo cérebro.
     """
 
-    def __init__(self, vault_project_dir: str = r"C:\Users\Kaio Lima\Documents\Obsidian Vault\Orquestrador Multiagente"):
-        self.vault_project_dir = os.path.abspath(vault_project_dir)
+    def __init__(self, vault_project_dir: Optional[str] = None):
+        self.vault_project_dir = os.path.abspath(resolve_vault_dir(vault_project_dir))
         self.history_dir = os.path.join(self.vault_project_dir, "08 Histórico")
         self.decisions_dir = os.path.join(self.vault_project_dir, "04 Decisões")
         os.makedirs(self.history_dir, exist_ok=True)
