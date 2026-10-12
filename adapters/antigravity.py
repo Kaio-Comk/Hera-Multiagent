@@ -1,4 +1,5 @@
 import os
+from app.locations import find_agy_binary
 import shutil
 import time
 import asyncio
@@ -27,16 +28,8 @@ class AntigravityAdapter:
         return "antigravity"
 
     def _discover_binary(self) -> str:
-        found = shutil.which("agy")
-        if found:
-            return found
-        default_agy = os.path.expandvars(r"%LOCALAPPDATA%\agy\bin\agy.EXE")
-        if os.path.exists(default_agy):
-            return default_agy
-        fallback_agy = r"C:\Users\<usuario>\AppData\Local\agy\bin\agy.EXE"
-        if os.path.exists(fallback_agy):
-            return fallback_agy
-        return "agy"
+        # $HERA_AGY_PATH > PATH > %LOCALAPPDATA%\agy\bin (sem caminho de usuario fixo no codigo)
+        return find_agy_binary()
 
     async def health_check(self) -> HealthStatus:
         """Verifica se o binário do Antigravity está acessível e obtém sua versão."""

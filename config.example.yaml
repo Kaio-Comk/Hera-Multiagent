@@ -1,9 +1,16 @@
+# Copie para config.yaml (que fica fora do git) e ajuste. Se config.yaml nao existir, o Hera cria um
+# com estes valores ao iniciar.
+#
+# general.vault_dir: pasta do projeto dentro do seu vault do Obsidian. Vazio = usa $HERA_VAULT_DIR ou
+#   ~/Documents/Obsidian Vault/Orquestrador Multiagente.
+# general.allowed_repo_roots: pastas EXTRAS onde o HITL pode abrir propostas (alem da pasta do projeto).
+#   So se edita aqui, com o servidor parado: a API recusa mudar este campo.
 general:
   host: 127.0.0.1
   port: 8000
   default_offline: true
   default_engine: ollama
-  vault_dir: C:\Users\<usuario>\Documents\Obsidian Vault\Orquestrador Multiagente
+  vault_dir: ''
   db_path: data/orchestrator.db
 engines:
   ollama:
