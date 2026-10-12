@@ -34,12 +34,41 @@ class TierRouter:
         token_saver: Optional[RTKTokenSaver] = None,
         max_concurrent_requests: int = 10,
         total_timeout_seconds: float = 180.0,
+        tier_order: Optional[List[str]] = None,
     ):
         self.total_timeout_seconds = total_timeout_seconds
+        # Ordem de tentativa (config `gateway.default_tier_order`): antes era a ordem da lista de adaptadores.
+        self.tier_order = list(tier_order or ["cloud_premium", "cloud_cheap", "cloud_free", "local"])
         self.adapters = adapters
         self.privacy_manager = privacy_manager or GatewayPrivacyManager()
         self.token_saver = token_saver or RTKTokenSaver()
         self.semaphore = asyncio.Semaphore(max_concurrent_requests)
+
+    def _claimed_models(self) -> set:
+        claimed: set = set()
+        for a in self.adapters:
+            if a.served_models:
+                claimed |= set(a.served_models)
+        return claimed
+
+    def _adapters_for_model(self, adapters: List[BaseGatewayAdapter], model: Optional[str]) -> List[BaseGatewayAdapter]:
+        """`default`: todos. Modelo específico: provedores de nuvem que o declaram; o local atende o que
+        nenhuma nuvem reivindica (assim `qwen2.5-coder` vai ao Ollama e `deepseek-chat` não)."""
+        if not model or model == "default":
+            return list(adapters)
+        claimed = self._claimed_models()
+        out = []
+        for a in adapters:
+            if a.served_models:
+                if model in a.served_models:
+                    out.append(a)
+            elif model not in claimed:
+                out.append(a)
+        return out
+
+    def _order_by_tier(self, adapters: List[BaseGatewayAdapter]) -> List[BaseGatewayAdapter]:
+        rank = {t: i for i, t in enumerate(self.tier_order)}
+        return sorted(adapters, key=lambda a: rank.get(a.tier, len(rank)))
 
     def _apply_token_saving_if_applicable(self, request: ChatCompletionRequest):
         """Aplica o RTK Token Saver exclusivamente a saídas de ferramentas (role='tool')."""
@@ -98,6 +127,13 @@ class TierRouter:
                     retryable=False
                 )
             raise GatewayProviderError("Nenhum provedor disponível para atender a requisição.", status_code=503)
+
+        # 2b. Só os provedores que atendem o MODELO pedido (a privacidade já foi aplicada acima),
+        #     na ordem de camadas configurada.
+        eligible_adapters = self._order_by_tier(self._adapters_for_model(eligible_adapters, request.model))
+        if not eligible_adapters:
+            raise GatewayProviderError(
+                f"Nenhum provedor habilitado atende o modelo '{request.model}'.", status_code=404, retryable=False)
 
         # 3. Execução com controle de semáforo e fallback seguro
         last_error: Optional[Exception] = None

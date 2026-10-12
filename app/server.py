@@ -41,6 +41,7 @@ from app.gateway.privacy import GatewayPrivacyManager
 from app.gateway.providers import OllamaGatewayAdapter, GatewayProviderError
 from app.gateway.provider_policy import SSRFSecurityError, validate_provider_url
 from app.gateway.safe_transport import make_safe_async_client
+from app.gateway.factory import build_gateway_adapters
 from app.gateway.tier_router import TierRouter
 
 from app.hitl.schemas import (
@@ -126,16 +127,15 @@ vault_writer = ObsidianVaultWriter(vault_project_dir=vault_dir)
 memory_manager = ObsidianMemoryManager(vault_project_dir=vault_dir)
 
 # Inicializar Gateway Roteador em camadas
-ollama_gw_adapter = OllamaGatewayAdapter(
-    base_url=cfg["engines"]["ollama"].get("base_url", "http://localhost:11434"),
-    default_model=cfg["engines"]["ollama"].get("default_model", "qwen2.5-coder:1.5b")
-)
+gateway_adapters = build_gateway_adapters(cfg)     # Ollama + provedores de nuvem ligados (chaves via env)
+ollama_gw_adapter = gateway_adapters[0]
 gateway_privacy_mgr = GatewayPrivacyManager(default_offline=cfg["general"].get("default_offline", False))
 gateway_tier_router = TierRouter(
-    adapters=[ollama_gw_adapter],
+    adapters=gateway_adapters,
     privacy_manager=gateway_privacy_mgr,
     max_concurrent_requests=cfg.get("gateway", {}).get("max_concurrent_requests", 10),
     total_timeout_seconds=float(cfg.get("gateway", {}).get("total_timeout_seconds", 180.0)),
+    tier_order=cfg.get("gateway", {}).get("default_tier_order"),
 )
 
 # Inicializar Serviço HITL (Human-in-the-Loop)
@@ -606,7 +606,25 @@ async def list_gateway_models():
                     "created": 1700000000,
                     "owned_by": f"hera-{eng_name}"
                 })
+    for ad in gateway_tier_router.adapters:                    # modelos dos provedores de nuvem ligados
+        for m in sorted(ad.served_models or []):
+            if m not in [x["id"] for x in models_list]:
+                models_list.append({"id": m, "object": "model", "created": 1700000000, "owned_by": f"hera-{ad.name}"})
     return {"object": "list", "data": models_list}
+
+
+@app.get("/api/gateway/providers")
+async def list_gateway_providers():
+    """Estado dos provedores do gateway SEM segredos: camada, modelos e situação de cada chave."""
+    out = []
+    for ad in gateway_tier_router.adapters:
+        km = getattr(ad, "key_manager", None)
+        out.append({
+            "name": ad.name, "tier": ad.tier, "local": ad.is_local,
+            "models": sorted(ad.served_models or []),
+            "keys": km.status() if km else [],
+        })
+    return {"tier_order": gateway_tier_router.tier_order, "providers": out}
 
 @app.post("/v1/chat/completions")
 async def chat_completions(req: ChatCompletionRequest):

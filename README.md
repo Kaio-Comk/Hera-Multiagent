@@ -202,6 +202,31 @@ short **approval code that only a human at the machine can see**:
 > Note: the gateway's "streaming" currently runs the full completion and then slices it into SSE events; it is
 > not token-by-token streaming from the provider yet.
 
+### ☁️ Cloud providers (optional)
+
+The gateway always has local Ollama; you can add OpenAI-compatible cloud providers in `config.yaml`
+(see `config.example.yaml`):
+
+```yaml
+providers:
+  deepseek:
+    enabled: true
+    tier: cloud_cheap
+    base_url: https://api.deepseek.com/v1
+    api_key_env: DEEPSEEK_API_KEY      # the KEY lives in this environment variable, never in the file
+    default_model: deepseek-chat
+```
+
+- **Privacy first:** offline mode or a prompt with secrets never reaches the cloud (fail-closed to local).
+- **Tier order** (`gateway.default_tier_order`): cloud premium, cheap, free, then local. A rate-limited or failing
+  provider falls back to the next one.
+- **Model routing:** `model: "deepseek-chat"` goes only to the provider that serves it; local models stay on Ollama;
+  `default` tries every eligible provider.
+- **Keys:** several keys you are authorised to use may be comma-separated in the variable. A key that gets HTTP 429 rests
+  for the provider's `Retry-After` (it is *not* rotated around limits); a rejected key (401/403) is disabled; optional
+  `daily_request_limit` per key. Secrets are never logged or returned.
+- `GET /api/gateway/providers` shows tiers, models and key states (no secrets); `GET /v1/models` lists the enabled models.
+
 ## 🚀 Quickstart
 
 ### 1. Clone & Setup
