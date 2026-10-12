@@ -1,5 +1,6 @@
 import os
 import sys
+import logging
 import json
 import time
 import uuid
@@ -12,10 +13,12 @@ from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, StringConstraints
+from typing_extensions import Annotated
 
 from app.config_manager import ConfigManager
 from app.security import LocalSecurityMiddleware, SecuritySettings
+from app.security.paths import PathNotAllowedError, ensure_inside, ensure_safe_relative_list
 from models.task import AgentTask, TaskStatus, AgentResult
 from models.agent import HealthStatus
 from app.state_store import StateStore
@@ -34,6 +37,7 @@ from adapters.antigravity import AntigravityAdapter
 from app.gateway.schemas import ChatCompletionRequest, ChatCompletionResponse
 from app.gateway.privacy import GatewayPrivacyManager
 from app.gateway.providers import OllamaGatewayAdapter, GatewayProviderError
+from app.gateway.provider_policy import SSRFSecurityError, validate_provider_url
 from app.gateway.tier_router import TierRouter
 
 from app.hitl.schemas import (
@@ -197,15 +201,20 @@ autofix = AutoFixEngine(
 )
 
 # Schemas Pydantic
+# Limites de entrada (fase 3): a API nao aceita corpo ilimitado nem comando gigante.
+ShortStr = Annotated[str, StringConstraints(max_length=300)]
+CriterionStr = Annotated[str, StringConstraints(max_length=500)]
+
+
 class TaskRunRequest(BaseModel):
-    title: str = ""
-    instruction: str
-    task_type: str = "coding"
-    assigned_agent: Optional[str] = None
-    assigned_model: Optional[str] = None
-    acceptance_criteria: List[str] = []
-    validation_commands: List[str] = []
-    max_retries: int = 2
+    title: str = Field("", max_length=200)
+    instruction: str = Field(max_length=20000)
+    task_type: str = Field("coding", max_length=50)
+    assigned_agent: Optional[str] = Field(None, max_length=50)
+    assigned_model: Optional[str] = Field(None, max_length=200)
+    acceptance_criteria: List[CriterionStr] = Field(default_factory=list, max_length=50)
+    validation_commands: List[ShortStr] = Field(default_factory=list, max_length=10)
+    max_retries: int = Field(2, ge=0, le=5)
     save_to_obsidian: bool = True
 
 class ModelPullRequest(BaseModel):
@@ -244,10 +253,74 @@ async def get_config():
     """Retorna a configuração atual de config.yaml."""
     return config_mgr.load_config()
 
+ALLOWED_GENERAL_KEYS = {"host", "port", "default_offline", "default_engine", "vault_dir", "db_path",
+                        "allowed_repo_roots"}
+# Ajustes de INICIALIZACAO: a API nao pode muda-los (so editando o config.yaml com o servidor parado).
+FROZEN_GENERAL_KEYS = ("host", "port", "vault_dir", "db_path", "allowed_repo_roots")
+ALLOWED_ENGINES = {"ollama", "nine_router", "9router", "claude_code", "antigravity"}
+ALLOWED_ENGINE_FIELDS = {"enabled", "base_url", "default_model", "timeout"}
+LOCAL_ONLY_URL_ENGINES = {"ollama", "nine_router", "9router"}
+
+
+def _validate_config_update(req: "ConfigUpdateRequest") -> None:
+    """Fase 3: a configuracao enviada pela API e validada (chaves conhecidas, URLs locais,
+    ajustes de inicializacao imutaveis). Levanta HTTPException 400."""
+    def bad(msg: str):
+        raise HTTPException(status_code=400, detail={"error": "invalid_config", "message": msg})
+
+    current = config_mgr.load_config()
+    unknown = set(req.general) - ALLOWED_GENERAL_KEYS
+    if unknown:
+        bad(f"Chaves desconhecidas em 'general': {sorted(unknown)}")
+    for key in FROZEN_GENERAL_KEYS:
+        if key in req.general and req.general[key] != current["general"].get(key):
+            bad(f"'general.{key}' so pode ser alterado editando o config.yaml com o servidor parado")
+    if not isinstance(req.general.get("default_offline", False), bool):
+        bad("'general.default_offline' precisa ser booleano")
+    if req.general.get("default_engine") not in (None, *ALLOWED_ENGINES):
+        bad("'general.default_engine' desconhecido")
+
+    for name, eng in req.engines.items():
+        if name not in ALLOWED_ENGINES:
+            bad(f"Motor desconhecido: {name!r}")
+        if not isinstance(eng, dict):
+            bad(f"Configuracao do motor {name!r} precisa ser um objeto")
+        extra = set(eng) - ALLOWED_ENGINE_FIELDS
+        if extra:
+            bad(f"Campos desconhecidos em engines.{name}: {sorted(extra)}")
+        if "enabled" in eng and not isinstance(eng["enabled"], bool):
+            bad(f"engines.{name}.enabled precisa ser booleano")
+        model = eng.get("default_model")
+        if model is not None and (not isinstance(model, str) or len(model) > 200
+                                  or any(ord(c) < 32 for c in model)):
+            bad(f"engines.{name}.default_model invalido")
+        timeout = eng.get("timeout")
+        if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+                                    or not 1 <= timeout <= 3600):
+            bad(f"engines.{name}.timeout precisa estar entre 1 e 3600")
+        url = eng.get("base_url")
+        if url is not None:
+            if name not in LOCAL_ONLY_URL_ENGINES:
+                bad(f"engines.{name} nao usa base_url")
+            try:
+                validate_provider_url(url, is_local_profile=True)       # so loopback + portas locais
+            except (SSRFSecurityError, ValueError) as exc:
+                bad(f"engines.{name}.base_url rejeitada: {exc}")
+
+
 @app.post("/api/config")
 async def update_config(req: ConfigUpdateRequest):
     """Salva novas configurações no disco e atualiza em tempo de execução."""
-    new_cfg = {"general": req.general, "engines": req.engines}
+    _validate_config_update(req)
+    current = config_mgr.load_config()
+    # Mescla com o que ja existe: antes so `general` e `engines` eram regravados e `feature_flags`
+    # e `gateway` sumiam do config.yaml a cada clique (ex.: alternar o modo offline).
+    new_cfg = {**current, "general": {**current["general"], **req.general},
+               "engines": {**current["engines"], **req.engines}}
+    if current["general"].get("default_offline") and not new_cfg["general"].get("default_offline"):
+        logging.getLogger("hera.audit").warning("Modo offline DESATIVADO via API (DLP volta a permitir nuvem).")
+        broadcast_log("🔓 [AUDITORIA] Modo offline foi DESATIVADO: o roteador pode voltar a usar a nuvem.",
+                      level="warning")
     config_mgr.save_config(new_cfg)
     
     # Atualizar modo offline no roteador
@@ -367,6 +440,14 @@ async def list_tasks(limit: int = 20):
 @app.post("/api/tasks/run")
 async def run_task(req: TaskRunRequest, background_tasks: BackgroundTasks):
     """Executa uma tarefa assíncrona com auto-validação e streaming de logs."""
+    # Politica ANTES de enfileirar (fase 3): comando fora da allowlist e recusado com 400 aqui,
+    # em vez de so falhar la na frente, dentro da tarefa. O validador reaplica a mesma regra.
+    for cmd in req.validation_commands:
+        allowed, reason = validator.policy_engine.evaluate_command(cmd, workspace=str(ROOT_DIR))
+        if not allowed:
+            raise HTTPException(status_code=400, detail={
+                "error": "validation_command_blocked", "command": cmd, "reason": reason})
+
     task_id = f"task-{uuid.uuid4().hex[:8]}"
     title = req.title.strip() or req.instruction[:40]
 
@@ -533,9 +614,23 @@ class CreateProposalPayload(BaseModel):
     worktree_path: Optional[str] = None
     allowed_paths: Optional[List[str]] = None
 
+def _allowed_repo_roots() -> List[Path]:
+    """Projeto + raizes extras do config.yaml (`general.allowed_repo_roots`, nao editavel pela API)."""
+    extra = config_mgr.load_config().get("general", {}).get("allowed_repo_roots") or []
+    return [ROOT_DIR, *[Path(r) for r in extra if isinstance(r, str) and r.strip()]]
+
+
 @app.post("/api/hitl/proposals")
 async def create_hitl_proposal(payload: CreateProposalPayload):
-    repo = payload.repo_path or str(ROOT_DIR)
+    roots = _allowed_repo_roots()
+    try:
+        repo = str(ensure_inside(payload.repo_path or str(ROOT_DIR), roots))
+        if payload.worktree_path:
+            payload.worktree_path = str(ensure_inside(payload.worktree_path, roots))
+        if payload.allowed_paths:
+            ensure_safe_relative_list(payload.allowed_paths)
+    except PathNotAllowedError as exc:
+        raise HTTPException(status_code=400, detail={"error": "path_not_allowed", "message": str(exc)})
     try:
         prop = hitl_service.create_proposal(
             task_id=payload.task_id,

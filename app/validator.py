@@ -62,7 +62,7 @@ class TaskValidator:
     async def _run_command(self, cmd: str, cwd: Optional[str] = None) -> Tuple[int, str, str]:
         """Executa um comando via create_subprocess_exec (sem shell) e ambiente estrito."""
         # 1. Validação prévia de política
-        is_allowed, reason = self.policy_engine.evaluate_command(cmd)
+        is_allowed, reason = self.policy_engine.evaluate_command(cmd, workspace=cwd or os.getcwd())
         if not is_allowed:
             return (-403, "", f"Violação de política de segurança: {reason}")
 
