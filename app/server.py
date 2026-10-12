@@ -8,7 +8,7 @@ import asyncio
 import psutil
 import subprocess
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Literal, Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
@@ -63,6 +63,8 @@ from app.mcp.schemas import (
     McpToolCallResult,
 )
 from app.mcp.catalog import McpCatalog, McpSecurityError, McpPermissionDeniedError
+from app.mcp.launch import McpLaunchError, validate_stdio_server
+from app.mcp.transport import McpTransportError
 from app.mcp.client import McpClientManager
 
 from app.arena.schemas import (
@@ -82,6 +84,7 @@ async def lifespan(app: FastAPI):
     global gateway_http_client
     gateway_http_client = make_safe_async_client(timeout=60.0)   # valida o destino na conexão (anti-rebinding)
     yield
+    await mcp_client.close_all()                              # encerra os servidores MCP lançados
     if gateway_http_client:
         await gateway_http_client.aclose()
 
@@ -194,7 +197,8 @@ mcp_catalog = McpCatalog(allowed_commands=cfg.get("mcp", {}).get("allowed_comman
 mcp_client = McpClientManager(
     catalog=mcp_catalog,
     privacy_manager=gateway_privacy_mgr,
-    enabled=cfg.get("feature_flags", {}).get("enable_mcp", True)
+    enabled=cfg.get("feature_flags", {}).get("enable_mcp", True),
+    roots_provider=lambda: _allowed_repo_roots(),          # scripts de servidores MCP só dentro destas raízes
 )
 
 # Inicializar Multi-Model Arena Runner
@@ -765,14 +769,62 @@ async def list_hitl_worktrees():
 
 # ==================== ENDPOINTS MCP (MODEL CONTEXT PROTOCOL) ====================
 
+class McpServerRegistration(McpServerConfig):
+    """Registro de servidor MCP. Servidor stdio é CÓDIGO que roda na máquina: exige o código humano."""
+    human_code: Optional[str] = None
+
+
+class HumanCodeBody(BaseModel):
+    human_code: Optional[str] = None
+
+
+class McpToolPolicyBody(BaseModel):
+    name: str
+    enabled: bool
+    effect: Optional[Literal["read", "write", "network", "destructive"]] = None
+    requires_hitl: Optional[bool] = None
+    human_code: Optional[str] = None
+
+
 @app.get("/api/mcp/servers")
 async def list_mcp_servers():
-    return mcp_client.catalog.list_servers()
+    """Lista os servidores SEM os valores das variáveis de ambiente (podem conter segredos)."""
+    return [{**s.model_dump(), "env": {k: "***" for k in s.env}} for s in mcp_client.catalog.list_servers()]
 
 @app.post("/api/mcp/servers")
-async def register_mcp_server(cfg: McpServerConfig):
+async def register_mcp_server(body: McpServerRegistration):
+    cfg = McpServerConfig(**body.model_dump(exclude={"human_code"}))
+    if cfg.transport == "stdio":
+        _require_human_code(body.human_code, f"Registro do servidor MCP '{cfg.id}' (executa código local)")
+        try:
+            validate_stdio_server(cfg, _allowed_repo_roots())
+        except McpLaunchError as e:
+            raise HTTPException(status_code=400, detail=str(e))
     try:
-        return mcp_client.catalog.register_server(cfg)
+        saved = mcp_client.catalog.register_server(cfg)
+    except McpSecurityError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {**saved.model_dump(), "env": {k: "***" for k in saved.env}}
+
+@app.post("/api/mcp/servers/{server_id}/discover")
+async def discover_mcp_tools(server_id: str, body: HumanCodeBody):
+    """Lança o servidor (código!) e registra suas ferramentas DESLIGADAS: exige o código humano."""
+    _require_human_code(body.human_code, f"Descoberta de ferramentas do servidor MCP '{server_id}'")
+    try:
+        tools = await mcp_client.discover(server_id)
+    except McpSecurityError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except McpTransportError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return [t.model_dump() for t in tools]
+
+@app.post("/api/mcp/tools/policy")
+async def set_mcp_tool_policy(body: McpToolPolicyBody):
+    """Decisão humana sobre uma ferramenta descoberta: liberar/bloquear, efeito e confirmação."""
+    _require_human_code(body.human_code, f"Mudança de política da ferramenta MCP '{body.name}'")
+    try:
+        return mcp_client.catalog.set_tool_policy(body.name, enabled=body.enabled, effect=body.effect,
+                                                  requires_hitl=body.requires_hitl)
     except McpSecurityError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
