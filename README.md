@@ -86,6 +86,11 @@ The **Roteador** tab configures cloud providers (Groq, OpenRouter, DeepSeek, Gem
 - **Addressing:** use a combo name, `provider/model` (e.g. `groq/llama-3.3-70b-versatile`) or `default` as the model in any OpenAI-compatible tool pointed at `http://127.0.0.1:8000/v1` (the card "Conectar suas ferramentas" shows the URL and key).
 - **Usage:** calls, errors, tokens and latency per provider/model/day (metadata only, never the conversation).
 - **Discovery:** "Buscar modelos" asks the provider for its model list; any HTTPS OpenAI-compatible API can be added as a custom provider.
+- **Combo strategies:** priority, round-robin, fastest (lowest recent latency), least used today, or weighted; every strategy still falls back to the next step on failure. **Aliases** (`codigo` → `deepseek/deepseek-chat`) let you change the target without touching your tools.
+- **Resilience:** per-provider circuit breaker (pauses after N consecutive failures, doubling up to 10 min, with a "retry now" button), requests/minute, requests/day and tokens/day limits, and priority inside a tier. Tier order is editable.
+- **Access keys for external tools:** one key per tool (Cursor, Cline, scripts...). A key only opens `/v1`, can be limited to models (`groq/*`), requests per minute and tokens per day, and is shown once (only a salted hash is stored). Creating/re-enabling needs the approval code.
+- **Dashboard:** usage, success rate, p50/p95 latency, estimated cost (prices *you* enter, local/free = 0), per provider/model/client/day, provider health, and a live call log (metadata only; fallback attempts grouped).
+- **More:** 25 ready-made providers, RTK token saver toggle with savings counter, export/import of the router config (never includes keys; imported providers arrive disabled).
 - The privacy gate applies to every step: secrets or Offline mode skip cloud steps, so end combos with an `ollama` step as a local plan B.
 
 ## 🧭 Engines on/off & multi-agent plan

@@ -9,9 +9,9 @@ import asyncio
 import psutil
 import subprocess
 from pathlib import Path
-from typing import Dict, Any, List, Literal, Optional
+from typing import Dict, Any, List, Literal, Optional, Union
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks, Request
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, StringConstraints
@@ -51,7 +51,8 @@ from app.gateway.providers import OllamaGatewayAdapter, GatewayProviderError
 from app.gateway.provider_policy import SSRFSecurityError, validate_provider_url
 from app.gateway.safe_transport import make_safe_async_client
 from app.gateway.factory import build_gateway_adapters
-from app.gateway.tier_router import TierRouter
+from app.gateway.tier_router import TierRouter, CLIENT_NAME, REQUEST_ID, STRATEGIES
+from app.gateway.client_keys import ClientKeyStore
 
 from app.hitl.schemas import (
     ApprovalRequest,
@@ -106,7 +107,8 @@ app = FastAPI(title="Hera Multiagent API", version="1.0.0", lifespan=lifespan)
 DATA_DIR = data_dir()
 SECURITY = SecuritySettings.from_env(DATA_DIR / ".hera_token")
 app.state.security = SECURITY
-app.add_middleware(LocalSecurityMiddleware, settings=SECURITY)
+CLIENT_KEYS = ClientKeyStore(DATA_DIR / ".hera_client_keys.json")        # chaves de acesso de ferramentas externas (so /v1)
+app.add_middleware(LocalSecurityMiddleware, settings=SECURITY, client_keys=CLIENT_KEYS)
 
 config_mgr = ConfigManager()
 cfg = config_mgr.load_config()
@@ -150,17 +152,23 @@ gateway_tier_router = TierRouter(
 
 
 
-async def _gateway_call(req: ChatCompletionRequest, only_provider: Optional[str] = None) -> ChatCompletionResponse:
+RUNTIME_FLAGS = {"rtk": bool(cfg.get("feature_flags", {}).get("enable_rtk", False))}
+
+
+async def _gateway_call(req: ChatCompletionRequest, only_provider: Optional[str] = None,
+                        label: str = "hera (motor interno)") -> ChatCompletionResponse:
     """Chamada em memoria ao gateway (usada pelo motor `hera_router` e pelo teste de provedor)."""
     client = gateway_http_client
     owns = client is None or client.is_closed
     if owns:
         client = make_safe_async_client(timeout=60.0)
+    t1, t2 = CLIENT_NAME.set(label), REQUEST_ID.set(f"req-{uuid.uuid4().hex[:10]}")
     try:
         return await gateway_tier_router._route_and_execute(
-            req, client, force_offline=router.default_offline,
-            enable_rtk=cfg.get("feature_flags", {}).get("enable_rtk", True), only_provider=only_provider)
+            req, client, force_offline=router.default_offline, enable_rtk=RUNTIME_FLAGS["rtk"], only_provider=only_provider)
     finally:
+        CLIENT_NAME.reset(t1)
+        REQUEST_ID.reset(t2)
         if owns:
             await client.aclose()
 
@@ -1000,8 +1008,8 @@ async def serve_index():
 
 # Endpoints OpenAI-Compatible Gateway (/v1)
 @app.get("/v1/models")
-async def list_gateway_models():
-    """Retorna lista de modelos disponíveis conforme especificação OpenAI."""
+async def list_gateway_models(request: Request):
+    """Retorna lista de modelos disponíveis conforme especificação OpenAI (filtrada pela chave de cliente, se for o caso)."""
     models_list = []
     default_ollama = cfg["engines"]["ollama"].get("default_model", "qwen2.5-coder:1.5b")
     models_list.append({
@@ -1030,6 +1038,12 @@ async def list_gateway_models():
     for combo in gateway_tier_router.combos:                   # combos do Roteador embutido
         if combo not in [x["id"] for x in models_list]:
             models_list.append({"id": combo, "object": "model", "created": 1700000000, "owned_by": "hera-combo"})
+    for alias in gateway_tier_router.aliases:                  # apelidos
+        if alias not in [x["id"] for x in models_list]:
+            models_list.append({"id": alias, "object": "model", "created": 1700000000, "owned_by": "hera-alias"})
+    ck = getattr(request.state, "client_key", None)
+    if ck is not None:
+        models_list = [m for m in models_list if ck.allows(m["id"])]
     return {"object": "list", "data": models_list}
 
 
@@ -1068,16 +1082,29 @@ def _bad_router(msg: str, status: int = 400):
     raise HTTPException(status_code=status, detail={"error": "invalid_router_config", "message": msg})
 
 
-def _combos_from_cfg(config: Dict[str, Any]) -> Dict[str, List[Dict[str, str]]]:
-    out: Dict[str, List[Dict[str, str]]] = {}
-    for name, steps in ((config.get("gateway") or {}).get("combos") or {}).items():
-        if not isinstance(steps, list):
+def _combo_defs_from_cfg(config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """`gateway.combos` -> {nome: {"strategy": ..., "steps": [...]}}. Aceita o formato antigo (so a lista de passos)."""
+    out: Dict[str, Dict[str, Any]] = {}
+    for name, value in ((config.get("gateway") or {}).get("combos") or {}).items():
+        strategy, raw_steps = "priority", value
+        if isinstance(value, dict):
+            strategy, raw_steps = str(value.get("strategy") or "priority"), value.get("steps")
+        if strategy not in STRATEGIES or not isinstance(raw_steps, list):
             continue
-        clean = [{"provider": str(s.get("provider")), "model": str(s.get("model"))}
-                 for s in steps if isinstance(s, dict) and s.get("provider") and s.get("model")]
-        if clean:
-            out[str(name)] = clean
+        steps = []
+        for st in raw_steps:
+            if isinstance(st, dict) and st.get("provider") and st.get("model"):
+                item: Dict[str, Any] = {"provider": str(st["provider"]), "model": str(st["model"])}
+                if st.get("weight"):
+                    item["weight"] = int(st["weight"])
+                steps.append(item)
+        if steps:
+            out[str(name)] = {"strategy": strategy, "steps": steps}
     return out
+
+
+def _combos_from_cfg(config: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
+    return {name: d["steps"] for name, d in _combo_defs_from_cfg(config).items()}
 
 
 SECRET_STORE = SecretStore(DATA_DIR / ".hera_provider_keys.json")
@@ -1089,7 +1116,21 @@ def reload_gateway() -> None:
     """Reconstroi os provedores do gateway a partir do config.yaml + variaveis de ambiente + cofre (sem reiniciar)."""
     fresh = config_mgr.load_config()
     gateway_tier_router.adapters = build_gateway_adapters(fresh, secrets=SECRET_STORE)
-    gateway_tier_router.combos = _combos_from_cfg(fresh)
+    defs = _combo_defs_from_cfg(fresh)
+    gateway_tier_router.combos = {n: d["steps"] for n, d in defs.items()}
+    gateway_tier_router.combo_strategies = {n: d["strategy"] for n, d in defs.items()}
+    gw = fresh.get("gateway") or {}
+    gateway_tier_router.aliases = {str(k): str(v) for k, v in (gw.get("aliases") or {}).items()}
+    gateway_tier_router.pricing = {str(k): {"in": float(v.get("in", 0)), "out": float(v.get("out", 0))}
+                                   for k, v in (gw.get("pricing") or {}).items() if isinstance(v, dict)}
+    gateway_tier_router.tier_order = list(gw.get("default_tier_order") or gateway_tier_router.tier_order)
+    gateway_tier_router.guard.threshold = max(1, int(gw.get("breaker_threshold") or 3))
+    providers_cfg = fresh.get("providers") or {}
+    gateway_tier_router.priorities = {n: int(p["priority"]) for n, p in providers_cfg.items()
+                                      if isinstance(p, dict) and p.get("priority")}
+    gateway_tier_router.guard.set_limits({n: {"rpm": p.get("rpm"), "daily_requests": p.get("daily_requests"),
+                                              "daily_tokens": p.get("daily_tokens")}
+                                          for n, p in providers_cfg.items() if isinstance(p, dict)})
 
 
 reload_gateway()
@@ -1138,10 +1179,59 @@ class RouterEnabledBody(BaseModel):
 class RouterStep(BaseModel):
     provider: Annotated[str, StringConstraints(max_length=40)]
     model: Annotated[str, StringConstraints(max_length=200)]
+    weight: Optional[int] = Field(default=None, ge=1, le=100)
+
+
+class RouterCombo(BaseModel):
+    strategy: Literal["priority", "round_robin", "fastest", "least_used", "weighted"] = "priority"
+    steps: List[RouterStep]
 
 
 class RouterCombosBody(BaseModel):
-    combos: Dict[Annotated[str, StringConstraints(max_length=40)], List[RouterStep]] = Field(max_length=20)
+    combos: Dict[Annotated[str, StringConstraints(max_length=40)], Union[RouterCombo, List[RouterStep]]] = Field(max_length=20)
+
+
+class RouterLimitsBody(BaseModel):
+    priority: Optional[int] = Field(default=None, ge=0, le=1000)
+    rpm: Optional[int] = Field(default=None, ge=0, le=100_000)
+    daily_requests: Optional[int] = Field(default=None, ge=0, le=100_000_000)
+    daily_tokens: Optional[int] = Field(default=None, ge=0, le=10_000_000_000)
+
+
+class PriceBody(BaseModel):
+    in_: float = Field(default=0.0, alias="in", ge=0, le=10_000)
+    out: float = Field(default=0.0, ge=0, le=10_000)
+    model_config = {"populate_by_name": True}
+
+
+class RouterSettingsBody(BaseModel):
+    tier_order: Optional[List[Literal["cloud_premium", "cloud_cheap", "cloud_free", "local"]]] = Field(default=None, max_length=4)
+    rtk: Optional[bool] = None
+    aliases: Optional[Dict[Annotated[str, StringConstraints(max_length=60)], Annotated[str, StringConstraints(max_length=200)]]] = Field(default=None, max_length=50)
+    pricing: Optional[Dict[Annotated[str, StringConstraints(max_length=240)], PriceBody]] = Field(default=None, max_length=200)
+    breaker_threshold: Optional[int] = Field(default=None, ge=1, le=20)
+
+
+class ClientCreateBody(BaseModel):
+    name: Annotated[str, StringConstraints(min_length=2, max_length=60)]
+    models: List[Annotated[str, StringConstraints(max_length=120)]] = Field(default_factory=list, max_length=20)
+    rpm: Optional[int] = Field(default=None, ge=1, le=100_000)
+    daily_tokens: Optional[int] = Field(default=None, ge=1, le=10_000_000_000)
+    human_code: Optional[str] = None
+
+
+class ClientPatchBody(BaseModel):
+    name: Optional[Annotated[str, StringConstraints(min_length=2, max_length=60)]] = None
+    enabled: Optional[bool] = None
+    models: Optional[List[Annotated[str, StringConstraints(max_length=120)]]] = Field(default=None, max_length=20)
+    rpm: Optional[int] = Field(default=None, ge=0, le=100_000)
+    daily_tokens: Optional[int] = Field(default=None, ge=0, le=10_000_000_000)
+    human_code: Optional[str] = None
+
+
+class RouterImportBody(BaseModel):
+    data: Dict[str, Any]
+    human_code: Optional[str] = None
 
 
 class RouterTestBody(BaseModel):
@@ -1157,7 +1247,10 @@ def _provider_view(name: str, p: Dict[str, Any]) -> Dict[str, Any]:
             "models": list(p.get("models") or []), "key_env": p.get("api_key_env", ""),
             "keys_env": _env_keys_found(p.get("api_key_env", "")), "keys_stored": SECRET_STORE.count(name),
             "keys_found": _env_keys_found(p.get("api_key_env", "")) + SECRET_STORE.count(name), "active": live is not None,
-            "keys": km.status() if km else [], "daily_request_limit": p.get("daily_request_limit")}
+            "keys": km.status() if km else [], "daily_request_limit": p.get("daily_request_limit"),
+            "priority": p.get("priority") or 100, "rpm": p.get("rpm"), "daily_requests": p.get("daily_requests"),
+            "daily_tokens": p.get("daily_tokens"), "health": gateway_tier_router.guard.status(name),
+            "today": USAGE.today(provider=name)}
 
 
 @app.get("/api/router/state")
@@ -1171,9 +1264,12 @@ async def router_state():
             ollama_models = (await adapters["ollama"].health_check()).available_models
     except Exception:       # noqa: BLE001
         pass
-    return {"presets": PROVIDER_PRESETS, "providers": providers, "combos": _combos_from_cfg(current),
+    gw = current.get("gateway") or {}
+    return {"presets": PROVIDER_PRESETS, "providers": providers, "combos": _combo_defs_from_cfg(current),
             "tier_order": gateway_tier_router.tier_order, "offline": router.default_offline,
-            "ollama_models": ollama_models}
+            "ollama_models": ollama_models, "strategies": list(STRATEGIES), "aliases": gw.get("aliases") or {},
+            "pricing": gw.get("pricing") or {}, "breaker_threshold": gateway_tier_router.guard.threshold,
+            "rtk": {"enabled": RUNTIME_FLAGS["rtk"], **gateway_tier_router.rtk_stats}}
 
 
 @app.post("/api/router/providers")
@@ -1317,10 +1413,11 @@ async def router_set_combos(body: RouterCombosBody):
     """Substitui os combos. Um combo so reordena provedores ja configurados: nao precisa de codigo."""
     current = config_mgr.load_config()
     known = set((current.get("providers") or {})) | {"ollama"}
-    clean: Dict[str, List[Dict[str, str]]] = {}
-    for cname, steps in body.combos.items():
+    clean: Dict[str, Dict[str, Any]] = {}
+    for cname, value in body.combos.items():
         if not _COMBO_NAME.match(cname) or cname in _RESERVED_NAMES or cname in known:
             _bad_router(f"Nome de combo invalido: {cname!r}")
+        strategy, steps = (value.strategy, value.steps) if isinstance(value, RouterCombo) else ("priority", value)
         if not 1 <= len(steps) <= 8:
             _bad_router(f"O combo {cname!r} precisa ter de 1 a 8 passos.")
         out = []
@@ -1329,12 +1426,236 @@ async def router_set_combos(body: RouterCombosBody):
                 _bad_router(f"O combo {cname!r} usa um provedor que nao existe: {step.provider!r}")
             if not _MODEL_OK.match(step.model):
                 _bad_router(f"Modelo invalido no combo {cname!r}.")
-            out.append({"provider": step.provider, "model": step.model})
-        clean[cname] = out
+            item: Dict[str, Any] = {"provider": step.provider, "model": step.model}
+            if step.weight:
+                item["weight"] = step.weight
+            out.append(item)
+        clean[cname] = {"strategy": strategy, "steps": out}
     gateway_cfg = {**(current.get("gateway") or {}), "combos": clean}
     config_mgr.save_config({**current, "gateway": gateway_cfg})
     reload_gateway()
     return {"status": "ok", "combos": clean}
+
+
+@app.post("/api/router/providers/{name}/limits")
+async def router_set_limits(name: str, body: RouterLimitsBody):
+    """Prioridade dentro da camada e limites do provedor (por minuto / requisicoes por dia / tokens por dia). 0 limpa."""
+    current = config_mgr.load_config()
+    providers = dict(current.get("providers") or {})
+    if name not in providers:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": "Provedor desconhecido."})
+    entry = dict(providers[name])
+    for field in body.model_fields_set:
+        value = getattr(body, field)
+        if value:
+            entry[field] = value
+        else:
+            entry.pop(field, None)
+    providers[name] = entry
+    config_mgr.save_config({**current, "providers": providers})
+    reload_gateway()
+    return {"status": "ok", "provider": _provider_view(name, entry)}
+
+
+@app.post("/api/router/providers/{name}/reset")
+async def router_reset_breaker(name: str):
+    """Tira o provedor da pausa do disjuntor (volta a ser tentado na hora)."""
+    gateway_tier_router.guard.reset(name)
+    return {"status": "ok", "health": gateway_tier_router.guard.status(name)}
+
+
+@app.put("/api/router/settings")
+async def router_set_settings(body: RouterSettingsBody):
+    """Ordem das camadas, RTK, apelidos de modelo, precos (US$ por 1M tokens) e sensibilidade do disjuntor."""
+    current = config_mgr.load_config()
+    gw = dict(current.get("gateway") or {})
+    flags = dict(current.get("feature_flags") or {})
+    if body.tier_order is not None:
+        if len(set(body.tier_order)) != len(body.tier_order) or "local" not in body.tier_order:
+            _bad_router("A ordem das camadas nao pode repetir e precisa incluir 'local'.")
+        gw["default_tier_order"] = list(body.tier_order)
+    if body.aliases is not None:
+        known = set((current.get("providers") or {})) | set(_combo_defs_from_cfg(current))
+        clean_aliases = {}
+        for alias, target in body.aliases.items():
+            if not re.match(r"^[A-Za-z0-9][A-Za-z0-9._\-]{0,59}$", alias) or alias in _RESERVED_NAMES or alias in known or alias == target:
+                _bad_router(f"Apelido invalido: {alias!r}")
+            if not _MODEL_OK.match(target):
+                _bad_router(f"Destino invalido para o apelido {alias!r}")
+            clean_aliases[alias] = target
+        gw["aliases"] = clean_aliases
+    if body.pricing is not None:
+        clean_prices = {}
+        for key, price in body.pricing.items():
+            if not re.match(r"^[a-z][a-z0-9_-]{1,31}(/[^\x00-\x1f\x7f]{1,200})?$", key):
+                _bad_router(f"Chave de preco invalida: {key!r} (use 'provedor' ou 'provedor/modelo')")
+            clean_prices[key] = {"in": price.in_, "out": price.out}
+        gw["pricing"] = clean_prices
+    if body.breaker_threshold is not None:
+        gw["breaker_threshold"] = body.breaker_threshold
+    if body.rtk is not None:
+        flags["enable_rtk"] = body.rtk
+        RUNTIME_FLAGS["rtk"] = body.rtk
+    config_mgr.save_config({**current, "gateway": gw, "feature_flags": flags})
+    reload_gateway()
+    return {"status": "ok"}
+
+
+# ---- chaves de acesso para ferramentas externas (so /v1)
+def _client_view(ck) -> Dict[str, Any]:
+    return {**ck.public(), "today": USAGE.today(client=ck.name)}
+
+
+@app.get("/api/router/clients")
+async def router_list_clients():
+    return {"clients": [_client_view(c) for c in CLIENT_KEYS.list()]}
+
+
+def _clean_patterns(patterns: List[str]) -> List[str]:
+    out = []
+    for pat in patterns:
+        pat = pat.strip()
+        if not re.match(r"^[A-Za-z0-9_./:*\-]{1,120}$", pat):
+            _bad_router(f"Padrao de modelo invalido: {pat!r} (letras, numeros, _ . / : - e * apenas)")
+        out.append(pat)
+    return list(dict.fromkeys(out))
+
+
+@app.post("/api/router/clients")
+async def router_create_client(body: ClientCreateBody):
+    """Cria uma chave de acesso. Exige o codigo humano. A chave aparece UMA vez, nesta resposta."""
+    name = body.name.strip()
+    if any(c.name.lower() == name.lower() for c in CLIENT_KEYS.list()):
+        _bad_router("Ja existe uma chave com esse nome.", 409)
+    patterns = _clean_patterns(body.models)
+    _require_human_code(body.human_code, f"Chave de acesso '{name}' sera criada para ferramentas externas")
+    try:
+        created = CLIENT_KEYS.create(name, patterns, body.rpm, body.daily_tokens)
+    except ValueError as exc:
+        _bad_router(str(exc))
+    broadcast_log(f"🔑 [ROTEADOR] Chave de acesso '{name}' criada.", level="success")
+    return created
+
+
+@app.patch("/api/router/clients/{key_id}")
+async def router_patch_client(key_id: str, body: ClientPatchBody):
+    changes: Dict[str, Any] = {}
+    if body.name is not None:
+        if any(c.name.lower() == body.name.strip().lower() and c.id != key_id for c in CLIENT_KEYS.list()):
+            _bad_router("Ja existe uma chave com esse nome.", 409)
+        changes["name"] = body.name.strip()
+    if body.enabled is not None:
+        if body.enabled:
+            _require_human_code(body.human_code, "Uma chave de acesso sera REATIVADA")
+        changes["enabled"] = body.enabled
+    if body.models is not None:
+        changes["models"] = _clean_patterns(body.models)
+    for field in ("rpm", "daily_tokens"):
+        if field in body.model_fields_set:
+            changes[field] = getattr(body, field) or None
+    updated = CLIENT_KEYS.update(key_id, **changes)
+    if updated is None:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": "Chave desconhecida."})
+    return {"status": "ok", "client": _client_view(updated)}
+
+
+@app.delete("/api/router/clients/{key_id}")
+async def router_delete_client(key_id: str):
+    if not CLIENT_KEYS.delete(key_id):
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": "Chave desconhecida."})
+    return {"status": "ok"}
+
+
+@app.get("/api/router/logs")
+async def router_logs(limit: int = 100, provider: Optional[str] = None, client: Optional[str] = None, errors: bool = False):
+    """Ultimas chamadas (so metadados). Chamadas da mesma requisicao (fallback) compartilham o `request_id`."""
+    return {"logs": await asyncio.to_thread(USAGE.logs, limit, provider, client, errors)}
+
+
+# ---- exportar / importar a configuracao do roteador (nunca inclui chaves)
+@app.get("/api/router/export")
+async def router_export():
+    current = config_mgr.load_config()
+    gw = current.get("gateway") or {}
+    return {"version": 1, "providers": current.get("providers") or {}, "combos": _combo_defs_from_cfg(current),
+            "aliases": gw.get("aliases") or {}, "pricing": gw.get("pricing") or {},
+            "tier_order": gw.get("default_tier_order") or gateway_tier_router.tier_order,
+            "breaker_threshold": gw.get("breaker_threshold") or 3,
+            "note": "Sem chaves de API: elas ficam no cofre/ambiente de cada maquina."}
+
+
+def _validated_provider_entry(name: str, raw: Any) -> Dict[str, Any]:
+    if not isinstance(raw, dict) or not _PROVIDER_NAME.match(name) or name in _RESERVED_NAMES:
+        _bad_router(f"Provedor invalido no arquivo: {name!r}")
+    tier = raw.get("tier", "cloud_cheap")
+    key_env = str(raw.get("api_key_env") or "")
+    if tier not in TIERS or (key_env and (not _KEY_ENV.match(key_env) or key_env.startswith("HERA_"))):
+        _bad_router(f"Provedor {name!r}: tier ou variavel de chave invalidos.")
+    try:
+        url = validate_provider_url(str(raw.get("base_url", "")), is_local_profile=False)
+    except (SSRFSecurityError, ValueError) as exc:
+        _bad_router(f"Provedor {name!r}: URL recusada ({exc})")
+    model = str(raw.get("default_model", "")).strip()
+    if not _MODEL_OK.match(model):
+        _bad_router(f"Provedor {name!r}: modelo padrao invalido.")
+    entry: Dict[str, Any] = {"enabled": False, "tier": tier, "base_url": url, "api_key_env": key_env,
+                             "default_model": model, "models": _clean_models(raw.get("models")), "timeout": 60}
+    for field, hi in (("priority", 1000), ("rpm", 100_000), ("daily_requests", 10 ** 8), ("daily_tokens", 10 ** 10),
+                      ("daily_request_limit", 10 ** 7)):
+        if raw.get(field):
+            value = raw[field]
+            if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= hi:
+                _bad_router(f"Provedor {name!r}: {field} invalido.")
+            entry[field] = value
+    return entry
+
+
+@app.post("/api/router/import")
+async def router_import(body: RouterImportBody):
+    """Importa provedores (chegam DESLIGADOS: ligar exige o codigo humano de novo), combos, apelidos e precos."""
+    data = body.data
+    if data.get("version") != 1:
+        _bad_router("Arquivo de versao desconhecida.")
+    _require_human_code(body.human_code, "Uma configuracao do roteador sera IMPORTADA")
+    providers = {n: _validated_provider_entry(n, p) for n, p in (data.get("providers") or {}).items()}
+    if len(providers) > 40:
+        _bad_router("Provedores demais no arquivo.")
+    current = config_mgr.load_config()
+    gw = dict(current.get("gateway") or {})
+    known = set(providers) | {"ollama"}
+    combos: Dict[str, Any] = {}
+    for cname, value in (data.get("combos") or {}).items():
+        strategy = value.get("strategy", "priority") if isinstance(value, dict) else "priority"
+        steps = value.get("steps") if isinstance(value, dict) else value
+        if (not _COMBO_NAME.match(str(cname)) or cname in _RESERVED_NAMES or cname in known or strategy not in STRATEGIES
+                or not isinstance(steps, list) or not 1 <= len(steps) <= 8):
+            _bad_router(f"Combo invalido no arquivo: {cname!r}")
+        clean_steps = []
+        for st in steps:
+            if not isinstance(st, dict) or st.get("provider") not in known or not _MODEL_OK.match(str(st.get("model", ""))):
+                _bad_router(f"Passo invalido no combo {cname!r}.")
+            item = {"provider": st["provider"], "model": str(st["model"])}
+            if st.get("weight"):
+                item["weight"] = max(1, min(100, int(st["weight"])))
+            clean_steps.append(item)
+        combos[cname] = {"strategy": strategy, "steps": clean_steps}
+    gw["combos"] = combos
+    aliases = {}
+    for a, t in (data.get("aliases") or {}).items():
+        if re.match(r"^[A-Za-z0-9][A-Za-z0-9._\-]{0,59}$", str(a)) and _MODEL_OK.match(str(t)) and a not in known and a not in combos:
+            aliases[str(a)] = str(t)
+    gw["aliases"] = aliases
+    prices = {}
+    for k, v in (data.get("pricing") or {}).items():
+        if isinstance(v, dict) and re.match(r"^[a-z][a-z0-9_-]{1,31}(/[^\x00-\x1f\x7f]{1,200})?$", str(k)):
+            prices[str(k)] = {"in": max(0.0, min(10_000.0, float(v.get("in", 0)))), "out": max(0.0, min(10_000.0, float(v.get("out", 0))))}
+    gw["pricing"] = prices
+    order = data.get("tier_order")
+    if isinstance(order, list) and "local" in order and set(order) <= {"cloud_premium", "cloud_cheap", "cloud_free", "local"} and len(set(order)) == len(order):
+        gw["default_tier_order"] = order
+    config_mgr.save_config({**current, "providers": providers, "gateway": gw})
+    reload_gateway()
+    return {"status": "ok", "providers": len(providers), "combos": len(combos)}
 
 
 @app.post("/api/router/test")
@@ -1348,7 +1669,7 @@ async def router_test(body: RouterTestBody):
                                 max_tokens=16, messages=[ChatMessage(role="user", content="Responda apenas: OK")])
     started = time.perf_counter()
     try:
-        resp = await asyncio.wait_for(_gateway_call(req, only_provider=body.provider), timeout=40)
+        resp = await asyncio.wait_for(_gateway_call(req, only_provider=body.provider, label="hera (teste)"), timeout=40)
         text = (resp.choices[0].message.content if resp.choices and resp.choices[0].message else "") or ""
         return {"ok": True, "latency_ms": int((time.perf_counter() - started) * 1000), "model": resp.model,
                 "text": str(text)[:80]}
@@ -1360,9 +1681,18 @@ async def router_test(body: RouterTestBody):
 
 
 @app.post("/v1/chat/completions")
-async def chat_completions(req: ChatCompletionRequest):
+async def chat_completions(req: ChatCompletionRequest, request: Request):
     """Endpoint OpenAI-compatible para chat completions (com streaming SSE, fallback e DLP)."""
     global gateway_http_client
+    ck = getattr(request.state, "client_key", None)          # chave de ACESSO de cliente (nao e o token mestre)
+    if ck is not None:
+        if not ck.allows(req.model):
+            raise HTTPException(status_code=403, detail=f"A chave '{ck.name}' nao tem acesso ao modelo '{req.model}'.")
+        if ck.daily_tokens and USAGE.today(client=ck.name)["tokens"] >= ck.daily_tokens:
+            raise HTTPException(status_code=429, detail=f"A chave '{ck.name}' atingiu o limite diario de {ck.daily_tokens} tokens.",
+                                headers={"Retry-After": "3600"})
+        CLIENT_NAME.set(ck.name)
+    REQUEST_ID.set(f"req-{uuid.uuid4().hex[:10]}")
     if gateway_http_client is None or gateway_http_client.is_closed:
         client_to_use = make_safe_async_client(timeout=60.0)
         should_close = True
@@ -1370,7 +1700,7 @@ async def chat_completions(req: ChatCompletionRequest):
         client_to_use = gateway_http_client
         should_close = False
 
-    enable_rtk = cfg.get("feature_flags", {}).get("enable_rtk", True)
+    enable_rtk = RUNTIME_FLAGS["rtk"]
 
     try:
         if req.stream:

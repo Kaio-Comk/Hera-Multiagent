@@ -631,11 +631,11 @@
     </section>
 
     <!-- ==================== ABA 9: ROTEADOR EMBUTIDO ==================== -->
-    <section id="tab-router" class="tab-content hidden space-y-6">
+    <section id="tab-router" class="tab-content hidden space-y-5">
       <div class="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 class="text-xl font-bold text-white">Roteador</h2>
-          <p class="text-sm text-zinc-400">Provedores de IA na nuvem com rodízio de chaves, camadas e combos com fallback. Tudo roda dentro do Hera.</p>
+          <p class="text-sm text-zinc-400">Provedores de IA na nuvem com rodízio de chaves, camadas, combos e fallback automático. Tudo roda dentro do Hera.</p>
         </div>
         <button onclick="loadRouterState()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-lg text-xs font-semibold flex items-center gap-2">
           <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Atualizar
@@ -646,26 +646,50 @@
         O <strong>Modo 100% Offline</strong> está ligado: nenhum provedor de nuvem será usado até você desligá-lo em "Motores &amp; IAs".
       </div>
 
-      <!-- Uso -->
-      <div class="card p-5 space-y-4">
-        <div class="flex items-center justify-between">
-          <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="bar-chart-3" class="w-4 h-4 text-brand-400"></i> Uso (últimos 7 dias)</h3>
-          <span class="text-[11px] text-zinc-500">só contagens: o conteúdo das conversas nunca é guardado</span>
-        </div>
-        <div id="router-usage-kpis" class="grid grid-cols-2 md:grid-cols-5 gap-3"></div>
-        <div id="router-usage-days" class="flex items-end gap-1.5 h-16"></div>
-        <div id="router-usage-table" class="overflow-x-auto"></div>
+      <!-- sub-abas -->
+      <div id="rt-subnav" class="flex flex-wrap gap-1 bg-zinc-900/70 border border-zinc-800 rounded-xl p-1 w-fit">
+        <button data-sub="overview" class="rt-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold">Visão geral</button>
+        <button data-sub="providers" class="rt-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold">Provedores</button>
+        <button data-sub="combos" class="rt-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold">Combos &amp; apelidos</button>
+        <button data-sub="clients" class="rt-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold">Chaves de acesso</button>
+        <button data-sub="logs" class="rt-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold">Registro</button>
+        <button data-sub="settings" class="rt-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold">Ajustes</button>
       </div>
 
-      <!-- Provedores -->
-      <div class="card p-5 space-y-4">
-        <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="cloud" class="w-4 h-4 text-brand-400"></i> Provedores</h3>
-        <div id="router-providers" class="space-y-3"></div>
-        <div class="border-t border-zinc-800 pt-4 space-y-3">
-          <div class="text-xs font-semibold text-zinc-300">Adicionar provedor</div>
+      <!-- ===== Visão geral ===== -->
+      <div id="rt-overview" class="rt-panel space-y-5">
+        <div class="card p-5 space-y-4">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="bar-chart-3" class="w-4 h-4 text-brand-400"></i> Uso e custo</h3>
+            <select id="rt-days" onchange="loadRouterUsage()" class="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-200">
+              <option value="1">24 horas</option><option value="7" selected>7 dias</option><option value="30">30 dias</option><option value="90">90 dias</option>
+            </select>
+          </div>
+          <div id="router-usage-kpis" class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3"></div>
+          <div id="router-usage-days" class="flex items-end gap-1.5 h-20"></div>
+          <div class="text-[11px] text-zinc-500">Só contagens e metadados: o conteúdo das conversas nunca é guardado. O custo usa os preços que <em>você</em> cadastrou em Ajustes (local e camada grátis contam como zero).</div>
+        </div>
+        <div class="card p-5 space-y-3">
+          <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="heart-pulse" class="w-4 h-4 text-brand-400"></i> Saúde dos provedores</h3>
+          <div id="rt-health" class="grid grid-cols-1 lg:grid-cols-2 gap-3"></div>
+        </div>
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+          <div class="card p-5 space-y-3"><h3 class="text-sm font-bold text-white">Por provedor e modelo</h3><div id="router-usage-table" class="overflow-x-auto"></div></div>
+          <div class="card p-5 space-y-3"><h3 class="text-sm font-bold text-white">Por cliente</h3><div id="router-usage-clients" class="overflow-x-auto"></div></div>
+        </div>
+      </div>
+
+      <!-- ===== Provedores ===== -->
+      <div id="rt-providers" class="rt-panel hidden space-y-5">
+        <div class="card p-5 space-y-4">
+          <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="cloud" class="w-4 h-4 text-brand-400"></i> Seus provedores</h3>
+          <div id="router-providers" class="space-y-3"></div>
+        </div>
+        <div class="card p-5 space-y-3">
+          <div class="text-sm font-bold text-white">Adicionar provedor</div>
           <div class="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
             <div>
-              <label class="block text-xs text-zinc-400 mb-1">Catálogo</label>
+              <label class="block text-xs text-zinc-400 mb-1">Catálogo (<span id="rt-preset-count">0</span> provedores prontos)</label>
               <select id="router-preset" onchange="onRouterPresetChange()" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100"></select>
             </div>
             <button onclick="addRouterProvider()" class="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-sm font-semibold">Adicionar e ligar</button>
@@ -680,40 +704,126 @@
         </div>
       </div>
 
-      <!-- Combos -->
-      <div class="card p-5 space-y-4">
-        <div class="flex items-center justify-between">
-          <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="git-branch" class="w-4 h-4 text-brand-400"></i> Combos (fallback entre modelos)</h3>
-          <div class="flex gap-2">
-            <button onclick="addRouterCombo()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold">+ Novo combo</button>
-            <button onclick="saveRouterCombos()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold">Salvar combos</button>
+      <!-- ===== Combos e apelidos ===== -->
+      <div id="rt-combos" class="rt-panel hidden space-y-5">
+        <div class="card p-5 space-y-4">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="git-branch" class="w-4 h-4 text-brand-400"></i> Combos (fallback entre modelos)</h3>
+            <div class="flex gap-2">
+              <button onclick="addRouterCombo()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold">+ Novo combo</button>
+              <button onclick="saveRouterCombos()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold">Salvar combos</button>
+            </div>
           </div>
+          <p class="text-xs text-zinc-500">Cada passo é "provedor + modelo". A <strong>estratégia</strong> decide por onde começar: <em>Prioridade</em> (sempre o 1º), <em>Revezar</em> (round-robin), <em>Mais rápido</em> (menor latência recente), <em>Menos usado</em> (menos chamadas hoje) ou <em>Ponderado</em> (sorteio pelo peso). Se o escolhido falhar, o Hera passa ao próximo. Termine com um passo do Ollama para ter sempre um plano B local.</p>
+          <div id="router-combos" class="space-y-3"></div>
+          <div id="router-datalists"></div>
         </div>
-        <p class="text-xs text-zinc-500">Cada passo é "provedor + modelo". O primeiro que responder vence; se der erro ou limite, o Hera passa ao próximo. Termine com um passo do Ollama para ter sempre um plano B local.</p>
-        <div id="router-combos" class="space-y-3"></div>
-        <div id="router-datalists"></div>
+        <div class="card p-5 space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="tag" class="w-4 h-4 text-brand-400"></i> Apelidos de modelo</h3>
+            <button onclick="saveAliases()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold">Salvar apelidos</button>
+          </div>
+          <p class="text-xs text-zinc-500">Um nome curto que aponta para um combo, para <code class="text-brand-300">provedor/modelo</code> ou para um modelo. Ex.: <code class="text-brand-300">codigo</code> → <code class="text-brand-300">deepseek/deepseek-chat</code>. Trocar o destino depois não exige mexer nas suas ferramentas.</p>
+          <div id="rt-aliases" class="space-y-2"></div>
+          <button onclick="addAliasRow()" class="text-xs text-brand-400">+ apelido</button>
+        </div>
       </div>
 
-      <!-- Conectar ferramentas -->
-      <div class="card p-5 space-y-3">
-        <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="plug" class="w-4 h-4 text-brand-400"></i> Conectar suas ferramentas</h3>
-        <p class="text-xs text-zinc-400">Qualquer ferramenta que fale com a API da OpenAI (Cursor, Cline, Continue, scripts...) pode usar o Roteador do Hera:</p>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-          <div class="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-1">
-            <div class="text-zinc-500">Endereço (Base URL)</div>
-            <div class="flex items-center justify-between gap-2"><code id="conn-url" class="text-brand-300 font-mono"></code>
-              <button onclick="copyText('conn-url')" class="text-zinc-400 hover:text-white">copiar</button></div>
+      <!-- ===== Chaves de acesso ===== -->
+      <div id="rt-clients" class="rt-panel hidden space-y-5">
+        <div class="card p-5 space-y-3">
+          <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="plug" class="w-4 h-4 text-brand-400"></i> Conectar suas ferramentas</h3>
+          <p class="text-xs text-zinc-400">Cursor, Cline, Continue, scripts e qualquer coisa que fale com a API da OpenAI podem usar o Roteador. Dê a cada uma a <strong>própria chave</strong> (abaixo): ela só abre <code class="text-brand-300">/v1</code>, pode ser limitada e desligada sozinha.</p>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            <div class="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-1">
+              <div class="text-zinc-500">Endereço (Base URL)</div>
+              <div class="flex items-center justify-between gap-2"><code id="conn-url" class="text-brand-300 font-mono"></code><button onclick="copyText('conn-url')" class="text-zinc-400 hover:text-white">copiar</button></div>
+            </div>
+            <div class="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-1">
+              <div class="text-zinc-500">Modelos que você pode pedir</div>
+              <div class="text-zinc-300">um <strong>combo</strong>, um <strong>apelido</strong>, <code class="text-brand-300">provedor/modelo</code> ou <code class="text-brand-300">default</code></div>
+            </div>
           </div>
-          <div class="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-1">
-            <div class="text-zinc-500">Chave de API (o token local do Hera)</div>
-            <div class="flex items-center justify-between gap-2"><code id="conn-key" class="text-brand-300 font-mono truncate">••••••••••••</code>
-              <span class="flex gap-3 shrink-0"><button onclick="toggleConnKey()" class="text-zinc-400 hover:text-white">mostrar</button>
-              <button onclick="copyKey()" class="text-zinc-400 hover:text-white">copiar</button></span></div>
+          <details class="text-xs text-zinc-500"><summary class="cursor-pointer text-zinc-400">Usar o token mestre do Hera (acesso total, só para você)</summary>
+            <div class="mt-2 bg-zinc-950 border border-zinc-800 rounded-xl p-3 flex items-center justify-between gap-2"><code id="conn-key" class="text-brand-300 font-mono truncate">••••••••••••</code>
+              <span class="flex gap-3 shrink-0"><button onclick="toggleConnKey()" class="text-zinc-400 hover:text-white">mostrar</button><button onclick="copyKey()" class="text-zinc-400 hover:text-white">copiar</button></span></div></details>
+        </div>
+        <div class="card p-5 space-y-3">
+          <h3 class="text-sm font-bold text-white">Nova chave de acesso</h3>
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <input id="ck-name" placeholder="nome (ex.: cursor)" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100">
+            <input id="ck-models" placeholder="modelos permitidos (vazio = todos). Ex.: codigo, groq/*" class="md:col-span-2 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 font-mono">
+            <div class="flex gap-2">
+              <input id="ck-rpm" type="number" min="1" placeholder="req/min" class="w-1/2 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100">
+              <input id="ck-tokens" type="number" min="1" placeholder="tokens/dia" class="w-1/2 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100">
+            </div>
+          </div>
+          <button onclick="createClientKey()" class="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-sm font-semibold">Criar chave</button>
+          <div id="ck-new" class="hidden bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 text-xs space-y-1">
+            <div class="text-emerald-300 font-semibold">Chave criada. Copie agora: ela não será mostrada de novo.</div>
+            <div class="flex items-center justify-between gap-2"><code id="ck-new-key" class="font-mono text-emerald-200 break-all"></code><button onclick="copyText('ck-new-key')" class="text-emerald-300 shrink-0">copiar</button></div>
           </div>
         </div>
-        <p class="text-xs text-zinc-500">Modelo: use o nome de um <strong>combo</strong>, ou <code class="text-brand-300">provedor/modelo</code> (ex.: <code class="text-brand-300">groq/llama-3.3-70b-versatile</code>), ou <code class="text-brand-300">default</code> para o Hera escolher.</p>
+        <div class="card p-5 space-y-3"><h3 class="text-sm font-bold text-white">Chaves existentes</h3><div id="rt-clientlist" class="space-y-2"></div></div>
+      </div>
+
+      <!-- ===== Registro ===== -->
+      <div id="rt-logs" class="rt-panel hidden space-y-4">
+        <div class="card p-5 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="scroll-text" class="w-4 h-4 text-brand-400"></i> Registro de chamadas</h3>
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+              <select id="lg-provider" onchange="loadRouterLogs()" class="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-zinc-200"><option value="">todos os provedores</option></select>
+              <select id="lg-client" onchange="loadRouterLogs()" class="bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-zinc-200"><option value="">todos os clientes</option></select>
+              <label class="flex items-center gap-1.5 text-zinc-400"><input id="lg-errors" type="checkbox" onchange="loadRouterLogs()" class="accent-brand-600"> só erros</label>
+              <label class="flex items-center gap-1.5 text-zinc-400"><input id="lg-live" type="checkbox" onchange="rtLiveToggle()" class="accent-brand-600"> ao vivo</label>
+            </div>
+          </div>
+          <div id="rt-logtable" class="overflow-auto max-h-[68vh]"></div>
+          <div class="text-[11px] text-zinc-500">As linhas com ↳ são tentativas da mesma requisição (fallback). Nunca aparece o texto da conversa; mensagens de erro passam pelo filtro de segredos.</div>
+        </div>
+      </div>
+
+      <!-- ===== Ajustes ===== -->
+      <div id="rt-settings" class="rt-panel hidden space-y-5">
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+          <div class="card p-5 space-y-3">
+            <h3 class="text-sm font-bold text-white">Ordem das camadas</h3>
+            <p class="text-xs text-zinc-500">Sem combo, o Hera tenta primeiro a camada de cima. Dentro da camada, vale a prioridade do provedor.</p>
+            <div id="rt-tiers" class="space-y-1.5"></div>
+          </div>
+          <div class="card p-5 space-y-4">
+            <h3 class="text-sm font-bold text-white">Economia e proteção</h3>
+            <label class="flex items-center justify-between gap-3 text-xs text-zinc-300 cursor-pointer">
+              <span><strong>Compactar saídas de ferramentas (RTK)</strong><br><span class="text-zinc-500">Encurta resultados enormes de comandos antes de enviar, sem mexer em código nem JSON. <span id="rt-rtk-stats"></span></span></span>
+              <span class="switch"><input id="rt-rtk" type="checkbox" onchange="saveRouterSettings()"><span></span></span>
+            </label>
+            <div class="flex items-center justify-between gap-3 text-xs text-zinc-300">
+              <span><strong>Disjuntor</strong><br><span class="text-zinc-500">Falhas seguidas até pausar um provedor (a pausa dobra a cada vez, até 10 min).</span></span>
+              <input id="rt-breaker" type="number" min="1" max="20" onchange="saveRouterSettings()" class="w-16 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-sm text-zinc-100">
+            </div>
+          </div>
+        </div>
+        <div class="card p-5 space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-white">Preços (para estimar o custo)</h3>
+            <button onclick="savePricing()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold">Salvar preços</button>
+          </div>
+          <p class="text-xs text-zinc-500">Dólares por 1 milhão de tokens, do jeito que o provedor cobra. Use <code class="text-brand-300">provedor</code> para valer em todos os modelos ou <code class="text-brand-300">provedor/modelo</code> para um específico. Sem preço, a chamada aparece como "sem preço" no painel.</p>
+          <div id="rt-pricing" class="space-y-2"></div>
+          <button onclick="addPriceRow()" class="text-xs text-brand-400">+ preço</button>
+        </div>
+        <div class="card p-5 space-y-3">
+          <h3 class="text-sm font-bold text-white">Backup da configuração</h3>
+          <p class="text-xs text-zinc-500">Exporta provedores, combos, apelidos, preços e camadas <strong>sem as chaves</strong>. Ao importar, os provedores chegam desligados e é preciso o código de aprovação.</p>
+          <div class="flex flex-wrap gap-2">
+            <button onclick="exportRouterConfig()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold">Exportar</button>
+            <label class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold cursor-pointer">Importar...<input type="file" accept="application/json" class="hidden" onchange="importRouterConfig(this)"></label>
+          </div>
+        </div>
       </div>
     </section>
+
   </main>
   </div>
 
@@ -1665,29 +1775,125 @@
     // ==================== ROTEADOR EMBUTIDO ====================
     let routerState = null;
     let routerCombosDraft = {};
+    let rtAliasDraft = [];
+    let rtPriceDraft = [];
+    let rtTierDraft = [];
+    let rtUsage = null;
+    let rtLiveTimer = null;
     const CUSTOM_PRESET = "__custom__";
+    const STRATEGY_LABELS = { priority: "Prioridade", round_robin: "Revezar", fastest: "Mais rápido", least_used: "Menos usado", weighted: "Ponderado" };
+    const TIER_LABELS = { cloud_premium: "Nuvem premium", cloud_cheap: "Nuvem barata", cloud_free: "Nuvem grátis", local: "Local (Ollama)" };
+
+    function fmt(n) { return (n ?? 0).toLocaleString("pt-BR"); }
+    function money(v) { return "US$ " + (v ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 }); }
+
+    async function routerCall(url, method, body) {
+      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const d = data.detail;
+        throw new Error((d && d.message) || (typeof d === "string" ? d : (Array.isArray(d) ? "dados inválidos" : "")) || ("HTTP " + res.status));
+      }
+      return data;
+    }
+
+    function askHumanCode(what) {
+      return prompt(`Digite o código de aprovação humana para ${what}\n(aparece no console do servidor ou em: hera approval-code)`);
+    }
+
+    // ---------- navegação interna
+    function rtSub(name) {
+      lsSet("rt-sub", name);
+      document.querySelectorAll(".rt-panel").forEach(p => p.classList.add("hidden"));
+      const panel = document.getElementById("rt-" + name);
+      if (panel) panel.classList.remove("hidden");
+      document.querySelectorAll(".rt-tab").forEach(b => {
+        b.className = "rt-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold " + (b.dataset.sub === name ? "bg-brand-500 text-white" : "text-zinc-400 hover:text-white hover:bg-zinc-800");
+      });
+      if (name === "logs") loadRouterLogs();
+      if (name === "clients") loadClients();
+      if (name !== "logs") rtLiveStop();
+    }
+    document.addEventListener("click", e => { const b = e.target.closest(".rt-tab"); if (b) rtSub(b.dataset.sub); });
 
     async function loadRouterState() {
       try {
-        const res = await fetch("/api/router/state");
-        routerState = await res.json();
+        routerState = await (await fetch("/api/router/state")).json();
         routerCombosDraft = JSON.parse(JSON.stringify(routerState.combos || {}));
+        rtAliasDraft = Object.entries(routerState.aliases || {});
+        rtPriceDraft = Object.entries(routerState.pricing || {}).map(([k, v]) => [k, v.in, v.out]);
+        rtTierDraft = [...routerState.tier_order];
         document.getElementById("router-offline-banner").classList.toggle("hidden", !routerState.offline);
         const sel = document.getElementById("router-preset");
         const keep = sel.value;
         sel.innerHTML = routerState.presets.map(p => `<option value="${escAttr(p.id)}">${escapeHtml(p.label)} (${escapeHtml(p.tier.replace("cloud_", ""))})</option>`).join("")
           + `<option value="${CUSTOM_PRESET}">Personalizado (qualquer API compatível com OpenAI)</option>`;
         if (keep) sel.value = keep;
+        document.getElementById("rt-preset-count").innerText = routerState.presets.length;
         onRouterPresetChange();
         renderRouterProviders();
         renderRouterCombos();
-        loadRouterUsage();
+        renderAliases();
+        renderPricing();
+        renderTiers();
+        document.getElementById("rt-rtk").checked = !!routerState.rtk.enabled;
+        document.getElementById("rt-rtk-stats").innerText = routerState.rtk.calls ? `(${fmt(routerState.rtk.calls)} saídas compactadas, ${fmt(routerState.rtk.saved_chars)} caracteres poupados)` : "";
+        document.getElementById("rt-breaker").value = routerState.breaker_threshold;
         renderConnect();
+        loadRouterUsage();
+        rtSub(lsGet("rt-sub", "overview"));
       } catch (e) {
         console.error("Falha ao carregar o roteador:", e);
       }
     }
 
+    // ---------- visão geral
+    async function loadRouterUsage() {
+      try {
+        const days = document.getElementById("rt-days").value;
+        rtUsage = await (await fetch(`/api/router/usage?days=${days}`)).json();
+        const t = rtUsage.totals;
+        const kpi = (label, value, sub) => `<div class="bg-zinc-950 border border-zinc-800 rounded-xl p-3"><div class="text-[11px] text-zinc-500">${label}</div><div class="text-lg font-bold text-white">${value}</div>${sub ? `<div class="text-[10px] text-zinc-500">${sub}</div>` : ""}</div>`;
+        document.getElementById("router-usage-kpis").innerHTML =
+          kpi("Chamadas", fmt(t.requests)) + kpi("Sucesso", t.success_rate === null ? "-" : t.success_rate + "%", `${fmt(t.errors)} erro(s)`)
+          + kpi("Tokens", fmt(t.prompt_tokens + t.completion_tokens), `${fmt(t.prompt_tokens)} entrada · ${fmt(t.completion_tokens)} saída`)
+          + kpi("Custo estimado", money(t.cost_usd), t.unpriced ? `${fmt(t.unpriced)} chamada(s) sem preço` : "")
+          + kpi("Latência média", t.avg_latency_ms ? t.avg_latency_ms + " ms" : "-") + kpi("p50", t.p50_ms ? t.p50_ms + " ms" : "-") + kpi("p95", t.p95_ms ? t.p95_ms + " ms" : "-");
+        const max = Math.max(1, ...rtUsage.by_day.map(d => d.requests));
+        document.getElementById("router-usage-days").innerHTML = rtUsage.by_day.map(d =>
+          `<div class="flex-1 flex flex-col items-center justify-end gap-1 min-w-[10px]" title="${escAttr(d.day)}: ${d.requests} chamada(s) · ${fmt(d.prompt_tokens + d.completion_tokens)} tokens · ${money(d.cost_usd)}">
+             <div class="w-full rounded bg-brand-500/70" style="height:${Math.max(4, Math.round(d.requests / max * 60))}px"></div>
+             <div class="text-[9px] text-zinc-500">${escapeHtml(d.day.slice(5))}</div></div>`).join("") || '<div class="text-xs text-zinc-500">Sem uso no período.</div>';
+        const table = (head, rows) => rows.length ? `<table class="w-full text-xs"><thead><tr class="text-left text-zinc-500">${head.map(h => `<th class="py-1 pr-3">${h}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table>` : '<div class="text-xs text-zinc-500">Nada ainda.</div>';
+        document.getElementById("router-usage-table").innerHTML = table(["Provedor", "Modelo", "Chamadas", "Erros", "Tokens", "Latência", "Custo"],
+          rtUsage.by_provider.map(r => `<tr class="border-t border-zinc-800 text-zinc-300"><td class="py-1.5 pr-3 font-semibold">${escapeHtml(r.provider)}</td><td class="pr-3 font-mono">${escapeHtml(r.model)}</td><td class="pr-3">${fmt(r.requests)}</td><td class="pr-3">${fmt(r.requests - r.ok)}</td><td class="pr-3">${fmt(r.prompt_tokens + r.completion_tokens)}</td><td class="pr-3">${r.avg_latency_ms ? r.avg_latency_ms + " ms" : "-"}</td><td>${money(r.cost_usd)}</td></tr>`));
+        document.getElementById("router-usage-clients").innerHTML = table(["Cliente", "Chamadas", "Erros", "Tokens", "Custo"],
+          rtUsage.by_client.map(r => `<tr class="border-t border-zinc-800 text-zinc-300"><td class="py-1.5 pr-3 font-semibold">${escapeHtml(r.client)}</td><td class="pr-3">${fmt(r.requests)}</td><td class="pr-3">${fmt(r.requests - r.ok)}</td><td class="pr-3">${fmt(r.prompt_tokens + r.completion_tokens)}</td><td>${money(r.cost_usd)}</td></tr>`));
+        renderHealth();
+      } catch (e) { console.error("Falha ao ler o uso:", e); }
+    }
+
+    function renderHealth() {
+      if (!routerState) return;
+      const stats = {};
+      ((rtUsage && rtUsage.by_provider) || []).forEach(r => { const s = stats[r.provider] || (stats[r.provider] = { n: 0, ok: 0, lat: 0, latN: 0 }); s.n += r.requests; s.ok += r.ok; if (r.avg_latency_ms) { s.lat += r.avg_latency_ms * r.requests; s.latN += r.requests; } });
+      const cards = routerState.providers.map(p => {
+        const st = !p.enabled ? ["DESLIGADO", "#6b7280"] : p.health.state === "paused" ? [`EM PAUSA ${p.health.resume_in_s}s`, "#f59e0b"] : p.active ? ["ATIVO", "#10b981"] : ["SEM CHAVE", "#f59e0b"];
+        const s = stats[p.name];
+        const rate = s && s.n ? Math.round(100 * s.ok / s.n) + "% ok" : "sem uso";
+        const lat = s && s.latN ? Math.round(s.lat / s.latN) + " ms" : "-";
+        const bar = (used, limit, label) => limit ? `<div class="text-[10px] text-zinc-500 mt-1">${label}: ${fmt(used)} / ${fmt(limit)}<div class="h-1.5 bg-zinc-800 rounded"><div class="h-1.5 rounded ${used >= limit ? "bg-rose-500" : "bg-brand-500"}" style="width:${Math.min(100, Math.round(used / limit * 100))}%"></div></div></div>` : "";
+        return `<div class="bg-zinc-950 border border-zinc-800 rounded-xl p-3">
+          <div class="flex items-center justify-between"><span class="font-bold text-sm text-white">${escapeHtml(p.name)}</span><span class="flex items-center gap-1.5 text-[11px] font-bold"><span class="dot" style="background:${st[1]}"></span>${escapeHtml(st[0])}</span></div>
+          <div class="text-[11px] text-zinc-500">${escapeHtml(p.tier)} · ${rate} · latência ${lat} · hoje ${fmt(p.today.requests)} chamada(s)</div>
+          ${bar(p.today.requests, p.daily_requests, "requisições hoje")}${bar(p.today.tokens, p.daily_tokens, "tokens hoje")}
+          ${p.health.last_error && p.health.state !== "ok" ? `<div class="text-[10px] text-amber-300 mt-1 truncate" title="${escAttr(p.health.last_error)}">${escapeHtml(p.health.last_error)}</div>` : ""}
+        </div>`;
+      });
+      document.getElementById("rt-health").innerHTML = cards.join("") || '<div class="text-xs text-zinc-500">Nenhum provedor de nuvem ainda: adicione um em "Provedores". O Ollama local é usado sempre.</div>';
+    }
+
+    // ---------- provedores
     function onRouterPresetChange() {
       const id = document.getElementById("router-preset").value;
       const custom = id === CUSTOM_PRESET;
@@ -1696,42 +1902,28 @@
       document.getElementById("router-preset-info").innerHTML = custom
         ? "<div>Use o endereço base da API (termina em <code>/v1</code>, só HTTPS). A chave fica no cofre do Hera, protegida pelo Windows.</div>"
         : (p ? `<div>${escapeHtml(p.note || "")}</div>
-        <div>Crie a chave em <a class="text-brand-400 underline" target="_blank" rel="noopener noreferrer" href="${escAttr(p.signup)}">${escapeHtml(p.signup)}</a> e cole acima. Ela fica no cofre do Hera (protegido pelo Windows); o Hera nunca a mostra de volta.</div>` : "");
-    }
-
-    function askHumanCode(what) {
-      return prompt(`Digite o código de aprovação humana para ${what}\n(aparece no console do servidor ou em: hera approval-code)`);
-    }
-
-    async function routerCall(url, method, body) {
-      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const d = data.detail;
-        throw new Error((d && d.message) || (typeof d === "string" ? d : "") || ("HTTP " + res.status));
-      }
-      return data;
+        <div>Crie a chave em <a class="text-brand-400 underline" target="_blank" rel="noopener noreferrer" href="${escAttr(p.signup)}">${escapeHtml(p.signup)}</a> e cole acima. Ela fica no cofre do Hera (protegido pelo Windows); o Hera nunca a mostra de volta. Os nomes de modelo mudam: use <strong>Buscar modelos</strong> depois de adicionar.</div>` : "");
     }
 
     function renderRouterProviders() {
       const box = document.getElementById("router-providers");
       const list = routerState.providers;
-      if (!list.length) {
-        box.innerHTML = '<div class="text-xs text-zinc-500">Nenhum provedor de nuvem ainda. Adicione um abaixo; o Ollama local já é usado sempre.</div>';
-        return;
-      }
+      if (!list.length) { box.innerHTML = '<div class="text-xs text-zinc-500">Nenhum provedor de nuvem ainda. Adicione um abaixo; o Ollama local já é usado sempre.</div>'; return; }
       box.innerHTML = list.map(p => {
+        const paused = p.health.state === "paused";
         const st = !p.enabled ? ["DESLIGADO", "#6b7280", "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"]
+          : paused ? [`EM PAUSA ${p.health.resume_in_s}s`, "#f59e0b", "bg-amber-500/10 text-amber-400 border-amber-500/20"]
           : p.active ? ["ATIVO", "#10b981", "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"]
           : ["SEM CHAVE", "#f59e0b", "bg-amber-500/10 text-amber-400 border-amber-500/20"];
-        const keys = (p.keys || []).map(k => `<span class="px-1.5 py-0.5 rounded bg-zinc-800 text-[10px] font-mono">${escapeHtml(k.id)}: ${escapeHtml(k.state)}</span>`).join(" ");
+        const keys = (p.keys || []).map(k => `<span class="px-1.5 py-0.5 rounded bg-zinc-800 text-[10px] font-mono">${escapeHtml(k.id)}: ${escapeHtml(k.state)}${k.cooldown_remaining_s ? " " + k.cooldown_remaining_s + "s" : ""}</span>`).join(" ");
         const where = [p.keys_stored ? `${p.keys_stored} no cofre` : "", p.keys_env ? `${p.keys_env} no ambiente` : ""].filter(Boolean).join(" · ") || "nenhuma chave";
         const n = escAttr(p.name);
+        const num = (field, label, ph) => `<label class="text-[10px] text-zinc-500">${label}<input id="lim-${field}-${n}" type="number" min="0" value="${p[field] && !(field === "priority" && p[field] === 100) ? p[field] : ""}" placeholder="${ph}" class="mt-0.5 w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100"></label>`;
         return `<div class="bg-zinc-950 border border-zinc-800 rounded-xl p-4 space-y-3">
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <div class="flex items-center gap-2.5">
+            <div class="flex flex-wrap items-center gap-2.5">
               <span class="text-sm font-bold text-white">${escapeHtml(p.name)}</span>
-              <span class="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${st[2]}"><span class="dot" style="background:${st[1]}"></span>${st[0]}</span>
+              <span class="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${st[2]}"><span class="dot" style="background:${st[1]}"></span>${escapeHtml(st[0])}</span>
               <span class="text-[11px] text-zinc-500">${escapeHtml(p.tier)} · ${escapeHtml(p.default_model)} · ${(p.models || []).length} modelo(s)</span>
             </div>
             <label class="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">Ligado
@@ -1739,6 +1931,11 @@
             </label>
           </div>
           <div class="text-[11px] text-zinc-400">Chaves: ${where} ${keys ? " · " + keys : ""}</div>
+          ${paused ? `<div class="text-[11px] text-amber-300">Pausado após falhas seguidas. Último erro: ${escapeHtml(p.health.last_error || "-")} <button onclick="resetBreaker('${n}')" class="underline ml-1">tentar de novo agora</button></div>` : ""}
+          <div class="grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
+            ${num("priority", "Prioridade (menor = antes)", "100")}${num("rpm", "Req. por minuto", "sem limite")}${num("daily_requests", "Req. por dia", "sem limite")}${num("daily_tokens", "Tokens por dia", "sem limite")}
+            <button onclick="saveLimits('${n}')" class="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold">Salvar limites</button>
+          </div>
           <div class="flex flex-wrap items-center gap-2">
             <input id="key-${n}" type="password" autocomplete="off" placeholder="Colar chave de API" class="flex-1 min-w-[220px] bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 font-mono">
             <button onclick="saveRouterKey('${n}')" class="px-2.5 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-semibold">Guardar chave</button>
@@ -1762,9 +1959,7 @@
         body.default_model = document.getElementById("rc-model").value.trim();
         body.key_env = "";
         if (!body.name || !body.base_url || !body.default_model) { alert("Preencha nome, endereço e modelo padrão."); return; }
-      } else {
-        body.preset = preset;
-      }
+      } else { body.preset = preset; }
       const code = askHumanCode("ligar um provedor de nuvem (seus prompts passarão a poder ir para ele)");
       if (!code) return;
       body.human_code = code;
@@ -1776,6 +1971,18 @@
         loadHealth();
       } catch (e) { alert("Não foi possível adicionar: " + e.message); await loadRouterState(); }
     }
+
+    async function saveLimits(name) {
+      const read = f => { const v = document.getElementById(`lim-${f}-${name}`).value.trim(); return v === "" ? 0 : parseInt(v, 10); };
+      try {
+        await routerCall(`/api/router/providers/${encodeURIComponent(name)}/limits`, "POST", { priority: read("priority"), rpm: read("rpm"), daily_requests: read("daily_requests"), daily_tokens: read("daily_tokens") });
+        ovToastSafe("Limites salvos."); await loadRouterState();
+      } catch (e) { alert("Não foi possível salvar: " + e.message); }
+    }
+
+    async function resetBreaker(name) { try { await routerCall(`/api/router/providers/${encodeURIComponent(name)}/reset`, "POST"); await loadRouterState(); } catch (e) { alert(e.message); } }
+
+    function ovToastSafe(msg) { if (typeof ovToast === "function") ovToast(msg); }
 
     async function saveRouterKey(name) {
       const input = document.getElementById("key-" + name);
@@ -1792,25 +1999,19 @@
 
     async function clearRouterKeys(name) {
       if (!confirm(`Apagar as chaves de ${name} guardadas no cofre?`)) return;
-      try { await routerCall(`/api/router/providers/${encodeURIComponent(name)}/keys`, "DELETE"); await loadRouterState(); }
-      catch (e) { alert("Erro: " + e.message); }
+      try { await routerCall(`/api/router/providers/${encodeURIComponent(name)}/keys`, "DELETE"); await loadRouterState(); } catch (e) { alert("Erro: " + e.message); }
     }
 
     async function toggleRouterProvider(name, enabled) {
       const body = { enabled };
       if (enabled) { body.human_code = askHumanCode(`ligar o provedor ${name}`); if (!body.human_code) { await loadRouterState(); return; } }
-      try {
-        await routerCall(`/api/router/providers/${encodeURIComponent(name)}/enabled`, "POST", body);
-      } catch (e) { alert("Não foi possível alterar: " + e.message); }
+      try { await routerCall(`/api/router/providers/${encodeURIComponent(name)}/enabled`, "POST", body); } catch (e) { alert("Não foi possível alterar: " + e.message); }
       await loadRouterState();
     }
 
     async function deleteRouterProvider(name) {
       if (!confirm(`Remover o provedor ${name} (e as chaves dele no cofre)?`)) return;
-      try {
-        await routerCall(`/api/router/providers/${encodeURIComponent(name)}`, "DELETE");
-        await loadRouterState();
-      } catch (e) { alert("Não foi possível remover: " + e.message); }
+      try { await routerCall(`/api/router/providers/${encodeURIComponent(name)}`, "DELETE"); await loadRouterState(); } catch (e) { alert("Não foi possível remover: " + e.message); }
     }
 
     async function testRouterProvider(name) {
@@ -1833,44 +2034,8 @@
       } catch (e) { if (out) out.innerText = "Erro: " + e.message; }
     }
 
-    function fmt(n) { return (n ?? 0).toLocaleString("pt-BR"); }
-
-    async function loadRouterUsage() {
-      try {
-        const u = await (await fetch("/api/router/usage?days=7")).json();
-        const t = u.totals;
-        const kpi = (label, value) => `<div class="bg-zinc-950 border border-zinc-800 rounded-xl p-3"><div class="text-[11px] text-zinc-500">${label}</div><div class="text-lg font-bold text-white">${value}</div></div>`;
-        document.getElementById("router-usage-kpis").innerHTML =
-          kpi("Chamadas", fmt(t.requests)) + kpi("Com sucesso", fmt(t.ok)) + kpi("Erros", fmt(t.errors))
-          + kpi("Tokens (entrada/saída)", `${fmt(t.prompt_tokens)} / ${fmt(t.completion_tokens)}`) + kpi("Latência média", t.avg_latency_ms ? t.avg_latency_ms + " ms" : "-");
-        const max = Math.max(1, ...u.by_day.map(d => d.requests));
-        document.getElementById("router-usage-days").innerHTML = u.by_day.map(d =>
-          `<div class="flex-1 flex flex-col items-center justify-end gap-1" title="${escAttr(d.day)}: ${d.requests} chamada(s)">
-             <div class="w-full rounded bg-brand-500/70" style="height:${Math.max(4, Math.round(d.requests / max * 48))}px"></div>
-             <div class="text-[9px] text-zinc-500">${escapeHtml(d.day.slice(5))}</div></div>`).join("") || '<div class="text-xs text-zinc-500">Sem uso ainda.</div>';
-        document.getElementById("router-usage-table").innerHTML = u.by_provider.length ? `<table class="w-full text-xs">
-          <thead><tr class="text-left text-zinc-500"><th class="py-1 pr-3">Provedor</th><th class="pr-3">Modelo</th><th class="pr-3">Chamadas</th><th class="pr-3">Erros</th><th class="pr-3">Tokens</th><th>Latência</th></tr></thead>
-          <tbody>${u.by_provider.map(r => `<tr class="border-t border-zinc-800 text-zinc-300">
-            <td class="py-1.5 pr-3 font-semibold">${escapeHtml(r.provider)}</td><td class="pr-3 font-mono">${escapeHtml(r.model)}</td>
-            <td class="pr-3">${fmt(r.requests)}</td><td class="pr-3">${fmt(r.requests - r.ok)}</td>
-            <td class="pr-3">${fmt(r.prompt_tokens + r.completion_tokens)}</td><td>${r.avg_latency_ms ? r.avg_latency_ms + " ms" : "-"}</td></tr>`).join("")}</tbody></table>` : "";
-      } catch (e) { console.error("Falha ao ler o uso:", e); }
-    }
-
-    // ---- conectar ferramentas
-    let connKeyShown = false;
-    function renderConnect() {
-      document.getElementById("conn-url").innerText = `${location.origin}/v1`;
-      document.getElementById("conn-key").innerText = connKeyShown ? (window.HERA_TOKEN || "") : "•".repeat(24);
-    }
-    function toggleConnKey() { connKeyShown = !connKeyShown; renderConnect(); }
-    async function copyText(id) { try { await navigator.clipboard.writeText(document.getElementById(id).innerText); } catch (e) { alert("Não consegui copiar; selecione o texto."); } }
-    async function copyKey() { try { await navigator.clipboard.writeText(window.HERA_TOKEN || ""); } catch (e) { alert("Não consegui copiar."); } }
-
-    function stepProviders() {
-      return [...routerState.providers.filter(p => p.active).map(p => p.name), "ollama"];
-    }
-
+    // ---------- combos e apelidos
+    function stepProviders() { return [...routerState.providers.filter(p => p.active).map(p => p.name), "ollama"]; }
     function modelsFor(provider) {
       if (provider === "ollama") return routerState.ollama_models || [];
       const p = routerState.providers.find(x => x.name === provider);
@@ -1884,19 +2049,27 @@
       const names = Object.keys(routerCombosDraft);
       if (!names.length) { box.innerHTML = '<div class="text-xs text-zinc-500">Nenhum combo ainda.</div>'; return; }
       box.innerHTML = names.map(cn => {
-        const rows = routerCombosDraft[cn].map((st, i) => `
+        const combo = routerCombosDraft[cn];
+        const weighted = combo.strategy === "weighted";
+        const rows = combo.steps.map((st, i) => `
           <div class="flex flex-wrap items-center gap-2">
             <span class="text-[11px] text-zinc-500 w-4">${i + 1}.</span>
-            <select onchange="routerCombosDraft['${escAttr(cn)}'][${i}].provider = this.value; renderRouterCombos()" class="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100">
+            <select onchange="routerCombosDraft['${escAttr(cn)}'].steps[${i}].provider = this.value; renderRouterCombos()" class="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100">
               ${stepProviders().map(pr => `<option value="${escAttr(pr)}" ${pr === st.provider ? "selected" : ""}>${escapeHtml(pr)}</option>`).join("")}
             </select>
-            <input list="models-${escAttr(st.provider)}" value="${escAttr(st.model)}" oninput="routerCombosDraft['${escAttr(cn)}'][${i}].model = this.value" placeholder="modelo" class="flex-1 min-w-[180px] bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100 font-mono">
+            <input list="models-${escAttr(st.provider)}" value="${escAttr(st.model)}" oninput="routerCombosDraft['${escAttr(cn)}'].steps[${i}].model = this.value" placeholder="modelo" class="flex-1 min-w-[180px] bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100 font-mono">
+            ${weighted ? `<input type="number" min="1" max="100" value="${st.weight || 1}" title="peso" oninput="routerCombosDraft['${escAttr(cn)}'].steps[${i}].weight = parseInt(this.value || '1', 10)" class="w-16 bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100">` : ""}
+            <button onclick="moveComboStep('${escAttr(cn)}', ${i}, -1)" class="text-xs text-zinc-500 hover:text-white" title="subir">↑</button>
+            <button onclick="moveComboStep('${escAttr(cn)}', ${i}, 1)" class="text-xs text-zinc-500 hover:text-white" title="descer">↓</button>
             <button onclick="removeComboStep('${escAttr(cn)}', ${i})" class="text-xs text-rose-400">x</button>
           </div>`).join("");
         return `<div class="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-2">
-          <div class="flex items-center justify-between">
+          <div class="flex flex-wrap items-center justify-between gap-2">
             <span class="text-sm font-bold text-white font-mono">${escapeHtml(cn)}</span>
-            <div class="flex gap-3">
+            <div class="flex items-center gap-3">
+              <select onchange="routerCombosDraft['${escAttr(cn)}'].strategy = this.value; renderRouterCombos()" class="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100">
+                ${(routerState.strategies || []).map(s => `<option value="${s}" ${s === combo.strategy ? "selected" : ""}>${STRATEGY_LABELS[s] || s}</option>`).join("")}
+              </select>
               <button onclick="addComboStep('${escAttr(cn)}')" class="text-xs text-brand-400">+ passo</button>
               <button onclick="deleteCombo('${escAttr(cn)}')" class="text-xs text-rose-400">apagar combo</button>
             </div>
@@ -1907,18 +2080,15 @@
     function addRouterCombo() {
       const name = (prompt("Nome do combo (letras minúsculas, números, - e _):") || "").trim().toLowerCase();
       if (!name) return;
-      routerCombosDraft[name] = [{ provider: stepProviders()[0], model: modelsFor(stepProviders()[0])[0] || "" }];
+      routerCombosDraft[name] = { strategy: "priority", steps: [{ provider: stepProviders()[0], model: modelsFor(stepProviders()[0])[0] || "" }] };
       renderRouterCombos();
     }
-    function addComboStep(cn) {
-      const pr = stepProviders()[0];
-      routerCombosDraft[cn].push({ provider: pr, model: modelsFor(pr)[0] || "" });
-      renderRouterCombos();
-    }
-    function removeComboStep(cn, i) {
-      routerCombosDraft[cn].splice(i, 1);
-      if (!routerCombosDraft[cn].length) delete routerCombosDraft[cn];
-      renderRouterCombos();
+    function addComboStep(cn) { const pr = stepProviders()[0]; routerCombosDraft[cn].steps.push({ provider: pr, model: modelsFor(pr)[0] || "" }); renderRouterCombos(); }
+    function removeComboStep(cn, i) { routerCombosDraft[cn].steps.splice(i, 1); if (!routerCombosDraft[cn].steps.length) delete routerCombosDraft[cn]; renderRouterCombos(); }
+    function moveComboStep(cn, i, d) {
+      const steps = routerCombosDraft[cn].steps, j = i + d;
+      if (j < 0 || j >= steps.length) return;
+      [steps[i], steps[j]] = [steps[j], steps[i]]; renderRouterCombos();
     }
     function deleteCombo(cn) { delete routerCombosDraft[cn]; renderRouterCombos(); }
 
@@ -1926,9 +2096,198 @@
       try {
         await routerCall("/api/router/combos", "PUT", { combos: routerCombosDraft });
         await loadRouterState();
-        alert("Combos salvos. Já dá para usar o nome do combo como modelo.");
+        ovToastSafe("Combos salvos. Já dá para usar o nome do combo como modelo.");
       } catch (e) { alert("Não foi possível salvar os combos: " + e.message); }
     }
+
+    function renderAliases() {
+      document.getElementById("rt-aliases").innerHTML = rtAliasDraft.map((row, i) => `
+        <div class="flex flex-wrap items-center gap-2">
+          <input value="${escAttr(row[0])}" oninput="rtAliasDraft[${i}][0] = this.value.trim()" placeholder="apelido (ex.: codigo)" class="w-44 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100 font-mono">
+          <span class="text-zinc-500">→</span>
+          <input value="${escAttr(row[1])}" oninput="rtAliasDraft[${i}][1] = this.value.trim()" placeholder="combo, provedor/modelo ou modelo" class="flex-1 min-w-[220px] bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100 font-mono">
+          <button onclick="rtAliasDraft.splice(${i}, 1); renderAliases()" class="text-xs text-rose-400">x</button>
+        </div>`).join("") || '<div class="text-xs text-zinc-500">Nenhum apelido ainda.</div>';
+    }
+    function addAliasRow() { rtAliasDraft.push(["", ""]); renderAliases(); }
+    async function saveAliases() {
+      const aliases = {};
+      rtAliasDraft.filter(r => r[0] && r[1]).forEach(r => { aliases[r[0]] = r[1]; });
+      try { await routerCall("/api/router/settings", "PUT", { aliases }); await loadRouterState(); ovToastSafe("Apelidos salvos."); } catch (e) { alert("Não foi possível salvar: " + e.message); }
+    }
+
+    // ---------- chaves de acesso
+    let connKeyShown = false;
+    function renderConnect() {
+      document.getElementById("conn-url").innerText = `${location.origin}/v1`;
+      document.getElementById("conn-key").innerText = connKeyShown ? (window.HERA_TOKEN || "") : "•".repeat(24);
+    }
+    function toggleConnKey() { connKeyShown = !connKeyShown; renderConnect(); }
+    async function copyText(id) { try { await navigator.clipboard.writeText(document.getElementById(id).innerText); ovToastSafe("Copiado."); } catch (e) { alert("Não consegui copiar; selecione o texto."); } }
+    async function copyKey() { try { await navigator.clipboard.writeText(window.HERA_TOKEN || ""); ovToastSafe("Copiado."); } catch (e) { alert("Não consegui copiar."); } }
+
+    async function loadClients() {
+      try {
+        const r = await routerCall("/api/router/clients", "GET");
+        const box = document.getElementById("rt-clientlist");
+        box.innerHTML = r.clients.map(c => {
+          const id = escAttr(c.id);
+          return `<div class="bg-zinc-950 border border-zinc-800 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2"><span class="font-bold text-sm text-white">${escapeHtml(c.name)}</span><code class="text-[11px] text-zinc-500">${escapeHtml(c.prefix)}…</code>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border ${c.enabled ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"}">${c.enabled ? "ATIVA" : "DESLIGADA"}</span></div>
+              <div class="text-[11px] text-zinc-500">modelos: ${c.models.length ? escapeHtml(c.models.join(", ")) : "todos"} · ${c.rpm ? c.rpm + " req/min" : "sem limite por minuto"} · ${c.daily_tokens ? fmt(c.today.tokens) + " / " + fmt(c.daily_tokens) + " tokens hoje" : "sem limite diário"} · hoje ${fmt(c.today.requests)} chamada(s)${c.last_used ? " · usada em " + new Date(c.last_used * 1000).toLocaleString("pt-BR") : " · nunca usada"}</div>
+            </div>
+            <div class="flex items-center gap-2 text-xs">
+              <button onclick="editClient('${id}')" class="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg">Editar</button>
+              <button onclick="toggleClient('${id}', ${!c.enabled})" class="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg">${c.enabled ? "Desligar" : "Ligar"}</button>
+              <button onclick="deleteClient('${id}')" class="px-2.5 py-1 text-rose-400 hover:text-rose-300">Apagar</button>
+            </div></div>`;
+        }).join("") || '<div class="text-xs text-zinc-500">Nenhuma chave ainda.</div>';
+        window.__clients = r.clients;
+      } catch (e) { console.error(e); }
+    }
+
+    async function createClientKey() {
+      const name = document.getElementById("ck-name").value.trim();
+      if (name.length < 2) { alert("Dê um nome à chave."); return; }
+      const models = document.getElementById("ck-models").value.split(/[\s,;]+/).filter(Boolean);
+      const body = { name, models, rpm: parseInt(document.getElementById("ck-rpm").value, 10) || null, daily_tokens: parseInt(document.getElementById("ck-tokens").value, 10) || null };
+      body.human_code = askHumanCode("criar uma chave de acesso para uma ferramenta externa");
+      if (!body.human_code) return;
+      try {
+        const r = await routerCall("/api/router/clients", "POST", body);
+        document.getElementById("ck-new-key").innerText = r.key;
+        document.getElementById("ck-new").classList.remove("hidden");
+        ["ck-name", "ck-models", "ck-rpm", "ck-tokens"].forEach(id => { document.getElementById(id).value = ""; });
+        await loadClients();
+      } catch (e) { alert("Não foi possível criar: " + e.message); }
+    }
+
+    async function editClient(id) {
+      const c = (window.__clients || []).find(x => x.id === id);
+      if (!c) return;
+      const models = prompt("Modelos permitidos (separados por vírgula; vazio = todos):", c.models.join(", "));
+      if (models === null) return;
+      const rpm = prompt("Limite de requisições por minuto (vazio = sem limite):", c.rpm || "");
+      if (rpm === null) return;
+      const tokens = prompt("Limite de tokens por dia (vazio = sem limite):", c.daily_tokens || "");
+      if (tokens === null) return;
+      try {
+        await routerCall(`/api/router/clients/${encodeURIComponent(id)}`, "PATCH", { models: models.split(/[\s,;]+/).filter(Boolean), rpm: parseInt(rpm, 10) || 0, daily_tokens: parseInt(tokens, 10) || 0 });
+        await loadClients();
+      } catch (e) { alert("Não foi possível salvar: " + e.message); }
+    }
+
+    async function toggleClient(id, enabled) {
+      const body = { enabled };
+      if (enabled) { body.human_code = askHumanCode("religar esta chave de acesso"); if (!body.human_code) return; }
+      try { await routerCall(`/api/router/clients/${encodeURIComponent(id)}`, "PATCH", body); await loadClients(); } catch (e) { alert(e.message); }
+    }
+
+    async function deleteClient(id) {
+      if (!confirm("Apagar esta chave? A ferramenta que a usa para de funcionar na hora.")) return;
+      try { await routerCall(`/api/router/clients/${encodeURIComponent(id)}`, "DELETE"); await loadClients(); } catch (e) { alert(e.message); }
+    }
+
+    // ---------- registro
+    async function loadRouterLogs() {
+      const q = new URLSearchParams({ limit: "120" });
+      const prov = document.getElementById("lg-provider").value, cli = document.getElementById("lg-client").value;
+      if (prov) q.set("provider", prov);
+      if (cli) q.set("client", cli);
+      if (document.getElementById("lg-errors").checked) q.set("errors", "true");
+      try {
+        const r = await routerCall("/api/router/logs?" + q.toString(), "GET");
+        const fill = (id, values, first) => { const el = document.getElementById(id); const keep = el.value; el.innerHTML = `<option value="">${first}</option>` + values.map(v => `<option value="${escAttr(v)}">${escapeHtml(v)}</option>`).join(""); el.value = keep; };
+        if (routerState) fill("lg-provider", [...routerState.providers.map(p => p.name), "ollama"], "todos os provedores");
+        fill("lg-client", [...new Set([...(rtUsage ? rtUsage.by_client.map(c => c.client).filter(c => !c.startsWith("painel")) : [])])], "todos os clientes");
+        const count = {};
+        r.logs.forEach(l => { if (l.request_id) count[l.request_id] = (count[l.request_id] || 0) + 1; });
+        const seen = {};
+        const rows = r.logs.map(l => {
+          const multi = l.request_id && count[l.request_id] > 1;
+          seen[l.request_id] = (seen[l.request_id] || 0) + 1;
+          const tentativa = multi && !l.ok;
+          const badge = l.ok ? '<span class="text-emerald-400">OK</span>' : `<span class="text-rose-400">${l.status || "erro"}</span>`;
+          const served = `${escapeHtml(l.provider)} / <span class="font-mono">${escapeHtml(l.model)}</span>`;
+          const asked = l.requested_model && l.requested_model !== l.model ? `<div class="text-[10px] text-zinc-500">pedido: <span class="font-mono">${escapeHtml(l.requested_model)}</span></div>` : "";
+          return `<tr class="border-t border-zinc-800 text-zinc-300 align-top">
+            <td class="py-1.5 pr-3 whitespace-nowrap text-zinc-500">${new Date(l.ts * 1000).toLocaleTimeString("pt-BR")}</td>
+            <td class="pr-3">${tentativa ? "↳ " : ""}${escapeHtml(l.client || "painel")}</td>
+            <td class="pr-3">${served}${asked}${l.error ? `<div class="text-[10px] text-rose-300 break-all">${escapeHtml(l.error)}</div>` : ""}</td>
+            <td class="pr-3">${badge}${l.stream ? ' <span class="text-[10px] text-zinc-500">stream</span>' : ""}</td>
+            <td class="pr-3">${l.latency_ms ? l.latency_ms + " ms" : "-"}</td><td class="pr-3">${fmt((l.prompt_tokens || 0) + (l.completion_tokens || 0))}</td>
+            <td>${l.cost === null || l.cost === undefined ? "-" : money(l.cost)}</td></tr>`;
+        });
+        document.getElementById("rt-logtable").innerHTML = rows.length ? `<table class="w-full text-xs"><thead><tr class="text-left text-zinc-500"><th class="py-1 pr-3">Hora</th><th class="pr-3">Cliente</th><th class="pr-3">Provedor / modelo</th><th class="pr-3">Resultado</th><th class="pr-3">Latência</th><th class="pr-3">Tokens</th><th>Custo</th></tr></thead><tbody>${rows.join("")}</tbody></table>` : '<div class="text-xs text-zinc-500">Nenhuma chamada registrada.</div>';
+      } catch (e) { document.getElementById("rt-logtable").innerHTML = `<div class="text-xs text-rose-400">${escapeHtml(e.message)}</div>`; }
+    }
+    function rtLiveToggle() { rtLiveStop(); if (document.getElementById("lg-live").checked) rtLiveTimer = setInterval(loadRouterLogs, 4000); }
+    function rtLiveStop() { if (rtLiveTimer) { clearInterval(rtLiveTimer); rtLiveTimer = null; } }
+
+    // ---------- ajustes
+    function renderTiers() {
+      document.getElementById("rt-tiers").innerHTML = rtTierDraft.map((t, i) => `
+        <div class="flex items-center justify-between bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200">
+          <span><span class="text-zinc-500 mr-2">${i + 1}.</span>${escapeHtml(TIER_LABELS[t] || t)}</span>
+          <span class="flex gap-3"><button onclick="moveTier(${i}, -1)" class="text-zinc-400 hover:text-white">↑</button><button onclick="moveTier(${i}, 1)" class="text-zinc-400 hover:text-white">↓</button></span>
+        </div>`).join("");
+    }
+    async function moveTier(i, d) {
+      const j = i + d;
+      if (j < 0 || j >= rtTierDraft.length) return;
+      [rtTierDraft[i], rtTierDraft[j]] = [rtTierDraft[j], rtTierDraft[i]];
+      renderTiers();
+      await saveRouterSettings();
+    }
+
+    async function saveRouterSettings() {
+      try {
+        await routerCall("/api/router/settings", "PUT", { tier_order: rtTierDraft, rtk: document.getElementById("rt-rtk").checked, breaker_threshold: parseInt(document.getElementById("rt-breaker").value, 10) || 3 });
+        ovToastSafe("Ajustes salvos.");
+      } catch (e) { alert("Não foi possível salvar: " + e.message); await loadRouterState(); }
+    }
+
+    function renderPricing() {
+      document.getElementById("rt-pricing").innerHTML = rtPriceDraft.map((row, i) => `
+        <div class="flex flex-wrap items-center gap-2">
+          <input value="${escAttr(row[0])}" oninput="rtPriceDraft[${i}][0] = this.value.trim()" placeholder="provedor ou provedor/modelo" class="flex-1 min-w-[220px] bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100 font-mono">
+          <label class="text-[11px] text-zinc-500">entrada <input type="number" step="any" min="0" value="${row[1]}" oninput="rtPriceDraft[${i}][1] = parseFloat(this.value || '0')" class="w-24 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100"></label>
+          <label class="text-[11px] text-zinc-500">saída <input type="number" step="any" min="0" value="${row[2]}" oninput="rtPriceDraft[${i}][2] = parseFloat(this.value || '0')" class="w-24 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100"></label>
+          <span class="text-[11px] text-zinc-600">US$/1M tokens</span>
+          <button onclick="rtPriceDraft.splice(${i}, 1); renderPricing()" class="text-xs text-rose-400">x</button>
+        </div>`).join("") || '<div class="text-xs text-zinc-500">Nenhum preço cadastrado.</div>';
+    }
+    function addPriceRow() { rtPriceDraft.push(["", 0, 0]); renderPricing(); }
+    async function savePricing() {
+      const pricing = {};
+      rtPriceDraft.filter(r => r[0]).forEach(r => { pricing[r[0]] = { in: r[1] || 0, out: r[2] || 0 }; });
+      try { await routerCall("/api/router/settings", "PUT", { pricing }); await loadRouterState(); ovToastSafe("Preços salvos."); } catch (e) { alert("Não foi possível salvar: " + e.message); }
+    }
+
+    async function exportRouterConfig() {
+      try {
+        const data = await routerCall("/api/router/export", "GET");
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob); a.download = "hera-roteador.json"; a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      } catch (e) { alert("Não foi possível exportar: " + e.message); }
+    }
+
+    async function importRouterConfig(input) {
+      const file = input.files[0];
+      input.value = "";
+      if (!file) return;
+      let data;
+      try { data = JSON.parse(await file.text()); } catch (e) { alert("O arquivo não é um JSON válido."); return; }
+      const code = askHumanCode("importar uma configuração do roteador (os provedores chegam desligados)");
+      if (!code) return;
+      try { const r = await routerCall("/api/router/import", "POST", { data, human_code: code }); await loadRouterState(); alert(`Importado: ${r.providers} provedor(es) (desligados) e ${r.combos} combo(s).`); }
+      catch (e) { alert("Importação recusada: " + e.message); }
+    }
+
     // ==================== OBSIDIAN ====================
     function lsGet(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }
     function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* sem armazenamento: segue sem lembrar */ } }
