@@ -35,7 +35,8 @@ TOKEN_ENV = "HERA_API_KEY"
 ALLOWED_HOSTS_ENV = "HERA_ALLOWED_HOSTS"
 _MIN_TOKEN_LEN = 24
 
-DEFAULT_PUBLIC_PATHS = frozenset({"/", "/healthz"})
+DEFAULT_PUBLIC_PATHS = frozenset({"/", "/healthz", "/favicon.ico"})
+DEFAULT_PUBLIC_PREFIXES = ("/static/",)        # CSS, fontes e bibliotecas da UI: arquivos publicos, sem dados
 DEFAULT_MAX_BODY_BYTES = 1 * 1024 * 1024                       # 1 MiB para a maioria das rotas
 DEFAULT_BODY_LIMITS: Dict[str, int] = {"/v1/chat/completions": 8 * 1024 * 1024}   # conversas longas
 DEFAULT_RATE_LIMITS: Dict[str, Tuple[int, float]] = {
@@ -80,6 +81,7 @@ class SecuritySettings:
     token: str
     allowed_hosts: Set[str] = field(default_factory=lambda: {"127.0.0.1", "localhost", "::1"})
     public_paths: frozenset = DEFAULT_PUBLIC_PATHS
+    public_prefixes: tuple = DEFAULT_PUBLIC_PREFIXES
     rate_limits: Dict[str, Tuple[int, float]] = field(default_factory=lambda: dict(DEFAULT_RATE_LIMITS))
     max_body_bytes: int = DEFAULT_MAX_BODY_BYTES
     body_limits: Dict[str, int] = field(default_factory=lambda: dict(DEFAULT_BODY_LIMITS))
@@ -179,7 +181,10 @@ class LocalSecurityMiddleware:
 
         path = scope.get("path", "")
         supplied = None
-        if path not in self.settings.public_paths:
+        is_public = path in self.settings.public_paths or (
+            scope["type"] == "http" and scope.get("method") in ("GET", "HEAD")
+            and any(path.startswith(pref) for pref in self.settings.public_prefixes))
+        if not is_public:
             supplied = self._supplied_token(headers, scope)
             client_key = None
             if not self._token_ok(supplied):

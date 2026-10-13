@@ -66,6 +66,10 @@
 
 ---
 
+## 🧱 UI without CDNs
+
+The panel loads everything from the server itself (`/static`: compiled Tailwind CSS, Lucide, marked, DOMPurify and the Inter/JetBrains Mono fonts), so it works offline and ships with a strict Content-Security-Policy. Static files are public read-only; every API route still needs the token. After changing Tailwind classes in `web/index.html`, regenerate with `python tools/build_ui.py` (needs Node.js).
+
 ## 🔌 Start/stop local services from the panel
 
 In **Motores & IAs**, the Ollama card has **Iniciar / Parar** buttons. The commands are fixed (nothing comes from the request), the process starts hidden on loopback with a minimal environment (no API keys), and **Parar** only stops what Hera itself started (whole process tree). A service opened elsewhere (tray icon, another terminal) is shown as running but is left alone. Logs go to `data/logs/`. Services started by Hera keep running if you close Hera.

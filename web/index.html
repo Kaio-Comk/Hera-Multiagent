@@ -4,31 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>👑 HERA Multiagent — Mission Control</title>
-  <!-- Tailwind CSS CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Tudo local (web/static, gerado por tools/build_ui.py): a UI nao busca nada na internet -->
+  <link rel="stylesheet" href="/static/tailwind.css">
+  <link rel="stylesheet" href="/static/fonts.css">
+  <script src="/static/vendor/lucide.min.js"></script>
   <!-- Markdown + sanitizador (o conteudo das notas NUNCA entra na pagina sem passar pelo DOMPurify) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
-          colors: {
-            // neutros quentes + laranja
-            zinc: { 50: '#fafaf9', 100: '#ededed', 200: '#d4d4d4', 300: '#b8b8b8', 400: '#9ca3af', 500: '#6b7280',
-                    600: '#4a4a4a', 700: '#3a3a3a', 800: '#333333', 900: '#262626', 950: '#161616' },
-            brand: { 50: '#fff4f0', 300: '#f5a58f', 400: '#ee8466', 500: '#e56a4a', 600: '#e56a4a', 700: '#cc5236', 900: '#6b2a1a' }
-          }
-        }
-      }
-    }
-  </script>
+  <script src="/static/vendor/marked.min.js"></script>
+  <script src="/static/vendor/purify.min.js"></script>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
     body { font-family: 'Inter', system-ui, sans-serif; background-color: #1a1a1a;
            background-image: linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
            background-size: 32px 32px; }
@@ -606,7 +589,7 @@
           </div>
           <div>
             <label class="block text-xs font-semibold text-zinc-400 mb-1">Modelo do planejador</label>
-            <input id="planner-model" list="planner-model-list" autocomplete="off" placeholder="Padrão do motor (ou digite um nome)" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-brand-500"><datalist id="planner-model-list"></datalist><div class="text-[10px] text-zinc-500 mt-1">Escolha na lista ou digite qualquer nome que o motor aceite. Deixe vazio para o padrão.</div>
+            <select id="planner-model" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-brand-500"></select>
           </div>
           <button onclick="savePlanner()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-sm font-semibold transition-all">Salvar planejador</button>
         </div>
@@ -1644,8 +1627,7 @@
       const models = [...(info.available_models || [])];
       const chosen = typeof preferredModel === "string" ? preferredModel : "";
       if (chosen && !models.includes(chosen)) models.unshift(chosen);
-      document.getElementById("planner-model-list").innerHTML = models.map(m => `<option value="${escAttr(m)}">`).join("");
-      document.getElementById("planner-model").value = chosen;
+      fillSelect(document.getElementById("planner-model"), models, chosen, models.length ? "Padrão do motor" : "Padrão do motor (sem lista: motor desligado ou fora do ar)");
     }
 
     async function savePlanner() {

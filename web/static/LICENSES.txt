@@ -1,0 +1,7 @@
+Arquivos de terceiros incluidos em web/static (gerados por tools/build_ui.py a partir do npm):
+
+- Tailwind CSS 3.4.17 (CSS compilado)        MIT        https://github.com/tailwindlabs/tailwindcss
+- Lucide 0.468.0 (icones)                    ISC        https://github.com/lucide-icons/lucide
+- marked 12.0.2 (Markdown)                   MIT        https://github.com/markedjs/marked
+- DOMPurify 3.1.6 (sanitizador de HTML)      Apache-2.0 / MPL-2.0   https://github.com/cure53/DOMPurify
+- Inter e JetBrains Mono (fontes, @fontsource) SIL OFL 1.1  https://fontsource.org
