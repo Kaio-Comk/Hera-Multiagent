@@ -606,7 +606,7 @@
           </div>
           <div>
             <label class="block text-xs font-semibold text-zinc-400 mb-1">Modelo do planejador</label>
-            <select id="planner-model" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-brand-500"></select>
+            <input id="planner-model" list="planner-model-list" autocomplete="off" placeholder="Padrão do motor (ou digite um nome)" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-brand-500"><datalist id="planner-model-list"></datalist><div class="text-[10px] text-zinc-500 mt-1">Escolha na lista ou digite qualquer nome que o motor aceite. Deixe vazio para o padrão.</div>
           </div>
           <button onclick="savePlanner()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-sm font-semibold transition-all">Salvar planejador</button>
         </div>
@@ -1644,7 +1644,8 @@
       const models = [...(info.available_models || [])];
       const chosen = typeof preferredModel === "string" ? preferredModel : "";
       if (chosen && !models.includes(chosen)) models.unshift(chosen);
-      fillSelect(document.getElementById("planner-model"), models, chosen, "Padrão do motor");
+      document.getElementById("planner-model-list").innerHTML = models.map(m => `<option value="${escAttr(m)}">`).join("");
+      document.getElementById("planner-model").value = chosen;
     }
 
     async function savePlanner() {

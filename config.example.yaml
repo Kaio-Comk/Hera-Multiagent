@@ -20,11 +20,11 @@ engines:
     timeout: 120.0
   claude_code:
     enabled: true
-    default_model: claude-3-7-sonnet
+    default_model: sonnet
     timeout: 300.0
   antigravity:
     enabled: true
-    default_model: gemini-2.5-pro
+    default_model: default
     timeout: 300.0
 
 # Provedores de nuvem do gateway (/v1). TODOS desligados por padrão.
