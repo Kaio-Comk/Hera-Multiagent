@@ -3,6 +3,8 @@ import shutil
 import time
 import asyncio
 from adapters.model_args import model_args
+from adapters.cli_stream import ClaudeStream, run_streaming
+from adapters.progress import STATUS, say
 from typing import Dict, Any, Optional, List
 
 from models.task import AgentTask, AgentResult, TaskStatus
@@ -95,7 +97,8 @@ Instrução:
         prompt = self._build_prompt(task)
         timeout = task.timeout_seconds or self.timeout
 
-        cmd = [self.binary_path, *model_args(task.assigned_model), "-p", prompt]   # o modelo escolhido agora vale
+        # stream-json: o CLI conta o que faz (texto, ferramentas) e o console ao vivo mostra em tempo real
+        cmd = [self.binary_path, *model_args(task.assigned_model), "-p", prompt, "--output-format", "stream-json", "--verbose"]
 
         # Validação estrita de workspace
         if task.workspace and not os.path.isdir(task.workspace):
@@ -110,38 +113,35 @@ Instrução:
         cwd = task.workspace if task.workspace else None
 
         try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                cwd=cwd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            self._active_processes[task.id] = proc
-            handle.process_id = proc.pid
+            parser = ClaudeStream()
+            say(STATUS, f"Executando no Claude Code (modelo {task.assigned_model or 'padrao'})...")
 
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            def remember(proc):
+                self._active_processes[task.id] = proc
+                handle.process_id = proc.pid
+
+            code, raw_out, stderr_str = await run_streaming(cmd, cwd, timeout, parser, on_proc=remember)
             elapsed = time.time() - start_time
+            output = parser.text() if (parser.final is not None or parser.text_parts) else raw_out.strip()
 
-            stdout_str = stdout.decode("utf-8", errors="replace").strip()
-            stderr_str = stderr.decode("utf-8", errors="replace").strip()
-
-            if proc.returncode == 0:
+            if code == 0 and not parser.is_error:
                 return AgentResult(
                     task_id=task.id,
                     status=TaskStatus.SUCCEEDED,
                     summary=f"Claude Code concluiu a tarefa com sucesso em {elapsed:.2f}s",
-                    output_text=stdout_str,
-                    execution_time_seconds=round(elapsed, 2)
+                    output_text=output,
+                    execution_time_seconds=round(elapsed, 2),
+                    metadata=dict(parser.meta)
                 )
-            else:
-                return AgentResult(
-                    task_id=task.id,
-                    status=TaskStatus.FAILED,
-                    summary=f"Claude Code finalizou com código {proc.returncode}",
-                    output_text=stdout_str,
-                    error_message=stderr_str,
-                    execution_time_seconds=round(elapsed, 2)
-                )
+            return AgentResult(
+                task_id=task.id,
+                status=TaskStatus.FAILED,
+                summary=f"Claude Code finalizou com código {code}",
+                output_text=output,
+                error_message=stderr_str or output[:500] or "O Claude Code terminou com erro.",
+                execution_time_seconds=round(elapsed, 2),
+                metadata=dict(parser.meta)
+            )
 
         except asyncio.TimeoutError:
             elapsed = time.time() - start_time

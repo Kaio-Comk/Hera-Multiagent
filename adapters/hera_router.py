@@ -13,6 +13,7 @@ import time
 from typing import Awaitable, Callable, Dict, List, Optional
 
 from adapters.base import AgentAdapter  # noqa: F401 - documenta o protocolo implementado
+from adapters.progress import STATUS, TEXT, say
 from app.gateway.providers import GatewayProviderError
 from app.gateway.schemas import ChatCompletionRequest, ChatCompletionResponse, ChatMessage
 from app.privacy_guard import PrivacyGuard
@@ -67,12 +68,14 @@ class HeraRouterAdapter:
     async def _run(self, task: AgentTask, handle: RunHandle) -> AgentResult:
         started = handle.start_time
         try:
+            say(STATUS, f"Pedindo ao Roteador Hera (modelo {task.assigned_model or self.default_model})...")
             resp = await asyncio.wait_for(self._call(self._request(task)), timeout=task.timeout_seconds or 300)
             choice = resp.choices[0] if resp.choices else None
             content = (choice.message.content if choice and choice.message else "") or ""
             if isinstance(content, list):
                 content = "".join(str(part.get("text", "")) for part in content if isinstance(part, dict))
             elapsed = time.time() - started
+            say(TEXT, str(content).strip())
             return AgentResult(task_id=task.id, status=TaskStatus.SUCCEEDED,
                                summary=f"Concluído pelo Roteador Hera ({resp.model}) em {elapsed:.2f}s",
                                output_text=str(content).strip(), execution_time_seconds=round(elapsed, 2))

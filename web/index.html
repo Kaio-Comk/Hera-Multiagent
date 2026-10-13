@@ -808,6 +808,29 @@
     </section>
 
   </main>
+
+  <!-- ==================== CONSOLE DO HERA (ao vivo) ==================== -->
+  <div id="hera-console" class="fixed bottom-0 right-0 left-60 z-40 border-t border-zinc-700 bg-[#141414]/95 backdrop-blur-md shadow-2xl">
+    <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-2 border-b border-zinc-800 cursor-pointer select-none" onclick="hcToggle()">
+      <div class="flex items-center gap-3 min-w-0">
+        <span class="flex items-center gap-2 text-xs font-bold text-white"><i data-lucide="terminal" class="w-4 h-4 text-brand-400"></i> Console do Hera</span>
+        <span id="hc-dot" class="dot" style="background:#6b7280"></span>
+        <span id="hc-status" class="text-[11px] text-zinc-400 truncate">ocioso</span>
+        <span id="hc-progress" class="hidden w-28 h-1.5 bg-zinc-800 rounded"><span id="hc-progress-bar" class="block h-1.5 rounded bg-brand-500" style="width:0%"></span></span>
+      </div>
+      <div class="flex flex-wrap items-center gap-2 text-[11px]" onclick="event.stopPropagation()">
+        <select id="hc-run" onchange="hcPickRun(this.value)" class="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-zinc-200 max-w-[220px]"><option value="live">Ao vivo</option></select>
+        <label class="flex items-center gap-1 text-zinc-400"><input id="hc-f-text" type="checkbox" checked onchange="hcRefilter()" class="accent-brand-600"> falas</label>
+        <label class="flex items-center gap-1 text-zinc-400"><input id="hc-f-tool" type="checkbox" checked onchange="hcRefilter()" class="accent-brand-600"> ferramentas</label>
+        <label class="flex items-center gap-1 text-zinc-400"><input id="hc-f-sys" type="checkbox" checked onchange="hcRefilter()" class="accent-brand-600"> sistema</label>
+        <label class="flex items-center gap-1 text-zinc-400"><input id="hc-auto" type="checkbox" checked class="accent-brand-600"> rolar</label>
+        <button onclick="hcCopy()" class="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-200">copiar</button>
+        <button onclick="hcClear()" class="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-200">limpar</button>
+        <button onclick="hcToggle()" id="hc-toggle" class="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-200">abrir</button>
+      </div>
+    </div>
+    <div id="hc-body" class="hidden overflow-y-auto px-4 py-3 space-y-1.5 font-mono text-[12px] leading-relaxed" style="height:40vh"></div>
+  </div>
   </div>
 
   <!-- Script Lógico da Interface -->
@@ -820,6 +843,7 @@
       lucide.createIcons();
       initWebSocket();
       switchTab(document.getElementById('tab-' + location.hash.slice(1)) ? location.hash.slice(1) : 'studio');
+      hcInit();
       loadServices().then(loadHealth);
       setInterval(loadServices, 5000);
       setInterval(() => { if (!document.getElementById('tab-engines').classList.contains('hidden')) loadHealth(); }, 8000);
@@ -906,6 +930,9 @@
       } else if (data.type === "orchestration_finished") {
         showPlanResults(data);
         loadTasksHistory();
+      } else if (data.type === "console") {
+        hcAdd(data);
+        if (data.kind === "plan_end") hcLoadRuns();
       }
     }
 
@@ -2311,6 +2338,201 @@
       if (!code) return;
       try { const r = await routerCall("/api/router/import", "POST", { data, human_code: code }); await loadRouterState(); alert(`Importado: ${r.providers} provedor(es) (desligados) e ${r.combos} combo(s).`); }
       catch (e) { alert("Importação recusada: " + e.message); }
+    }
+
+    // ==================== CONSOLE DO HERA (ao vivo) ====================
+    const HC = { open: false, live: [], shown: [], view: "live", plan: null, done: 0, total: 0, running: new Set(), lastText: null };
+    const ENGINE_COLOR = { claude_code: "#e56a4a", antigravity: "#60a5fa", ollama: "#34d399", hera_router: "#c084fc" };
+
+    function hcEl(tag, cls, text) {
+      const e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (text !== undefined && text !== null) e.textContent = text;
+      return e;
+    }
+
+    function hcFmtDuration(s) {
+      s = Math.round(s || 0);
+      return s >= 60 ? `${Math.floor(s / 60)}min ${String(s % 60).padStart(2, "0")}s` : `${s}s`;
+    }
+    function hcTime(ts) { return new Date(ts * 1000).toLocaleTimeString("pt-BR"); }
+
+    function hcInit() {
+      HC.open = lsGet("hc-open", "0") === "1";
+      hcApplyOpen();
+      fetch("/api/console?limit=1500").then(r => r.json()).then(d => { (d.events || []).forEach(e => hcAdd(e, true)); hcRenderAll(); }).catch(() => {});
+      hcLoadRuns();
+    }
+
+    function hcApplyOpen() {
+      document.getElementById("hc-body").classList.toggle("hidden", !HC.open);
+      document.getElementById("hc-toggle").innerText = HC.open ? "minimizar" : "abrir";
+      const main = document.querySelector("main");
+      if (main) main.style.paddingBottom = HC.open ? "44vh" : "64px";
+    }
+    function hcToggle() { HC.open = !HC.open; lsSet("hc-open", HC.open ? "1" : "0"); hcApplyOpen(); if (HC.open) hcScroll(true); }
+    function hcOpen() { if (!HC.open) { HC.open = true; lsSet("hc-open", "1"); hcApplyOpen(); } }
+    function hcScroll(force) { const b = document.getElementById("hc-body"); if (force || document.getElementById("hc-auto").checked) b.scrollTop = b.scrollHeight; }
+
+    function hcKindGroup(kind) {
+      if (kind === "text") return "text";
+      if (kind === "tool" || kind === "tool_result") return "tool";
+      return "sys";
+    }
+    function hcVisible(ev) {
+      const g = hcKindGroup(ev.kind);
+      if (ev.kind === "plan_start" || ev.kind === "plan_end" || ev.kind === "step_start" || ev.kind === "step_end" || ev.kind === "error") return true;
+      return document.getElementById("hc-f-" + g).checked;
+    }
+
+    // ---- recebe um evento (do WebSocket ou do historico)
+    function hcAdd(ev, silent) {
+      HC.live.push(ev);
+      if (HC.live.length > 3000) HC.live.shift();
+      hcTrack(ev);
+      if (silent || HC.view !== "live") return;
+      hcRenderEvent(ev);
+      if (ev.kind === "plan_start" || ev.kind === "step_start") hcOpen();
+      hcScroll(false);
+    }
+
+    function hcTrack(ev) {
+      const dot = document.getElementById("hc-dot"), status = document.getElementById("hc-status"), bar = document.getElementById("hc-progress-bar");
+      const wrap = document.getElementById("hc-progress");
+      const key = (ev.run || "") + "/" + (ev.step || "");
+      if (ev.kind === "plan_start") { HC.plan = ev.title; HC.done = 0; HC.total = ev.total || 0; HC.running = new Set(); }
+      if (ev.kind === "step_start") HC.running.add(key);
+      if (ev.kind === "step_end") { HC.running.delete(key); HC.done += 1; }
+      const active = HC.running.size > 0 || (ev.kind === "plan_start");
+      if (ev.kind === "plan_end") { HC.running = new Set(); dot.style.background = ev.status === "ok" ? "#10b981" : "#ef4444"; status.innerText = `${HC.plan || "execução"} · ${ev.text || ev.status}`; wrap.classList.add("hidden"); return; }
+      if (active) {
+        dot.style.background = "#f59e0b";
+        const names = [...HC.running].map(k => k.split("/")[1]).join(", ");
+        status.innerText = `${HC.plan || "execução"} · ${HC.done}/${HC.total} passos${names ? " · agora: " + names : ""}`;
+        wrap.classList.toggle("hidden", !HC.total);
+        bar.style.width = HC.total ? Math.round(100 * HC.done / HC.total) + "%" : "0%";
+      }
+    }
+
+    // ---- desenha
+    function hcRenderAll() {
+      const body = document.getElementById("hc-body");
+      body.innerHTML = "";
+      HC.lastText = null;
+      const list = HC.view === "live" ? HC.live : HC.shown;
+      list.forEach(hcRenderEvent);
+      if (!list.length) body.appendChild(hcEl("div", "text-zinc-600", "Quando você executar um plano ou uma tarefa, tudo o que acontecer aparece aqui, em tempo real."));
+      hcScroll(true);
+    }
+    function hcRefilter() { hcRenderAll(); }
+
+    function hcRenderEvent(ev) {
+      const body = document.getElementById("hc-body");
+      if (!hcVisible(ev)) return;
+      if (body.firstChild && body.firstChild.dataset && body.firstChild.dataset.empty) body.innerHTML = "";
+      const color = ENGINE_COLOR[ev.engine] || "#9ca3af";
+      const label = ev.step ? `[${ev.step}]` : "";
+      let node = null;
+      if (ev.kind === "text") {
+        const last = HC.lastText;
+        if (last && last.dataset.run === String(ev.run) && last.dataset.step === String(ev.step) && last.parentNode === body && body.lastChild === last) {
+          last.querySelector(".t").textContent += ev.text;
+          return;
+        }
+        node = hcEl("div", "pl-3 border-l-2 text-zinc-200");
+        node.style.borderColor = color;
+        node.dataset.run = ev.run; node.dataset.step = ev.step;
+        node.appendChild(hcEl("div", "t whitespace-pre-wrap break-words", ev.text));
+        HC.lastText = node;
+      } else if (ev.kind === "plan_start") {
+        node = hcEl("div", "mt-3 mb-1 p-2.5 rounded-lg bg-brand-500/10 border border-brand-500/30");
+        node.appendChild(hcEl("div", "text-brand-300 font-bold", `${ev.mode === "tarefa" ? "Tarefa" : "Plano"}: ${ev.title || ""}`));
+        node.appendChild(hcEl("div", "text-zinc-400 text-[11px]", `${hcTime(ev.ts)} · ${ev.total} passo(s)`));
+        (ev.steps || []).forEach(s => node.appendChild(hcEl("div", "text-zinc-300 text-[11px]", `  ${s.id}  ${s.title}  →  ${s.engine || "auto"}${s.model ? " / " + s.model : ""}${s.depends_on && s.depends_on.length ? "  (depois de " + s.depends_on.join(", ") + ")" : ""}`)));
+        HC.lastText = null;
+      } else if (ev.kind === "step_start") {
+        node = hcEl("div", "mt-2 flex flex-wrap items-baseline gap-2");
+        const badge = hcEl("span", "px-1.5 py-0.5 rounded text-[10px] font-bold text-black", `${ev.engine || "?"}${ev.model ? " / " + ev.model : ""}`);
+        badge.style.background = color;
+        node.appendChild(hcEl("span", "text-zinc-500", hcTime(ev.ts)));
+        node.appendChild(hcEl("span", "text-white font-bold", `▶ ${label} ${ev.title || ""}`));
+        node.appendChild(badge);
+        if (ev.text) node.appendChild(hcEl("span", "text-zinc-500 text-[11px] italic", ev.text));
+        HC.lastText = null;
+      } else if (ev.kind === "tool") {
+        node = hcEl("div", "pl-3 text-amber-300 break-words", `🔧 ${ev.text}`);
+        HC.lastText = null;
+      } else if (ev.kind === "tool_result") {
+        const lines = (ev.text || "").split("\n");
+        const preview = lines.slice(0, 2).join(" ⏎ ").slice(0, 140);
+        node = document.createElement("details");
+        node.className = "pl-3 " + (ev.error ? "text-rose-300" : "text-zinc-500");
+        const sum = hcEl("summary", "cursor-pointer break-words", `↳ ${ev.error ? "erro: " : ""}${preview}${lines.length > 2 || (ev.text || "").length > 140 ? " …" : ""}`);
+        node.appendChild(sum);
+        node.appendChild(hcEl("pre", "whitespace-pre-wrap break-words mt-1 text-zinc-400", ev.text));
+        HC.lastText = null;
+      } else if (ev.kind === "thinking") {
+        node = hcEl("div", "pl-3 text-zinc-600 italic", "… pensando");
+      } else if (ev.kind === "heartbeat") {
+        node = hcEl("div", "pl-3 text-zinc-500 italic", `⏳ ${label} ${ev.text}`);
+      } else if (ev.kind === "step_end") {
+        const ok = ev.status === "SUCCEEDED", cancelled = ev.status === "CANCELLED";
+        const extra = [];
+        if (ev.seconds !== undefined) extra.push(hcFmtDuration(ev.seconds));
+        if (ev.input_tokens || ev.output_tokens) extra.push(`${(ev.input_tokens || 0).toLocaleString("pt-BR")} → ${(ev.output_tokens || 0).toLocaleString("pt-BR")} tokens`);
+        if (ev.cost_usd) extra.push("US$ " + Number(ev.cost_usd).toFixed(4));
+        node = hcEl("div", "mt-1 break-words font-bold " + (ok ? "text-emerald-400" : cancelled ? "text-amber-300" : "text-rose-400"),
+          `${ok ? "✓" : cancelled ? "⊘" : "✗"} ${label} ${ok ? "concluído" : cancelled ? "cancelado" : "falhou"}${extra.length ? " · " + extra.join(" · ") : ""}`);
+        if (!ok && ev.error) node.appendChild(hcEl("div", "font-normal text-[11px] text-rose-300", "motivo: " + ev.error));
+        HC.lastText = null;
+      } else if (ev.kind === "plan_end") {
+        const ok = ev.status === "ok";
+        node = hcEl("div", "mt-3 p-2.5 rounded-lg border font-bold " + (ok ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300" : "bg-rose-500/10 border-rose-500/30 text-rose-300"),
+          `${ok ? "✓ Concluído" : "✗ Terminou com problemas"}: ${ev.text || ""}${ev.seconds ? " · " + hcFmtDuration(ev.seconds) : ""}`);
+        HC.lastText = null;
+      } else if (ev.kind === "error") {
+        node = hcEl("div", "text-rose-400", `✗ ${ev.text}`);
+      } else {
+        node = hcEl("div", "text-zinc-500", `ℹ ${label ? label + " " : ""}${ev.text || ev.kind}`);
+      }
+      if (node) body.appendChild(node);
+    }
+
+    // ---- execucoes anteriores
+    async function hcLoadRuns() {
+      try {
+        const r = await (await fetch("/api/console/runs")).json();
+        const sel = document.getElementById("hc-run");
+        const keep = sel.value;
+        sel.innerHTML = '<option value="live">Ao vivo</option>' + r.runs.map(x => {
+          const when = x.started ? new Date(x.started * 1000).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+          return `<option value="${escAttr(x.id)}">${escapeHtml(when)} · ${escapeHtml((x.title || x.id).slice(0, 40))} ${x.status === "ok" ? "✓" : x.status ? "✗" : "…"}</option>`;
+        }).join("");
+        if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+      } catch (e) { /* sem historico ainda */ }
+    }
+
+    async function hcPickRun(id) {
+      if (id === "live") { HC.view = "live"; hcRenderAll(); return; }
+      try {
+        const r = await (await fetch("/api/console/runs/" + encodeURIComponent(id))).json();
+        HC.view = id; HC.shown = r.events || [];
+        hcOpen(); hcRenderAll();
+      } catch (e) { alert("Não consegui abrir essa execução."); }
+    }
+
+    function hcClear() { HC.live = []; HC.shown = []; HC.lastText = null; hcRenderAll(); }
+
+    async function hcCopy() {
+      const list = HC.view === "live" ? HC.live : HC.shown;
+      const lines = list.filter(hcVisible).map(e => {
+        const t = hcTime(e.ts);
+        if (e.kind === "text") return e.text;
+        if (e.kind === "step_start") return `\n[${t}] ▶ ${e.step} ${e.title || ""} (${e.engine || ""} ${e.model || ""})`;
+        if (e.kind === "step_end") return `[${t}] ${e.status === "SUCCEEDED" ? "✓" : "✗"} ${e.step} ${e.status}${e.error ? " — " + e.error : ""}`;
+        return `[${t}] ${e.kind}: ${e.text || ""}`;
+      });
+      try { await navigator.clipboard.writeText(lines.join("\n")); ovToastSafe("Console copiado."); } catch (e) { alert("Não consegui copiar."); }
     }
 
     // ==================== OBSIDIAN ====================

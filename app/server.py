@@ -34,6 +34,7 @@ from app.auto_fix import AutoFixEngine
 from app.dag_scheduler import TaskDAG, DAGScheduler
 from app import orchestration
 from app.engine_profiles import build_catalog, filter_ollama_models
+from app.console_bus import ConsoleBus
 from app.runtime_state import resolve_db_path, merge_legacy_db, setup_file_logging
 from app.privacy_guard import PrivacyGuard
 from app.services_control import SERVICES, ServiceManager, port_open
@@ -308,6 +309,9 @@ def broadcast_log(msg: str, level: str = "info"):
     except RuntimeError:
         pass
 
+# Console ao vivo: tudo o que acontece num plano/tarefa, em ordem, na tela e em data/runs/<id>.jsonl
+CONSOLE = ConsoleBus(DATA_DIR / "runs", broadcast=lambda payload: ws_manager.broadcast(payload))
+
 ENGINE_ADAPTER_NAMES = {"ollama": "ollama", "claude_code": "claude_code", "antigravity": "antigravity",
                         "hera_router": "hera_router"}
 
@@ -334,7 +338,8 @@ autofix = AutoFixEngine(
     router=router,
     coordinator=coordinator,
     validator=validator,
-    on_feedback=broadcast_log
+    on_feedback=broadcast_log,
+    console=CONSOLE,
 )
 
 # Schemas Pydantic
@@ -578,6 +583,25 @@ async def _engine_catalog(executors: List[str]):
     return build_catalog(up), down
 
 
+@app.get("/api/console")
+async def console_events(after: int = 0, limit: int = 500, run: Optional[str] = None):
+    """Eventos do console ao vivo (para a tela se atualizar depois de recarregar a pagina)."""
+    return {"events": CONSOLE.events(after, limit, run)}
+
+
+@app.get("/api/console/runs")
+async def console_runs():
+    return {"runs": await asyncio.to_thread(CONSOLE.list_runs)}
+
+
+@app.get("/api/console/runs/{run_id}")
+async def console_run(run_id: str):
+    events = await asyncio.to_thread(CONSOLE.read_run, run_id)
+    if not events:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": "Execucao nao encontrada."})
+    return {"events": events}
+
+
 @app.get("/api/orchestration")
 async def get_orchestration():
     """Planejador escolhido, motores ligados e se o modo offline vai forcar tudo para o Ollama."""
@@ -618,6 +642,8 @@ async def make_plan(req: PlanRequest):
     models_map = {c["engine"]: [m["id"] for m in c["models"]] for c in catalog}
     task = orchestration.build_planning_task(req.goal, catalog, ocfg["max_steps"], planner_engine,
                                              ocfg["planner"]["model"], str(ROOT_DIR))
+    CONSOLE.emit("info", f"Planejador {planner_engine}{' / ' + ocfg['planner']['model'] if ocfg['planner']['model'] else ''} "
+                         f"analisando o objetivo com {len(catalog)} motor(es) no ar...", step="planejamento", title="Planejamento")
     try:
         adapter, model, reason = await router.route(task)       # o Gate DLP / modo offline continua valendo
     except PermissionError as exc:
@@ -639,8 +665,11 @@ async def make_plan(req: PlanRequest):
             raise orchestration.PlanError(result.error_message or result.summary or "o planejador falhou")
         steps, plan_warnings = orchestration.parse_plan(result.output_text, executors, ocfg["max_steps"], models_map)
         warnings += plan_warnings
+        CONSOLE.emit("info", f"Plano pronto: {len(steps)} passo(s) em {result.execution_time_seconds:.0f}s. Revise e execute.",
+                     step="planejamento", title="Planejamento")
     except Exception as exc:        # noqa: BLE001 - qualquer falha do planejador cai no plano de 1 passo
         warnings.append(f"Plano automatico indisponivel ({type(exc).__name__}: {str(exc)[:200]}); usando 1 passo com o objetivo inteiro.")
+        CONSOLE.emit("error", f"O planejador falhou ({type(exc).__name__}: {str(exc)[:200]}).", step="planejamento", title="Planejamento")
         steps, _ = orchestration.normalize_steps(orchestration.fallback_single_step(req.goal), executors, 1)
     used = {st["engine"] for st in steps if st["engine"]}
     if len(steps) >= 3 and len(used) == 1 and len(executors) > 1:
@@ -665,9 +694,13 @@ async def execute_plan(req: PlanExecuteRequest, background_tasks: BackgroundTask
 
     async def _execute():
         broadcast_log(f"🧭 Plano {run_id}: {len(steps)} passo(s) em execucao.", level="info")
+        started = time.monotonic()
+        CONSOLE.emit("plan_start", req.goal[:300], run=run_id, title=(req.goal or steps[0]["title"])[:120], total=len(steps),
+                     mode="plano", steps=[{"id": st["id"], "title": st["title"], "engine": st["engine"], "model": st["model"],
+                                           "depends_on": st["depends_on"]} for st in steps])
         try:
             scheduler = DAGScheduler(router=router, coordinator=coordinator, validator=validator,
-                                     max_concurrency=2, on_feedback=broadcast_log)
+                                     max_concurrency=2, on_feedback=broadcast_log, console=CONSOLE, run_id=run_id)
             results = await scheduler.execute_dag(dag)
             report = []
             for step in steps:
@@ -683,9 +716,16 @@ async def execute_plan(req: PlanExecuteRequest, background_tasks: BackgroundTask
                 task_log.log(logging.INFO if row["status"] == "SUCCEEDED" else logging.WARNING,
                              "plano %s passo %s ('%s') motor=%s modelo=%s status=%s%s", run_id, row["id"], row["title"],
                              row["engine"], row["model"], row["status"], f" erro={row['error']}" if row["error"] else "")
+            ok_n = sum(1 for r in report if r["status"] == "SUCCEEDED")
+            CONSOLE.emit("plan_end", f"{ok_n} de {len(report)} passo(s) deram certo.", run=run_id,
+                         status="ok" if ok_n == len(report) else "problems", done=ok_n, total=len(report),
+                         seconds=round(time.monotonic() - started, 1))
             await ws_manager.broadcast({"type": "orchestration_finished", "run_id": run_id, "steps": report})
         except Exception as exc:        # noqa: BLE001
             task_log.exception("Plano %s falhou", run_id)
+            CONSOLE.emit("error", f"O plano falhou: {exc}", run=run_id)
+            CONSOLE.emit("plan_end", str(exc)[:300], run=run_id, status="problems", done=0, total=len(steps),
+                         seconds=round(time.monotonic() - started, 1))
             broadcast_log(f"❌ Plano {run_id} falhou: {exc}", level="error")
             await ws_manager.broadcast({"type": "orchestration_finished", "run_id": run_id, "steps": [],
                                         "error": str(exc)[:500]})
@@ -869,9 +909,12 @@ async def run_task(req: TaskRunRequest, background_tasks: BackgroundTasks):
 
     async def _execute():
         broadcast_log(f"🚀 Iniciando tarefa: {task.title} ({task.id})", level="info")
+        CONSOLE.emit("plan_start", task.instruction[:200], run=task.id, title=task.title, total=1, mode="tarefa")
         await ws_manager.broadcast({"type": "task_started", "task_id": task.id, "title": task.title})
         try:
             res: AgentResult = await autofix.execute_task_with_retry(task, workspace=str(ROOT_DIR))
+            CONSOLE.emit("plan_end", res.summary or "", run=task.id, status="ok" if res.status == TaskStatus.SUCCEEDED else "problems",
+                         done=1 if res.status == TaskStatus.SUCCEEDED else 0, total=1, seconds=res.execution_time_seconds)
             task_log.info("tarefa %s ('%s') motor=%s modelo=%s status=%s em %.1fs%s", task.id, task.title, task.assigned_agent,
                           task.assigned_model, res.status.value, res.execution_time_seconds,
                           f" erro={res.error_message[:200]}" if res.error_message else "")
@@ -893,6 +936,8 @@ async def run_task(req: TaskRunRequest, background_tasks: BackgroundTasks):
             })
         except Exception as e:
             task_log.exception("Falha fatal na tarefa %s", task.id)
+            CONSOLE.emit("error", f"Erro fatal na tarefa: {e}", run=task.id, step=task.id)
+            CONSOLE.emit("plan_end", str(e)[:300], run=task.id, status="problems", done=0, total=1, seconds=0)
             broadcast_log(f"❌ Erro fatal na execução de {task.id}: {e}", level="error")
             await ws_manager.broadcast({
                 "type": "task_finished",

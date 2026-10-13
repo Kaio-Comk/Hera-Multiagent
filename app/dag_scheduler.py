@@ -1,4 +1,5 @@
 import asyncio
+import time
 from typing import Dict, List, Set, Optional, Tuple, Callable
 from collections import defaultdict, deque
 
@@ -6,6 +7,7 @@ from models.task import AgentTask, AgentResult, TaskStatus
 from app.coordinator import Coordinator
 from app.router import TaskRouter
 from app.validator import TaskValidator
+from adapters import progress
 
 class CycleDetectedError(Exception):
     """Lançado quando há ciclo de dependência circular no grafo de tarefas."""
@@ -81,8 +83,12 @@ class DAGScheduler:
         coordinator: Coordinator,
         validator: Optional[TaskValidator] = None,
         max_concurrency: int = 2,
-        on_feedback: Optional[Callable[[str], None]] = None
+        on_feedback: Optional[Callable[[str], None]] = None,
+        console=None,
+        run_id: Optional[str] = None,
     ):
+        self.console = console            # ConsoleBus opcional: o plano "fala" em tempo real
+        self.run_id = run_id
         self.router = router
         self.coordinator = coordinator
         self.validator = validator or TaskValidator()
@@ -92,6 +98,22 @@ class DAGScheduler:
     def _notify(self, msg: str):
         if self.on_feedback:
             self.on_feedback(msg)
+
+    def _step_id(self, task: AgentTask) -> str:
+        prefix = f"{self.run_id}-" if self.run_id else ""
+        return task.id[len(prefix):] if prefix and task.id.startswith(prefix) else task.id
+
+    async def _heartbeat(self, step: str, ctx: dict, started: float) -> None:
+        """A cada 30 s sem novidade, avisa que o passo continua (motores que so respondem no fim ficam mudos por minutos)."""
+        try:
+            while True:
+                await asyncio.sleep(15)
+                if self.console.idle_seconds(self.run_id, step) >= 28:
+                    minutes, seconds = divmod(int(time.monotonic() - started), 60)
+                    self.console.emit("heartbeat", f"ainda trabalhando ({minutes}min {seconds:02d}s)...",
+                                      run=self.run_id, step=step, **ctx)
+        except asyncio.CancelledError:
+            return
 
     async def execute_dag(self, dag: TaskDAG) -> Dict[str, AgentResult]:
         """Executa todas as tarefas do DAG respeitando dependências e concorrência máxima."""
@@ -126,9 +148,23 @@ class DAGScheduler:
                     reason=reason
                 )
 
-                # 2. Execução no adaptador
-                handle = await adapter.submit(task)
-                result = await adapter.collect(handle)
+                # 2. Execução no adaptador (com o console ao vivo ligado para ESTE passo)
+                step = self._step_id(task)
+                started = time.monotonic()
+                token = heartbeat = None
+                if self.console is not None and self.run_id:
+                    ctx = {"title": task.title, "engine": adapter.name, "model": model_name}
+                    self.console.emit("step_start", reason or "", run=self.run_id, step=step, **ctx)
+                    token = progress.bind(self.console.sink_for(self.run_id, step, **ctx))
+                    heartbeat = asyncio.create_task(self._heartbeat(step, ctx, started))
+                try:
+                    handle = await adapter.submit(task)
+                    result = await adapter.collect(handle)
+                finally:
+                    if heartbeat is not None:
+                        heartbeat.cancel()
+                    if token is not None:
+                        progress.unbind(token)
 
                 # 3. Validação objetiva
                 criteria_count = len(task.acceptance_criteria) + len(task.validation_commands)
@@ -148,6 +184,11 @@ class DAGScheduler:
 
                 # 4. Finalização no SQLite
                 self.coordinator.complete_task(task.id, result)
+                if self.console is not None and self.run_id:
+                    self.console.emit("step_end", result.summary or "", run=self.run_id, step=step, title=task.title,
+                                      engine=adapter.name, model=model_name, status=result.status.value,
+                                      seconds=round(time.monotonic() - started, 1), error=result.error_message or "",
+                                      **{k: v for k, v in (result.metadata or {}).items() if v is not None})
                 return task.id, result
 
         running_futures: Dict[str, asyncio.Task] = {}
@@ -173,6 +214,9 @@ class DAGScheduler:
                         self.coordinator.complete_task(task_id, res)
                         results[task_id] = res
                         self._notify(f"🚫 [DAG] Tarefa `{task_id}` cancelada pois dependência antecedente falhou.")
+                        if self.console is not None and self.run_id:
+                            self.console.emit("step_end", res.summary, run=self.run_id, step=self._step_id(task), title=task.title,
+                                              status="CANCELLED", seconds=0, error=res.error_message or "")
 
             # 2. Iniciar tarefas prontas
             for task in ready_tasks:
