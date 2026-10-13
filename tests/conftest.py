@@ -7,4 +7,5 @@ import tempfile
 
 # Segredos/nonces dos testes vao para uma pasta temporaria (nada de criar arquivos em data/).
 os.environ.setdefault("HERA_DATA_DIR", tempfile.mkdtemp(prefix="hera-test-data-"))
+os.environ.setdefault("HERA_DB_PATH", os.path.join(os.environ["HERA_DATA_DIR"], "orchestrator-test.db"))   # nunca o banco real
 os.environ.setdefault("HERA_API_KEY", "test-token-0123456789abcdef0123456789abcdef")
