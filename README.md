@@ -71,6 +71,9 @@
 Hera is designed for both terminal power users and teams who want an intuitive graphical cockpit. You can launch the interface with a single command without installing Node.js, NPM, or complex build tools:
 
 ```powershell
+# After `pip install -e .`, just type `hera` from any folder (same as `hera web`)
+hera
+
 # Launch in default browser (FastAPI + WebSockets on 127.0.0.1:8000)
 python main.py web
 

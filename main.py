@@ -228,6 +228,9 @@ async def main():
     gui_parser.add_argument("--port", type=int, default=8000, help="Porta do servidor interno (padrão: 8000)")
 
     args = parser.parse_args()
+    if args.command is None:
+        # `hera` sozinho abre a interface web (porta padrao, com navegador).
+        args = parser.parse_args(["web"])
 
     orchestrator = MultiagentOrchestrator()
 
@@ -363,5 +366,14 @@ async def main():
         )
         webview.start()
 
+def cli():
+    """Ponto de entrada do comando `hera` (instalado por `pip install -e .`)."""
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print()
+        print("👑 [HERA] Encerrado.")
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    cli()

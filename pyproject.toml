@@ -18,6 +18,9 @@ dependencies = [
     "psutil>=5.9.0",
 ]
 
+[project.scripts]
+hera = "main:cli"
+
 [project.optional-dependencies]
 # Janela desktop nativa (`python main.py gui`). Sem isso, use `python main.py web`.
 gui = ["pywebview>=5.0"]
