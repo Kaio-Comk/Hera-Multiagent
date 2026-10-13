@@ -33,6 +33,7 @@ from app.validator import TaskValidator
 from app.auto_fix import AutoFixEngine
 from app.dag_scheduler import TaskDAG, DAGScheduler
 from app import orchestration
+from app.engine_profiles import build_catalog
 from app.services_control import SERVICES, ServiceManager, port_open
 from app.vault_manager import VaultManager, VaultError, VaultConflict
 from app.locations import find_vault_root, resolve_vault_dir
@@ -477,6 +478,8 @@ class PlanStepModel(BaseModel):
     instruction: Annotated[str, StringConstraints(max_length=orchestration.MAX_INSTRUCTION_CHARS)]
     type: Annotated[str, StringConstraints(max_length=20)] = "coding"
     engine: Annotated[str, StringConstraints(max_length=40)] = ""
+    model: Annotated[str, StringConstraints(max_length=100)] = ""
+    reason: Annotated[str, StringConstraints(max_length=orchestration.MAX_REASON_CHARS)] = ""
     depends_on: List[Annotated[str, StringConstraints(max_length=40)]] = Field(default_factory=list, max_length=12)
 
 
@@ -501,6 +504,29 @@ def _active_executors(requested: Optional[List[str]] = None) -> List[str]:
         raise HTTPException(status_code=400, detail={
             "error": "no_executor", "message": "Nenhum motor ligado para executar o plano. Ligue um em Motores & IAs."})
     return active
+
+
+async def _engine_catalog(executors: List[str]):
+    """Catalogo dos motores que estao NO AR agora (com os modelos que cada um lista). Devolve (catalogo, fora_do_ar)."""
+    async def probe(name: str):
+        try:
+            health = await asyncio.wait_for(adapters[name].health_check(), timeout=10)
+        except Exception:       # noqa: BLE001 - motor que nao responde fica de fora do plano
+            return name, None
+        return name, health
+
+    results = await asyncio.gather(*(probe(n) for n in executors))
+    up: Dict[str, Dict[str, Any]] = {}
+    down: List[str] = []
+    for name, health in results:
+        if health is None or not health.healthy:
+            down.append(name)
+        elif name == "hera_router" and not getattr(adapters[name], "has_cloud", lambda: True)():
+            continue                    # roteador sem nenhum provedor de nuvem ligado: nao ha o que oferecer ao planejador
+        else:
+            up[name] = {"models": list(health.available_models or []),
+                        "default": router.default_models.get(name) or getattr(adapters[name], "default_model", "")}
+    return build_catalog(up), down
 
 
 @app.get("/api/orchestration")
@@ -530,12 +556,18 @@ async def set_planner(req: PlannerChoice):
 async def make_plan(req: PlanRequest):
     """Pede ao planejador um plano em passos. NADA e executado aqui: o usuario revisa e depois chama /execute."""
     ocfg = _orchestration_cfg()
-    executors = _active_executors(req.executors)
+    enabled = _active_executors(req.executors)
     planner_engine = ocfg["planner"]["engine"]
     if planner_engine in router.disabled or planner_engine not in adapters:
         raise HTTPException(status_code=400, detail={"error": "planner_off",
                                                      "message": f"O planejador '{planner_engine}' esta desligado ou nao existe."})
-    task = orchestration.build_planning_task(req.goal, executors, ocfg["max_steps"], planner_engine,
+    catalog, down = await _engine_catalog(enabled)
+    if not catalog:
+        raise HTTPException(status_code=400, detail={
+            "error": "no_executor", "message": "Nenhum motor ligado esta no ar agora (confira Motores & IAs; o Ollama precisa ser iniciado)."})
+    executors = [c["engine"] for c in catalog]
+    models_map = {c["engine"]: [m["id"] for m in c["models"]] for c in catalog}
+    task = orchestration.build_planning_task(req.goal, catalog, ocfg["max_steps"], planner_engine,
                                              ocfg["planner"]["model"], str(ROOT_DIR))
     try:
         adapter, model, reason = await router.route(task)       # o Gate DLP / modo offline continua valendo
@@ -544,6 +576,8 @@ async def make_plan(req: PlanRequest):
     forced = adapter.name != planner_engine
     task.assigned_agent, task.assigned_model = adapter.name, model
     warnings: List[str] = []
+    if down:
+        warnings.append(f"Motores ligados mas fora do ar agora (ficaram fora do plano): {', '.join(down)}.")
     if forced:
         warnings.append(f"O planejador escolhido ({planner_engine}) nao pode ver este pedido: {reason}")
     try:
@@ -551,13 +585,16 @@ async def make_plan(req: PlanRequest):
         result = await asyncio.wait_for(adapter.collect(handle), timeout=task.timeout_seconds + 20)
         if result.status != TaskStatus.SUCCEEDED:
             raise orchestration.PlanError(result.error_message or result.summary or "o planejador falhou")
-        steps, plan_warnings = orchestration.parse_plan(result.output_text, executors, ocfg["max_steps"])
+        steps, plan_warnings = orchestration.parse_plan(result.output_text, executors, ocfg["max_steps"], models_map)
         warnings += plan_warnings
     except Exception as exc:        # noqa: BLE001 - qualquer falha do planejador cai no plano de 1 passo
         warnings.append(f"Plano automatico indisponivel ({type(exc).__name__}: {str(exc)[:200]}); usando 1 passo com o objetivo inteiro.")
         steps, _ = orchestration.normalize_steps(orchestration.fallback_single_step(req.goal), executors, 1)
+    used = {st["engine"] for st in steps if st["engine"]}
+    if len(steps) >= 3 and len(used) == 1 and len(executors) > 1:
+        warnings.append(f"Todos os passos ficaram no motor '{next(iter(used))}'. Confira se faz sentido ou troque o motor/modelo de algum passo.")
     return {"planner": {"engine": adapter.name, "model": model, "forced_local": forced},
-            "steps": steps, "warnings": warnings, "executors": executors, "offline": router.default_offline}
+            "steps": steps, "warnings": warnings, "executors": executors, "catalog": catalog, "offline": router.default_offline}
 
 
 @app.post("/api/orchestration/execute")
@@ -565,8 +602,10 @@ async def execute_plan(req: PlanExecuteRequest, background_tasks: BackgroundTask
     """Executa o plano (revalidado aqui: o corpo e nao confiavel) distribuindo os passos aos motores ligados."""
     ocfg = _orchestration_cfg()
     executors = _active_executors(req.executors)
+    catalog, _down = await _engine_catalog(executors)
+    models_map = {c["engine"]: [m["id"] for m in c["models"]] for c in catalog}
     try:
-        steps, warnings = orchestration.normalize_steps([s.model_dump() for s in req.steps], executors, ocfg["max_steps"])
+        steps, warnings = orchestration.normalize_steps([s.model_dump() for s in req.steps], executors, ocfg["max_steps"], models_map)
     except orchestration.PlanError as exc:
         raise HTTPException(status_code=400, detail={"error": "invalid_plan", "message": str(exc)})
     run_id = f"run-{uuid.uuid4().hex[:8]}"
