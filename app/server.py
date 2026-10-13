@@ -34,6 +34,8 @@ from app.auto_fix import AutoFixEngine
 from app.dag_scheduler import TaskDAG, DAGScheduler
 from app import orchestration
 from app.engine_profiles import build_catalog
+from app.runtime_state import resolve_db_path, merge_legacy_db, setup_file_logging
+from app.privacy_guard import PrivacyGuard
 from app.services_control import SERVICES, ServiceManager, port_open
 from app.vault_manager import VaultManager, VaultError, VaultConflict
 from app.locations import find_vault_root, resolve_vault_dir
@@ -132,7 +134,17 @@ adapters = {
     "antigravity": AntigravityAdapter()
 }
 
-store = StateStore(db_path=cfg["general"].get("db_path", "data/orchestrator.db"))
+# Banco de tarefas: caminho relativo vale a partir da PASTA DO PROJETO (antes dependia de onde o comando foi aberto).
+DB_PATH = resolve_db_path(cfg["general"].get("db_path"), ROOT_DIR)
+store = StateStore(db_path=str(DB_PATH))
+LEGACY_DB = Path.cwd() / "data" / "orchestrator.db"       # historico criado por engano na pasta de onde o hera foi aberto
+IMPORTED_LEGACY = (merge_legacy_db(LEGACY_DB, DB_PATH)
+                   if not os.environ.get("HERA_DB_PATH") and LEGACY_DB.resolve() != DB_PATH.resolve() else 0)
+LOG_FILE = setup_file_logging(DATA_DIR / "logs", sanitize=PrivacyGuard.sanitize_content)
+ui_log = logging.getLogger("hera.ui")
+task_log = logging.getLogger("hera.tasks")
+if IMPORTED_LEGACY:
+    ui_log.info("Historico importado de %s: %d tarefa(s).", LEGACY_DB, IMPORTED_LEGACY)
 router = TaskRouter(adapters=adapters, default_offline=cfg["general"].get("default_offline", False))
 validator = TaskValidator()
 
@@ -277,7 +289,11 @@ class ConnectionManager:
 
 ws_manager = ConnectionManager()
 
+_LEVELS = {"error": logging.ERROR, "warning": logging.WARNING}
+
+
 def broadcast_log(msg: str, level: str = "info"):
+    ui_log.log(_LEVELS.get(level, logging.INFO), "%s", msg)          # o que a tela mostra tambem vai para data/logs/hera.log
     timestamp = time.strftime("%H:%M:%S")
     payload = {
         "type": "log",
@@ -626,12 +642,18 @@ async def execute_plan(req: PlanExecuteRequest, background_tasks: BackgroundTask
                                "status": res.status.value if res else "CANCELLED",
                                "summary": (res.summary if res else "")[:500],
                                "output_text": (res.output_text if res else "")[:20000]})
+            for row in report:
+                task_log.info("plano %s passo %s ('%s') motor=%s modelo=%s status=%s", run_id, row["id"], row["title"],
+                              row["engine"], row["model"], row["status"])
             await ws_manager.broadcast({"type": "orchestration_finished", "run_id": run_id, "steps": report})
         except Exception as exc:        # noqa: BLE001
+            task_log.exception("Plano %s falhou", run_id)
             broadcast_log(f"❌ Plano {run_id} falhou: {exc}", level="error")
             await ws_manager.broadcast({"type": "orchestration_finished", "run_id": run_id, "steps": [],
                                         "error": str(exc)[:500]})
 
+    task_log.info("plano %s enfileirado: %d passo(s): %s", run_id, len(steps),
+                  "; ".join(f"{st['id']}={st['engine'] or 'auto'}/{st['model'] or 'padrao'}" for st in steps))
     background_tasks.add_task(_execute)
     return {"status": "enqueued", "run_id": run_id, "steps": steps, "warnings": warnings}
 
@@ -812,6 +834,9 @@ async def run_task(req: TaskRunRequest, background_tasks: BackgroundTasks):
         await ws_manager.broadcast({"type": "task_started", "task_id": task.id, "title": task.title})
         try:
             res: AgentResult = await autofix.execute_task_with_retry(task, workspace=str(ROOT_DIR))
+            task_log.info("tarefa %s ('%s') motor=%s modelo=%s status=%s em %.1fs%s", task.id, task.title, task.assigned_agent,
+                          task.assigned_model, res.status.value, res.execution_time_seconds,
+                          f" erro={res.error_message[:200]}" if res.error_message else "")
             
             # Persistir no Obsidian se solicitado
             if req.save_to_obsidian and res.status == TaskStatus.SUCCEEDED:
@@ -829,6 +854,7 @@ async def run_task(req: TaskRunRequest, background_tasks: BackgroundTasks):
                 "output_text": res.output_text
             })
         except Exception as e:
+            task_log.exception("Falha fatal na tarefa %s", task.id)
             broadcast_log(f"❌ Erro fatal na execução de {task.id}: {e}", level="error")
             await ws_manager.broadcast({
                 "type": "task_finished",

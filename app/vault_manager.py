@@ -139,6 +139,7 @@ class VaultManager:
             if not force and time.monotonic() - self._scan_at < 2.0:
                 return
             files: Dict[str, int] = {}
+            sizes: Dict[str, int] = {}
             stack = [self.root]
             while stack and len(files) < MAX_FILES:
                 directory = stack.pop()
@@ -154,7 +155,9 @@ class VaultManager:
                             stack.append(Path(e.path))
                         elif e.is_file(follow_symlinks=False) and e.name.lower().endswith(".md"):
                             rel = Path(e.path).relative_to(self.root).as_posix()
-                            files[rel] = e.stat().st_mtime_ns
+                            stat = e.stat()
+                            files[rel] = stat.st_mtime_ns
+                            sizes[rel] = stat.st_size
                     except OSError:
                         continue
             for rel in list(self._parsed):
@@ -162,7 +165,8 @@ class VaultManager:
                     del self._parsed[rel]
             for rel, mtime in files.items():
                 cached = self._parsed.get(rel)
-                if cached is not None and cached.mtime_ns == mtime:
+                # mtime sozinho engana: duas edicoes dentro da granularidade do sistema de arquivos teriam o mesmo mtime
+                if cached is not None and cached.mtime_ns == mtime and cached.size == sizes.get(rel):
                     continue
                 try:
                     raw = (self.root / rel).read_bytes()[:MAX_NOTE_BYTES]
@@ -290,6 +294,10 @@ class VaultManager:
         tmp = full.with_name(full.name + ".hera-tmp")
         tmp.write_bytes(data)
         os.replace(tmp, full)
+        try:                                              # o que acabamos de escrever precisa ser lido de novo
+            self._parsed.pop(full.relative_to(self.root).as_posix(), None)
+        except ValueError:
+            pass
 
     def _encode(self, content: str, crlf: bool) -> bytes:
         if not isinstance(content, str):

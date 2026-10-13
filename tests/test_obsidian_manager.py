@@ -294,3 +294,15 @@ async def test_api_ia_com_segredo_na_nota_forca_o_local(api, monkeypatch):
     async with client() as c:
         r = await c.post("/api/obsidian/ai", json={"action": "summarize", "path": "Segredo.md"})
     assert r.status_code == 200 and r.json()["engine"] == "ollama" and cloud_engine.seen == []
+
+
+def test_nota_reescrita_com_o_mesmo_mtime_nao_fica_com_links_velhos(vault):
+    """Regressao: duas edicoes dentro da granularidade do sistema de arquivos tinham o mesmo mtime e o indice ficava velho."""
+    path = vault.root / "Beta.md"
+    vault.read("Beta.md")                                                        # indexa a versao atual
+    stamp = path.stat().st_mtime_ns
+    path.write_text("# Beta\nagora aponta para [[Gama]] e tem mais texto aqui", encoding="utf-8")
+    os.utime(path, ns=(stamp, stamp))                                            # mesmo mtime de antes
+    vault._refresh(force=True)
+    assert {o["target"] for o in vault.read("Beta.md")["outgoing"]} == {"Gama"}
+    assert "Beta.md" in vault.read("Projetos/Gama.md")["backlinks"]
