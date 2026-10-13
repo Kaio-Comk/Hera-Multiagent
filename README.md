@@ -4,7 +4,7 @@
 ### The Sovereign Local AI Orchestration Engine for Windows
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12%2B-blue.svg?logo=python&logoColor=white)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-455%20passing%20%7C%202%20skipped%20(need%20Ollama%2F9Router)-success.svg?logo=pytest&logoColor=white)](https://github.com/Kaio-Comk/hera-multiagent)
+[![Tests](https://img.shields.io/badge/Tests-500%20passing%20%7C%202%20skipped%20(need%20Ollama)-success.svg?logo=pytest&logoColor=white)](https://github.com/Kaio-Comk/hera-multiagent)
 [![Architecture](https://img.shields.io/badge/Architecture-DAG%20%7C%20FastAPI%20%7C%20WebSockets-orange.svg)](https://github.com/Kaio-Comk/hera-multiagent)
 [![Interface](https://img.shields.io/badge/Interface-Web%20%7C%20Desktop%20GUI-blueviolet.svg)](https://github.com/Kaio-Comk/hera-multiagent)
 [![Gateway](https://img.shields.io/badge/Gateway-OpenAI%20%28%2Fv1%29%20%7C%20RTK%20Token%20Saver-green.svg)](https://github.com/Kaio-Comk/hera-multiagent)
@@ -14,7 +14,7 @@
 [![Security](https://img.shields.io/badge/Security-Zero--Shell%20%7C%20Pre--flight%20DLP-red.svg)](https://github.com/Kaio-Comk/hera-multiagent)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Connect, route, validate, and orchestrate Ollama, Claude Code CLI, Antigravity CLI, 9Router, and Obsidian as permanent memory — featuring a native Python OpenAI-compatible gateway (`/v1`), RTK Token Saver, AST Repo-Map for 4GB VRAM GPUs, Human-in-the-Loop (HITL) Visual Diff Review, Model Context Protocol (MCP) server & tool catalog, and Multi-Model Arena benchmarks under deterministic guardrails.**
+**Connect, route, validate, and orchestrate Ollama, Claude Code CLI, Antigravity CLI, the built-in Router, and Obsidian as permanent memory — featuring a native Python OpenAI-compatible gateway (`/v1`), RTK Token Saver, AST Repo-Map for 4GB VRAM GPUs, Human-in-the-Loop (HITL) Visual Diff Review, Model Context Protocol (MCP) server & tool catalog, and Multi-Model Arena benchmarks under deterministic guardrails.**
 
 [Key Features](#-key-features) • [Mission Control GUI](#-mission-control-web--desktop-gui) • [Architecture](#-architecture) • [Security Model](#-hardened-security-model) • [Benchmark](#-hardware-benchmark) • [Quickstart](#-quickstart) • [CLI Cheatsheet](#-cli-cheatsheet)
 
@@ -34,7 +34,7 @@
 
 * **🧠 4 Decoupled AI Engines:**
   * **Ollama (Local GPU):** Blazing-fast 100% offline inference on consumer GPUs (GTX 1650 Super @ **~107 tokens/s**).
-  * **9Router (Local Gateway):** OpenAI-compatible access to 800+ cloud models with automatic fallback.
+  * **Built-in Router:** cloud providers with key rotation, tiers and fallback combos, inside Hera itself (no external process).
   * **Claude Code CLI:** Headless non-interactive `-p` subprocess for complex codebase refactoring.
   * **Antigravity CLI (`agy`):** Headless autonomous workspace operations with full tool support.
 * **🔀 Directed Acyclic Graph (DAG) Scheduler:**
@@ -68,9 +68,9 @@
 
 ## 🔌 Start/stop local services from the panel
 
-In **Motores & IAs**, the Ollama and 9Router cards have **Iniciar / Parar** buttons. The commands are fixed (nothing comes from the request), the process starts hidden on loopback with a minimal environment (no API keys), and **Parar** only stops what Hera itself started (whole process tree). A service opened elsewhere (tray icon, another terminal) is shown as running but is left alone. Logs go to `data/logs/`. Services started by Hera keep running if you close Hera.
+In **Motores & IAs**, the Ollama card has **Iniciar / Parar** buttons. The commands are fixed (nothing comes from the request), the process starts hidden on loopback with a minimal environment (no API keys), and **Parar** only stops what Hera itself started (whole process tree). A service opened elsewhere (tray icon, another terminal) is shown as running but is left alone. Logs go to `data/logs/`. Services started by Hera keep running if you close Hera.
 
-## 🌐 Built-in Router (the "9Router inside Hera")
+## 🌐 Built-in Router
 
 The **Roteador** tab configures cloud providers (Groq, OpenRouter, DeepSeek, Gemini, Mistral, Cerebras, Together, NVIDIA, OpenAI, xAI) and **combos**: ordered chains of `provider + model` that Hera tries until one answers. Use a combo name as the model in the Task Studio, in the Plan tab, or from any tool pointed at `http://127.0.0.1:8000/v1`. No external process or port is needed (engine `hera_router`).
 
@@ -104,7 +104,7 @@ python main.py gui
 1. **🎨 Task Studio:** Create coding/research tasks, specify acceptance criteria, set automated test commands, and assign specific AI models or let autonomous scoring route them.
 2. **🎛️ AI Engine & Model Management:**
    - Toggle **100% Offline Mode** for zero-cloud privacy.
-   - Configure base URLs and select default models for Ollama, 9Router, Claude Code, and Antigravity.
+   - Configure base URLs and select default models for Ollama, the built-in Router, Claude Code, and Antigravity.
    - **Download any Ollama model with 1 click:** Enter any model tag (e.g. `llama3.2`, `deepseek-r1`, `qwen2.5-coder:1.5b`) to download it directly with real-time streaming progress.
 3. **📊 Real-time Hardware & VRAM Telemetry:**
    - Live GPU VRAM allocation gauge (total vs used).
@@ -130,7 +130,7 @@ flowchart TD
     
     subgraph Engines ["Decoupled AI Adapters"]
         Router -->|"Offline / DLP Secret"| Ollama["🦙 Ollama Adapter (Local GPU @ ~107 tps)"]
-        Router -->|"Cloud / Research"| NineRouter["🌐 9Router Gateway (OpenAI Compatible)"]
+        Router -->|"Cloud / Research"| HeraRouter["🌐 Built-in Router (cloud providers + combos)"]
         Router -->|"Refactor / Plan"| ClaudeCode["⚙️ Claude Code CLI (Headless -p)"]
         Router -->|"Autonomous Workspace"| Antigravity["🚀 Antigravity CLI (Headless agy -p)"]
     end
@@ -216,7 +216,7 @@ short **approval code that only a human at the machine can see**:
 - **Anti-SSRF at connection time**: the gateway HTTP client resolves the hostname, validates *every* IP and
   connects to the validated IP (TLS still verifies the original hostname), so DNS rebinding cannot swap in an
   internal address between the check and the connection. Loopback is only allowed for `localhost` on the
-  Ollama / 9Router ports. The client ignores proxy environment variables (`trust_env=False`).
+  Ollama port. The client ignores proxy environment variables (`trust_env=False`).
 - **Total deadline** per gateway request (`gateway.total_timeout_seconds`, default 180 s) across all retries
   and fallbacks.
 - CI runs `bandit` (medium+) and `pip-audit` on every push and pull request.
@@ -303,7 +303,7 @@ pip install pytest pytest-asyncio httpx pydantic pyyaml
 ```
 
 ### 2. Verify Health
-Ensure your local engines (Ollama on port 11434, 9Router on port 20128) and CLIs are discovered:
+Ensure your local engines (Ollama on port 11434) and CLIs are discovered:
 ```powershell
 python main.py health
 ```
@@ -311,7 +311,7 @@ python main.py health
 ### 3. Run Test Suite
 ```powershell
 python -m pytest tests -v
-# 455 passed, 2 skipped (Ollama / 9Router offline) in ~45s
+# 500 passed, 2 skipped (Ollama offline) in ~60s
 ```
 
 ---
@@ -373,7 +373,7 @@ hera-multiagent/
 ├── adapters/
 │   ├── antigravity.py         # Antigravity CLI adapter (agy -p headless)
 │   ├── claude_code.py         # Claude Code CLI adapter (claude -p headless)
-│   ├── nine_router.py         # 9Router OpenAI-compatible gateway (port 20128)
+│   ├── hera_router.py         # Built-in Router engine (cloud providers + combos, in-process)
 │   └── ollama.py              # Local Ollama adapter (port 11434, ~107 tps)
 ├── app/
 │   ├── auto_fix.py            # Autonomous self-healing retry loop
@@ -401,7 +401,6 @@ hera-multiagent/
 │   ├── test_coordinator.py
 │   ├── test_dag_scheduler.py
 │   ├── test_hardening.py
-│   ├── test_nine_router_adapter.py
 │   ├── test_obsidian.py
 │   ├── test_ollama_adapter.py
 │   ├── test_router.py

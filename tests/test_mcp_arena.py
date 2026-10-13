@@ -159,7 +159,7 @@ async def test_arena_runner_local_only_privacy_enforcement():
     """Garante que prompts sensíveis/locais descartem candidatos cloud na Arena."""
     adapters = {
         "ollama": FakeAdapter("OllamaLocal", delay=0.01),
-        "9router": FakeAdapter("Cloud9Router", delay=0.01),
+        "nuvem": FakeAdapter("NuvemFalsa", delay=0.01),
     }
     privacy_mgr = GatewayPrivacyManager(default_offline=False)
     runner = ArenaRunner(adapters=adapters, privacy_manager=privacy_mgr, enabled=True)
@@ -168,7 +168,7 @@ async def test_arena_runner_local_only_privacy_enforcement():
         prompt="Gerar código contendo segredo confidencial sk-1234567890abcdef1234567890abcdef",
         candidates=[
             ArenaCandidate(model_id="qwen2.5-coder:1.5b", adapter_name="ollama", is_local=True),
-            ArenaCandidate(model_id="gpt-4o", adapter_name="9router", is_local=False),
+            ArenaCandidate(model_id="gpt-4o", adapter_name="nuvem", is_local=False),
         ]
     )
 

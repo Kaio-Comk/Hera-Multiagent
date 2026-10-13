@@ -36,7 +36,7 @@ async def test_api_health_endpoint():
         data = resp.json()
         assert "engines" in data
         assert "ollama" in data["engines"]
-        assert "9router" in data["engines"]
+        assert "hera_router" in data["engines"]
 
 @pytest.mark.asyncio
 async def test_api_config_endpoints(tmp_path, monkeypatch):

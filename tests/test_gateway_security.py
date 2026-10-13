@@ -150,7 +150,7 @@ def test_dlp_inspect_secret_detection_forces_local_only():
     # Filtragem de candidatos
     candidates = [
         {"name": "claude_code", "tier": "cloud_premium", "is_local": False},
-        {"name": "9router_cloud", "tier": "cloud_cheap", "is_local": False},
+        {"name": "provedor_nuvem", "tier": "cloud_cheap", "is_local": False},
         {"name": "ollama_local", "tier": "local", "is_local": True}
     ]
     eligible = mgr.filter_eligible_candidates(candidates, result)

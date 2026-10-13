@@ -8,8 +8,8 @@ rebinding / TOCTOU.
 CORREÇÃO: o backend de rede do httpcore resolve o nome, valida TODOS os IPs e conecta no IP já
 validado (o SNI e a verificação de certificado continuam usando o nome, pois o TLS é feito depois
 pelo httpcore com o hostname original). IP restrito só é aceito quando o host é literalmente
-`localhost`/`127.0.0.1`/`::1`, o IP é loopback e a porta é uma porta local autorizada (Ollama e
-9Router); qualquer outro destino interno falha fechado.
+`localhost`/`127.0.0.1`/`::1`, o IP é loopback e a porta é uma porta local autorizada (Ollama);
+qualquer outro destino interno falha fechado.
 
 Observação: o cliente deixa de usar proxies do ambiente (`trust_env=False`): um proxy corporativo
 cairia na regra acima. Quem precisar de proxy deve configurá-lo explicitamente.

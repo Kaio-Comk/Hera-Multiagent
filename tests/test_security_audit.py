@@ -9,7 +9,7 @@ from app.privacy_guard import PrivacyGuard
 from app.router import TaskRouter
 from app.worktree_manager import WorktreeManager, WorktreeError
 from adapters.ollama import OllamaAdapter
-from adapters.nine_router import NineRouterAdapter
+from adapters.hera_router import HeraRouterAdapter
 from adapters.claude_code import ClaudeCodeAdapter
 from adapters.antigravity import AntigravityAdapter
 
@@ -90,20 +90,20 @@ def test_privacy_guard_detects_credentials():
 async def test_router_dlp_forces_local_ollama_on_secrets():
     adapters = {
         "ollama": OllamaAdapter(),
-        "9router": NineRouterAdapter()
+        "hera_router": HeraRouterAdapter(call=None, models=lambda: [], has_cloud=lambda: True)
     }
     router = TaskRouter(adapters=adapters)
 
-    # Tarefa com chave de API tentando ir para 9Router (nuvem)
+    # Tarefa com chave de API tentando ir para o roteador (nuvem)
     task = AgentTask(
         id="t-sec-01",
         title="Tarefa com Segredo",
         instruction="Use a chave sk-proj-1234567890abcdef1234567890 para testar",
-        assigned_agent="9router"
+        assigned_agent="hera_router"
     )
 
     adapter, model, reason = await router.route(task)
-    # Gate DLP deve forçar Ollama e barrar 9Router
+    # Gate DLP deve forçar Ollama e barrar o roteador
     assert adapter.name == "ollama"
     assert "Gate DLP ativado" in reason
 
@@ -111,40 +111,22 @@ async def test_router_dlp_forces_local_ollama_on_secrets():
 async def test_router_offline_precedence_over_manual_assignment():
     adapters = {
         "ollama": OllamaAdapter(),
-        "9router": NineRouterAdapter()
+        "hera_router": HeraRouterAdapter(call=None, models=lambda: [], has_cloud=lambda: True)
     }
     router = TaskRouter(adapters=adapters)
 
-    # Tarefa marcada como offline, mas usuário pediu 9Router
+    # Tarefa marcada como offline, mas usuário pediu o roteador
     task = AgentTask(
         id="t-off-02",
         title="Dado Sigiloso",
         instruction="Analise este documento confidencial",
         task_type="offline",
-        assigned_agent="9router"
+        assigned_agent="hera_router"
     )
 
     adapter, model, reason = await router.route(task)
     assert adapter.name == "ollama"
     assert "offline" in reason.lower()
-
-@pytest.mark.asyncio
-async def test_nine_router_adapter_blocks_outbound_secrets():
-    adapter = NineRouterAdapter()
-    task = AgentTask(
-        id="t-nr-sec",
-        title="Envio Inseguro",
-        instruction="Enviar sk-proj-1234567890abcdef1234567890 para a API"
-    )
-
-    from models.agent import RunHandle
-    handle = RunHandle(task_id=task.id)
-
-    # _execute_chat deve bloquear antes de qualquer post HTTP
-    result = await adapter._execute_chat(task, handle)
-    assert result.status == TaskStatus.FAILED
-    assert "Gate DLP" in result.summary
-    assert "openai_key" in result.error_message
 
 # 3. Testes de Worktree Manager e Isolamento de Path (P1)
 def test_worktree_manager_rejects_path_traversal():

@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional, Set, Tuple
 
 # Portas padrão permitidas para provedores
 ALLOWED_WEB_PORTS: Set[int] = {80, 443}
-ALLOWED_LOCAL_PORTS: Set[int] = {11434, 20128}  # Ollama e 9router local
+ALLOWED_LOCAL_PORTS: Set[int] = {11434}  # Ollama local
 
 # Domínios oficiais de provedores de nuvem aprovados
 APPROVED_CLOUD_DOMAINS: Set[str] = {
@@ -94,7 +94,7 @@ def validate_provider_url(url: str, is_local_profile: bool = False) -> str:
     if port is None:
         port = 443 if parsed.scheme == "https" else 80
 
-    # 5. Tratamento de perfil local (Ollama / 9router local)
+    # 5. Tratamento de perfil local (Ollama)
     if is_local_profile:
         is_loopback = hostname_lower in ("127.0.0.1", "localhost", "::1")
         if not is_loopback:

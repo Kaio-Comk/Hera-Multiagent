@@ -1,6 +1,6 @@
-"""Liga e desliga, pelo painel, os serviços locais que o Hera usa (Ollama e 9Router).
+"""Liga e desliga, pelo painel, os serviços locais que o Hera usa (hoje só o Ollama).
 
-Só existem DOIS serviços e os comandos são FIXOS (nada vem da requisição): o Hera não executa texto de ninguém.
+Só existe esta lista curta de serviços e os comandos são FIXOS (nada vem da requisição): o Hera não executa texto de ninguém.
   * o processo nasce sem janela, em loopback (127.0.0.1) e com ambiente enxuto (sem chaves de API do Hera);
   * "Parar" só encerra o que o PRÓPRIO Hera iniciou (árvore inteira, para não deixar filhos órfãos); um serviço
     aberto por fora (ícone da bandeja, outro terminal) é só reportado como ativo;
@@ -26,13 +26,6 @@ SERVICES: Dict[str, Dict[str, Any]] = {
         "candidates": ["ollama", str(Path(LOCALAPPDATA) / "Programs" / "Ollama" / "ollama.exe")],
         "args": ["serve"], "env": {"OLLAMA_HOST": "127.0.0.1:11434"},
         "install_hint": "Instale o Ollama em https://ollama.com/download",
-    },
-    "9router": {
-        "label": "9Router", "port": 20128, "url": "http://127.0.0.1:20128", "dashboard": "http://127.0.0.1:20128/dashboard",
-        "candidates": ["9router"],
-        "args": ["--no-browser", "--skip-update", "-p", "20128", "-H", "127.0.0.1"],
-        "env": {},
-        "install_hint": "Instale com: npm install -g 9router",
     },
 }
 

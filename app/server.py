@@ -35,7 +35,6 @@ from app.dag_scheduler import TaskDAG, DAGScheduler
 from app import orchestration
 from app.services_control import SERVICES, ServiceManager
 from adapters.ollama import OllamaAdapter
-from adapters.nine_router import NineRouterAdapter
 from adapters.claude_code import ClaudeCodeAdapter
 from adapters.antigravity import AntigravityAdapter
 
@@ -118,10 +117,6 @@ adapters = {
     "ollama": OllamaAdapter(
         base_url=cfg["engines"]["ollama"].get("base_url", "http://localhost:11434"),
         default_model=cfg["engines"]["ollama"].get("default_model", "qwen2.5-coder:1.5b")
-    ),
-    "9router": NineRouterAdapter(
-        base_url=cfg["engines"]["nine_router"].get("base_url", "http://127.0.0.1:20128/v1"),
-        default_model=cfg["engines"]["nine_router"].get("default_model", "alicode-intl/qwen3.5-plus")
     ),
     "claude_code": ClaudeCodeAdapter(),
     "antigravity": AntigravityAdapter()
@@ -281,8 +276,8 @@ def broadcast_log(msg: str, level: str = "info"):
     except RuntimeError:
         pass
 
-ENGINE_ADAPTER_NAMES = {"ollama": "ollama", "nine_router": "9router", "9router": "9router",
-                        "claude_code": "claude_code", "antigravity": "antigravity", "hera_router": "hera_router"}
+ENGINE_ADAPTER_NAMES = {"ollama": "ollama", "claude_code": "claude_code", "antigravity": "antigravity",
+                        "hera_router": "hera_router"}
 
 
 def _apply_engine_runtime(config: Dict[str, Any]) -> None:
@@ -371,9 +366,9 @@ ALLOWED_GENERAL_KEYS = {"host", "port", "default_offline", "default_engine", "va
                         "allowed_repo_roots"}
 # Ajustes de INICIALIZACAO: a API nao pode muda-los (so editando o config.yaml com o servidor parado).
 FROZEN_GENERAL_KEYS = ("host", "port", "vault_dir", "db_path", "allowed_repo_roots")
-ALLOWED_ENGINES = {"ollama", "nine_router", "9router", "claude_code", "antigravity", "hera_router"}
+ALLOWED_ENGINES = {"ollama", "claude_code", "antigravity", "hera_router"}
 ALLOWED_ENGINE_FIELDS = {"enabled", "base_url", "default_model", "timeout"}
-LOCAL_ONLY_URL_ENGINES = {"ollama", "nine_router", "9router"}
+LOCAL_ONLY_URL_ENGINES = {"ollama"}
 
 
 def _validate_config_update(req: "ConfigUpdateRequest") -> None:
@@ -444,11 +439,6 @@ async def update_config(req: ConfigUpdateRequest):
     # Atualizar defaults nos adaptadores
     if "ollama" in req.engines and "ollama" in adapters:
         adapters["ollama"].default_model = req.engines["ollama"].get("default_model", "qwen2.5-coder:1.5b")
-    nine_router_cfg = req.engines.get("nine_router") or req.engines.get("9router")
-    if nine_router_cfg:
-        nr_adapter = adapters.get("9router") or adapters.get("nine_router")
-        if nr_adapter:
-            nr_adapter.default_model = nine_router_cfg.get("default_model", "alicode-intl/qwen3.5-plus")
         
     broadcast_log("⚙️ Configurações atualizadas e sincronizadas com sucesso.", level="success")
     return {"status": "ok", "config": new_cfg}
@@ -593,7 +583,7 @@ async def execute_plan(req: PlanExecuteRequest, background_tasks: BackgroundTask
 
 
 # ---------------------------------------------------------------------------------------------
-# Servicos locais (Ollama / 9Router): iniciar e parar pelo painel. Comandos FIXOS (ver services_control).
+# Servico local (Ollama): iniciar e parar pelo painel. Comandos FIXOS (ver services_control).
 # ---------------------------------------------------------------------------------------------
 service_manager = ServiceManager(DATA_DIR / "logs")
 
@@ -888,7 +878,7 @@ async def list_gateway_providers():
     return {"tier_order": gateway_tier_router.tier_order, "providers": out}
 
 # ---------------------------------------------------------------------------------------------
-# Roteador embutido (o "9Router de dentro de casa"): provedores de nuvem, combos com fallback, teste
+# Roteador embutido: provedores de nuvem, combos com fallback, teste
 # ---------------------------------------------------------------------------------------------
 _PROVIDER_NAME = re.compile(r"^[a-z][a-z0-9_-]{1,31}$")
 _COMBO_NAME = re.compile(r"^[a-z][a-z0-9_-]{1,39}$")
