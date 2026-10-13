@@ -12,6 +12,8 @@ de nuvem pelo /v1 e ler os logs pelo WebSocket. Agora, em ordem:
      comparado em tempo constante. Publicos: apenas `/` (a UI, que recebe o token embutido) e
      `/healthz` (sem dados);
   4. **Limite de taxa** por token nas rotas caras (/v1/chat/completions, tarefas, arena, pull).
+  5. **Chaves de acesso de cliente** (opcionais, `client_keys`): servem SÓ em `/v1/chat/completions` e `/v1/models`
+     e carregam os próprios limites; nunca abrem rotas de gestão.
 
 Falha fechada: sem token valido nada executa.
 """
@@ -101,12 +103,18 @@ def _hostname(host_header: str) -> str:
 class LocalSecurityMiddleware:
     """Middleware ASGI puro (cobre `http` e `websocket`, o que o BaseHTTPMiddleware nao faz)."""
 
-    def __init__(self, app, settings: SecuritySettings):
+    def __init__(self, app, settings: SecuritySettings, client_keys=None):
         self.app = app
         self.settings = settings
+        self.client_keys = client_keys
         self._hits: Dict[Tuple[str, str], Deque[float]] = defaultdict(deque)
 
     # ── helpers ────────────────────────────────────────────────────────────────
+    @staticmethod
+    def client_keys_paths():
+        from app.gateway.client_keys import CLIENT_PATHS
+        return CLIENT_PATHS
+
     def _token_ok(self, supplied: Optional[str]) -> bool:
         return bool(supplied) and hmac.compare_digest(supplied.encode("utf-8"),
                                                       self.settings.token.encode("utf-8"))
@@ -173,10 +181,19 @@ class LocalSecurityMiddleware:
         supplied = None
         if path not in self.settings.public_paths:
             supplied = self._supplied_token(headers, scope)
+            client_key = None
             if not self._token_ok(supplied):
-                return await self._deny(scope, receive, send, 401, "Token ausente ou invalido",
-                                        {"WWW-Authenticate": "Bearer"})
-            retry = self._rate_limited(supplied or "", path) if scope["type"] == "http" else None
+                if self.client_keys is not None and scope["type"] == "http" and path in self.client_keys_paths():
+                    client_key = self.client_keys.authenticate(supplied)
+                if client_key is None:
+                    return await self._deny(scope, receive, send, 401, "Token ausente ou invalido",
+                                            {"WWW-Authenticate": "Bearer"})
+                retry_key = self.client_keys.over_rpm(client_key)           # limite proprio da chave (req/min)
+                if retry_key is not None:
+                    return await self._deny(scope, receive, send, 429, "Limite de requisicoes da chave excedido",
+                                            {"Retry-After": str(retry_key)})
+                scope.setdefault("state", {})["client_key"] = client_key
+            retry = self._rate_limited(client_key.id if client_key else (supplied or ""), path) if scope["type"] == "http" else None
             if retry is not None:
                 return await self._deny(scope, receive, send, 429, "Limite de requisicoes excedido",
                                         {"Retry-After": str(retry)})
