@@ -50,6 +50,8 @@ class TierRouter:
         # Ordem de tentativa (config `gateway.default_tier_order`): antes era a ordem da lista de adaptadores.
         self.tier_order = list(tier_order or ["cloud_premium", "cloud_cheap", "cloud_free", "local"])
         self.adapters = adapters
+        # Combos: nome -> passos [{"provider": ..., "model": ...}] tentados em ordem (modelo `nome` no /v1).
+        self.combos: Dict[str, List[Dict[str, str]]] = {}
         self.privacy_manager = privacy_manager or GatewayPrivacyManager()
         self.token_saver = token_saver or RTKTokenSaver()
         self.semaphore = asyncio.Semaphore(max_concurrent_requests)
@@ -80,6 +82,20 @@ class TierRouter:
         rank = {t: i for i, t in enumerate(self.tier_order)}
         return sorted(adapters, key=lambda a: rank.get(a.tier, len(rank)))
 
+    async def _try_combo(self, request: ChatCompletionRequest, steps: List[Dict[str, str]], attempt):
+        """Tenta cada passo do combo, em ordem, ate um funcionar. Bloqueio de privacidade (403) vale para
+        todos os passos e para na hora; qualquer outra falha passa ao proximo passo."""
+        last: Optional[GatewayProviderError] = None
+        for step in steps:
+            step_request = request.model_copy(deep=True, update={"model": step["model"]})
+            try:
+                return await attempt(step_request, step["provider"])
+            except GatewayProviderError as exc:
+                if exc.status_code == 403:
+                    raise
+                last = exc
+        raise last or GatewayProviderError("O combo nao tem passos.", status_code=503, retryable=False)
+
     def _apply_token_saving_if_applicable(self, request: ChatCompletionRequest):
         """Aplica o RTK Token Saver exclusivamente a saídas de ferramentas (role='tool')."""
         for msg in request.messages:
@@ -107,7 +123,7 @@ class TierRouter:
                 status_code=504, retryable=False)
 
     def _select_adapters(self, request: ChatCompletionRequest, force_offline: Optional[bool],
-                         enable_rtk: bool) -> List[BaseGatewayAdapter]:
+                         enable_rtk: bool, only_provider: Optional[str] = None) -> List[BaseGatewayAdapter]:
         """Privacidade (DLP/offline) -> modelo -> ordem de camadas. Usado pelo caminho normal e pelo stream:
         a política de privacidade é SEMPRE a primeira barreira, antes de qualquer socket."""
         if enable_rtk:
@@ -136,6 +152,13 @@ class TierRouter:
 
         # 2b. Só os provedores que atendem o MODELO pedido (a privacidade já foi aplicada acima),
         #     na ordem de camadas configurada.
+        if only_provider:                 # passo de combo: o provedor ja foi escolhido; a privacidade valeu acima
+            eligible_adapters = [a for a in eligible_adapters if a.name == only_provider]
+            if not eligible_adapters:
+                raise GatewayProviderError(
+                    f"Provedor '{only_provider}' indisponivel para esta requisicao (desligado ou barrado pela privacidade).",
+                    status_code=503, retryable=True)
+            return eligible_adapters
         eligible_adapters = self._order_by_tier(self._adapters_for_model(eligible_adapters, request.model))
         if not eligible_adapters:
             raise GatewayProviderError(
@@ -147,10 +170,15 @@ class TierRouter:
         request: ChatCompletionRequest,
         client: httpx.AsyncClient,
         force_offline: Optional[bool] = None,
-        enable_rtk: bool = False
+        enable_rtk: bool = False,
+        only_provider: Optional[str] = None,
     ) -> ChatCompletionResponse:
         """Inspeciona o payload, filtra provedores elegíveis e executa com fallback pré-resposta."""
-        eligible_adapters = self._select_adapters(request, force_offline, enable_rtk)
+        combo = None if only_provider else self.combos.get(request.model or "")
+        if combo:
+            return await self._try_combo(request, combo, lambda req, prov: self._route_and_execute(
+                req, client, force_offline, enable_rtk, prov))
+        eligible_adapters = self._select_adapters(request, force_offline, enable_rtk, only_provider)
 
         # 3. Execução com controle de semáforo e fallback seguro
         last_error: Optional[Exception] = None
@@ -182,11 +210,16 @@ class TierRouter:
         request: ChatCompletionRequest,
         client: httpx.AsyncClient,
         force_offline: Optional[bool] = None,
-        enable_rtk: bool = False
+        enable_rtk: bool = False,
+        only_provider: Optional[str] = None,
     ) -> AsyncIterator[str]:
         """Streaming de verdade. PRÉ-VOO: abre o stream no primeiro provedor elegível e lê até o primeiro
         dado útil; falha aqui faz fallback (ou vira erro HTTP). Depois do primeiro byte NÃO há fallback."""
-        eligible = self._select_adapters(request, force_offline, enable_rtk)
+        combo = None if only_provider else self.combos.get(request.model or "")
+        if combo:
+            return await self._try_combo(request, combo, lambda req, prov: self.route_and_stream(
+                req, client, force_offline, enable_rtk, prov))
+        eligible = self._select_adapters(request, force_offline, enable_rtk, only_provider)
         await self.semaphore.acquire()
         released = False
 

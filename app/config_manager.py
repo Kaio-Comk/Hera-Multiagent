@@ -34,6 +34,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "enabled": True,
             "default_model": "gemini-2.5-pro",
             "timeout": 300.0
+        },
+        # Roteador embutido do Hera (provedores de nuvem + combos): substitui o 9Router externo.
+        "hera_router": {
+            "enabled": True,
+            "default_model": "default",   # "default" = o roteador escolhe; ou o nome de um combo
+            "timeout": 120.0
         }
     },
     # Plano multiagente: qual motor/modelo planeja e distribui os passos aos demais (aba "Plano").

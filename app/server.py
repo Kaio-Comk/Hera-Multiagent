@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import logging
 import json
@@ -37,7 +38,10 @@ from adapters.nine_router import NineRouterAdapter
 from adapters.claude_code import ClaudeCodeAdapter
 from adapters.antigravity import AntigravityAdapter
 
-from app.gateway.schemas import ChatCompletionRequest, ChatCompletionResponse
+from app.gateway.schemas import ChatCompletionRequest, ChatCompletionResponse, ChatMessage
+from app.gateway.presets import PROVIDER_PRESETS, get_preset
+from app.gateway.key_manager import load_keys_from_env
+from adapters.hera_router import HeraRouterAdapter
 from app.gateway.privacy import GatewayPrivacyManager
 from app.gateway.providers import OllamaGatewayAdapter, GatewayProviderError
 from app.gateway.provider_policy import SSRFSecurityError, validate_provider_url
@@ -144,6 +148,35 @@ gateway_tier_router = TierRouter(
     stream_total_timeout_seconds=float(cfg.get("gateway", {}).get("stream_total_timeout_seconds", 900.0)),
 )
 
+
+
+async def _gateway_call(req: ChatCompletionRequest, only_provider: Optional[str] = None) -> ChatCompletionResponse:
+    """Chamada em memoria ao gateway (usada pelo motor `hera_router` e pelo teste de provedor)."""
+    client = gateway_http_client
+    owns = client is None or client.is_closed
+    if owns:
+        client = make_safe_async_client(timeout=60.0)
+    try:
+        return await gateway_tier_router._route_and_execute(
+            req, client, force_offline=router.default_offline,
+            enable_rtk=cfg.get("feature_flags", {}).get("enable_rtk", True), only_provider=only_provider)
+    finally:
+        if owns:
+            await client.aclose()
+
+
+def _router_models() -> List[str]:
+    names = list(gateway_tier_router.combos)
+    for a in gateway_tier_router.adapters:
+        names += sorted(a.served_models or [])
+    return list(dict.fromkeys(names))
+
+
+adapters["hera_router"] = HeraRouterAdapter(
+    call=_gateway_call, models=_router_models,
+    has_cloud=lambda: any(not a.is_local for a in gateway_tier_router.adapters),
+    default_model=cfg["engines"].get("hera_router", {}).get("default_model", "default"))
+
 # Inicializar Serviço HITL (Human-in-the-Loop)
 # Código de aprovação humana (fase 2): segredo persistente; o código aparece só no console / CLI.
 HUMAN_CODE = HumanApprovalCode(load_or_create_secret(DATA_DIR / ".hera_approval_secret"))
@@ -248,7 +281,7 @@ def broadcast_log(msg: str, level: str = "info"):
         pass
 
 ENGINE_ADAPTER_NAMES = {"ollama": "ollama", "nine_router": "9router", "9router": "9router",
-                        "claude_code": "claude_code", "antigravity": "antigravity"}
+                        "claude_code": "claude_code", "antigravity": "antigravity", "hera_router": "hera_router"}
 
 
 def _apply_engine_runtime(config: Dict[str, Any]) -> None:
@@ -337,7 +370,7 @@ ALLOWED_GENERAL_KEYS = {"host", "port", "default_offline", "default_engine", "va
                         "allowed_repo_roots"}
 # Ajustes de INICIALIZACAO: a API nao pode muda-los (so editando o config.yaml com o servidor parado).
 FROZEN_GENERAL_KEYS = ("host", "port", "vault_dir", "db_path", "allowed_repo_roots")
-ALLOWED_ENGINES = {"ollama", "nine_router", "9router", "claude_code", "antigravity"}
+ALLOWED_ENGINES = {"ollama", "nine_router", "9router", "claude_code", "antigravity", "hera_router"}
 ALLOWED_ENGINE_FIELDS = {"enabled", "base_url", "default_model", "timeout"}
 LOCAL_ONLY_URL_ENGINES = {"ollama", "nine_router", "9router"}
 
@@ -782,6 +815,9 @@ async def list_gateway_models():
         for m in sorted(ad.served_models or []):
             if m not in [x["id"] for x in models_list]:
                 models_list.append({"id": m, "object": "model", "created": 1700000000, "owned_by": f"hera-{ad.name}"})
+    for combo in gateway_tier_router.combos:                   # combos do Roteador embutido
+        if combo not in [x["id"] for x in models_list]:
+            models_list.append({"id": combo, "object": "model", "created": 1700000000, "owned_by": "hera-combo"})
     return {"object": "list", "data": models_list}
 
 
@@ -804,6 +840,236 @@ async def list_gateway_providers():
             "keys": km.status() if km else [],
         })
     return {"tier_order": gateway_tier_router.tier_order, "providers": out}
+
+# ---------------------------------------------------------------------------------------------
+# Roteador embutido (o "9Router de dentro de casa"): provedores de nuvem, combos com fallback, teste
+# ---------------------------------------------------------------------------------------------
+_PROVIDER_NAME = re.compile(r"^[a-z][a-z0-9_-]{1,31}$")
+_COMBO_NAME = re.compile(r"^[a-z][a-z0-9_-]{1,39}$")
+_KEY_ENV = re.compile(r"^[A-Z][A-Z0-9_]{1,63}_API_KEYS?$")
+_RESERVED_NAMES = {"default", "ollama", "local", "auto"}
+_MODEL_OK = re.compile(r"^[^\x00-\x1f\x7f]{1,200}$")
+TIERS = ("cloud_premium", "cloud_cheap", "cloud_free")
+
+
+def _bad_router(msg: str, status: int = 400):
+    raise HTTPException(status_code=status, detail={"error": "invalid_router_config", "message": msg})
+
+
+def _combos_from_cfg(config: Dict[str, Any]) -> Dict[str, List[Dict[str, str]]]:
+    out: Dict[str, List[Dict[str, str]]] = {}
+    for name, steps in ((config.get("gateway") or {}).get("combos") or {}).items():
+        if not isinstance(steps, list):
+            continue
+        clean = [{"provider": str(s.get("provider")), "model": str(s.get("model"))}
+                 for s in steps if isinstance(s, dict) and s.get("provider") and s.get("model")]
+        if clean:
+            out[str(name)] = clean
+    return out
+
+
+def reload_gateway() -> None:
+    """Reconstroi os provedores do gateway a partir do config.yaml + variaveis de ambiente (sem reiniciar)."""
+    fresh = config_mgr.load_config()
+    gateway_tier_router.adapters = build_gateway_adapters(fresh)
+    gateway_tier_router.combos = _combos_from_cfg(fresh)
+
+
+reload_gateway()
+
+
+def _env_keys_found(key_env: str) -> int:
+    return len(load_keys_from_env([n.strip() for n in str(key_env or "").split(",") if n.strip()], os.environ))
+
+
+def _clean_models(models: Any) -> List[str]:
+    if models is None:
+        return []
+    if not isinstance(models, list) or len(models) > 50:
+        _bad_router("'models' precisa ser uma lista de ate 50 nomes")
+    out = []
+    for m in models:
+        if not isinstance(m, str) or not _MODEL_OK.match(m.strip()):
+            _bad_router(f"Nome de modelo invalido: {m!r}")
+        out.append(m.strip())
+    return list(dict.fromkeys(out))
+
+
+class RouterProviderBody(BaseModel):
+    preset: Optional[ShortStr] = None
+    name: Optional[ShortStr] = None
+    base_url: Optional[Annotated[str, StringConstraints(max_length=300)]] = None
+    tier: Optional[ShortStr] = None
+    key_env: Optional[ShortStr] = None
+    default_model: Optional[Annotated[str, StringConstraints(max_length=200)]] = None
+    models: Optional[List[Annotated[str, StringConstraints(max_length=200)]]] = Field(default=None, max_length=50)
+    enabled: bool = True
+    daily_request_limit: Optional[int] = Field(default=None, ge=1, le=10_000_000)
+    human_code: Optional[str] = None
+
+
+class RouterEnabledBody(BaseModel):
+    enabled: bool
+    human_code: Optional[str] = None
+
+
+class RouterStep(BaseModel):
+    provider: Annotated[str, StringConstraints(max_length=40)]
+    model: Annotated[str, StringConstraints(max_length=200)]
+
+
+class RouterCombosBody(BaseModel):
+    combos: Dict[Annotated[str, StringConstraints(max_length=40)], List[RouterStep]] = Field(max_length=20)
+
+
+class RouterTestBody(BaseModel):
+    provider: Annotated[str, StringConstraints(max_length=40)]
+    model: Optional[Annotated[str, StringConstraints(max_length=200)]] = None
+
+
+def _provider_view(name: str, p: Dict[str, Any]) -> Dict[str, Any]:
+    live = next((a for a in gateway_tier_router.adapters if a.name == name), None)
+    km = getattr(live, "key_manager", None)
+    return {"name": name, "enabled": bool(p.get("enabled")), "tier": p.get("tier", "cloud_cheap"),
+            "base_url": p.get("base_url", ""), "default_model": p.get("default_model", ""),
+            "models": list(p.get("models") or []), "key_env": p.get("api_key_env", ""),
+            "keys_found": _env_keys_found(p.get("api_key_env", "")), "active": live is not None,
+            "keys": km.status() if km else [], "daily_request_limit": p.get("daily_request_limit")}
+
+
+@app.get("/api/router/state")
+async def router_state():
+    """Presets, provedores configurados (sem segredos: so QUANTAS chaves foram achadas) e combos."""
+    current = config_mgr.load_config()
+    providers = [_provider_view(n, p) for n, p in (current.get("providers") or {}).items() if isinstance(p, dict)]
+    ollama_models: List[str] = []
+    try:
+        ollama_models = (await adapters["ollama"].health_check()).available_models if "ollama" in adapters else []
+    except Exception:       # noqa: BLE001
+        pass
+    return {"presets": PROVIDER_PRESETS, "providers": providers, "combos": _combos_from_cfg(current),
+            "tier_order": gateway_tier_router.tier_order, "offline": router.default_offline,
+            "ollama_models": ollama_models}
+
+
+@app.post("/api/router/providers")
+async def router_upsert_provider(body: RouterProviderBody):
+    """Cria/atualiza um provedor de nuvem. Exige o codigo humano: ligar um provedor manda dados para fora."""
+    base: Dict[str, Any] = {}
+    if body.preset:
+        try:
+            base = get_preset(body.preset)
+        except KeyError:
+            _bad_router(f"Preset desconhecido: {body.preset!r}")
+    name = (body.name or base.get("id") or "").strip().lower()
+    if not _PROVIDER_NAME.match(name) or name in _RESERVED_NAMES:
+        _bad_router("Nome do provedor invalido (letras minusculas, numeros, - e _; 2 a 32 caracteres).")
+    tier = body.tier or base.get("tier") or "cloud_cheap"
+    if tier not in TIERS:
+        _bad_router(f"'tier' precisa ser um de {TIERS}")
+    key_env = (body.key_env or base.get("key_env") or "").strip()
+    if not _KEY_ENV.match(key_env) or key_env.startswith("HERA_"):
+        _bad_router("O nome da variavel da chave precisa terminar em _API_KEY (ex.: GROQ_API_KEY) e nao pode comecar com HERA_.")
+    base_url = (body.base_url or base.get("base_url") or "").strip()
+    try:
+        base_url = validate_provider_url(base_url, is_local_profile=False)
+    except (SSRFSecurityError, ValueError) as exc:
+        _bad_router(f"URL recusada: {exc}")
+    default_model = (body.default_model or base.get("default_model") or "").strip()
+    if not _MODEL_OK.match(default_model):
+        _bad_router("Informe o modelo padrao.")
+    models = _clean_models(body.models if body.models is not None else base.get("models"))
+    _require_human_code(body.human_code, f"Provedor de nuvem '{name}' sera configurado")
+
+    current = config_mgr.load_config()
+    providers = dict(current.get("providers") or {})
+    entry: Dict[str, Any] = {"enabled": body.enabled, "tier": tier, "base_url": base_url, "api_key_env": key_env,
+                             "default_model": default_model, "models": models, "timeout": 60}
+    if body.daily_request_limit:
+        entry["daily_request_limit"] = body.daily_request_limit
+    providers[name] = entry
+    config_mgr.save_config({**current, "providers": providers})
+    reload_gateway()
+    broadcast_log(f"🌐 [ROTEADOR] Provedor '{name}' salvo ({'ligado' if body.enabled else 'desligado'}).", level="success")
+    return {"status": "ok", "provider": _provider_view(name, entry)}
+
+
+@app.post("/api/router/providers/{name}/enabled")
+async def router_set_enabled(name: str, body: RouterEnabledBody):
+    current = config_mgr.load_config()
+    providers = dict(current.get("providers") or {})
+    if name not in providers:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": "Provedor desconhecido."})
+    if body.enabled:                                    # desligar nao precisa de codigo; ligar sim
+        _require_human_code(body.human_code, f"Provedor de nuvem '{name}' sera LIGADO")
+    providers[name] = {**providers[name], "enabled": body.enabled}
+    config_mgr.save_config({**current, "providers": providers})
+    reload_gateway()
+    return {"status": "ok", "provider": _provider_view(name, providers[name])}
+
+
+@app.delete("/api/router/providers/{name}")
+async def router_delete_provider(name: str):
+    current = config_mgr.load_config()
+    providers = dict(current.get("providers") or {})
+    if name not in providers:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": "Provedor desconhecido."})
+    used = [c for c, steps in _combos_from_cfg(current).items() if any(s["provider"] == name for s in steps)]
+    if used:
+        raise HTTPException(status_code=409, detail={"error": "in_use",
+                                                     "message": f"O provedor esta nos combos: {', '.join(used)}. Tire-o de la primeiro."})
+    providers.pop(name)
+    config_mgr.save_config({**current, "providers": providers})
+    reload_gateway()
+    return {"status": "ok"}
+
+
+@app.put("/api/router/combos")
+async def router_set_combos(body: RouterCombosBody):
+    """Substitui os combos. Um combo so reordena provedores ja configurados: nao precisa de codigo."""
+    current = config_mgr.load_config()
+    known = set((current.get("providers") or {})) | {"ollama"}
+    clean: Dict[str, List[Dict[str, str]]] = {}
+    for cname, steps in body.combos.items():
+        if not _COMBO_NAME.match(cname) or cname in _RESERVED_NAMES or cname in known:
+            _bad_router(f"Nome de combo invalido: {cname!r}")
+        if not 1 <= len(steps) <= 8:
+            _bad_router(f"O combo {cname!r} precisa ter de 1 a 8 passos.")
+        out = []
+        for step in steps:
+            if step.provider not in known:
+                _bad_router(f"O combo {cname!r} usa um provedor que nao existe: {step.provider!r}")
+            if not _MODEL_OK.match(step.model):
+                _bad_router(f"Modelo invalido no combo {cname!r}.")
+            out.append({"provider": step.provider, "model": step.model})
+        clean[cname] = out
+    gateway_cfg = {**(current.get("gateway") or {}), "combos": clean}
+    config_mgr.save_config({**current, "gateway": gateway_cfg})
+    reload_gateway()
+    return {"status": "ok", "combos": clean}
+
+
+@app.post("/api/router/test")
+async def router_test(body: RouterTestBody):
+    """Manda UMA pergunta fixa e inocente ('Responda apenas: OK') so a esse provedor. Nao envia nada seu."""
+    adapter = next((a for a in gateway_tier_router.adapters if a.name == body.provider), None)
+    if adapter is None:
+        raise HTTPException(status_code=404, detail={
+            "error": "not_active", "message": "Provedor desligado, sem chave na variavel de ambiente ou inexistente."})
+    req = ChatCompletionRequest(model=body.model or adapter.default_model, temperature=0,
+                                max_tokens=16, messages=[ChatMessage(role="user", content="Responda apenas: OK")])
+    started = time.perf_counter()
+    try:
+        resp = await asyncio.wait_for(_gateway_call(req, only_provider=body.provider), timeout=40)
+        text = (resp.choices[0].message.content if resp.choices and resp.choices[0].message else "") or ""
+        return {"ok": True, "latency_ms": int((time.perf_counter() - started) * 1000), "model": resp.model,
+                "text": str(text)[:80]}
+    except GatewayProviderError as exc:
+        hint = " (o Modo 100% Offline bloqueia a nuvem)" if router.default_offline and not adapter.is_local else ""
+        return {"ok": False, "status": exc.status_code, "error": str(exc)[:300] + hint}
+    except asyncio.TimeoutError:
+        return {"ok": False, "status": 504, "error": "O provedor nao respondeu em 40 s."}
+
 
 @app.post("/v1/chat/completions")
 async def chat_completions(req: ChatCompletionRequest):
