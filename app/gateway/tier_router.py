@@ -52,6 +52,7 @@ class TierRouter:
         self.adapters = adapters
         # Combos: nome -> passos [{"provider": ..., "model": ...}] tentados em ordem (modelo `nome` no /v1).
         self.combos: Dict[str, List[Dict[str, str]]] = {}
+        self.usage = None            # UsageLedger opcional: contagem de chamadas/tokens (sem conteudo)
         self.privacy_manager = privacy_manager or GatewayPrivacyManager()
         self.token_saver = token_saver or RTKTokenSaver()
         self.semaphore = asyncio.Semaphore(max_concurrent_requests)
@@ -81,6 +82,24 @@ class TierRouter:
     def _order_by_tier(self, adapters: List[BaseGatewayAdapter]) -> List[BaseGatewayAdapter]:
         rank = {t: i for i, t in enumerate(self.tier_order)}
         return sorted(adapters, key=lambda a: rank.get(a.tier, len(rank)))
+
+    def _resolve_address(self, request: ChatCompletionRequest):
+        """`provedor/modelo` (ex.: `groq/llama-3.3-70b-versatile`) fala direto com aquele provedor. So vale se o nome
+        inteiro nao for um combo nem um modelo declarado (OpenRouter tem modelos com `/` no proprio nome)."""
+        model = request.model or ""
+        if "/" not in model or model in self.combos or model in self._claimed_models():
+            return None
+        prefix, rest = model.split("/", 1)
+        if rest and any(a.name == prefix for a in self.adapters):
+            return prefix, rest
+        return None
+
+    def _record(self, adapter_name: str, model: str, ok: bool, status: Optional[int], usage, started: float,
+                stream: bool = False) -> None:
+        if self.usage is not None:
+            self.usage.record(adapter_name, model, ok, status,
+                              getattr(usage, "prompt_tokens", None), getattr(usage, "completion_tokens", None),
+                              int((time.monotonic() - started) * 1000), stream)
 
     async def _try_combo(self, request: ChatCompletionRequest, steps: List[Dict[str, str]], attempt):
         """Tenta cada passo do combo, em ordem, ate um funcionar. Bloqueio de privacidade (403) vale para
@@ -178,6 +197,10 @@ class TierRouter:
         if combo:
             return await self._try_combo(request, combo, lambda req, prov: self._route_and_execute(
                 req, client, force_offline, enable_rtk, prov))
+        address = None if only_provider else self._resolve_address(request)
+        if address:
+            return await self._route_and_execute(request.model_copy(update={"model": address[1]}), client,
+                                                 force_offline, enable_rtk, address[0])
         eligible_adapters = self._select_adapters(request, force_offline, enable_rtk, only_provider)
 
         # 3. Execução com controle de semáforo e fallback seguro
@@ -185,10 +208,13 @@ class TierRouter:
 
         async with self.semaphore:
             for i, adapter in enumerate(eligible_adapters):
+                started = time.monotonic()
                 try:
                     response = await adapter.chat_complete(request, client)
+                    self._record(adapter.name, response.model or request.model, True, 200, response.usage, started)
                     return response
                 except GatewayProviderError as e:
+                    self._record(adapter.name, request.model, False, e.status_code, None, started)
                     last_error = e
                     if not e.retryable:
                         raise e
@@ -196,6 +222,7 @@ class TierRouter:
                         raise e
                     continue
                 except Exception as e:
+                    self._record(adapter.name, request.model, False, 500, None, started)
                     last_error = e
                     if i == len(eligible_adapters) - 1:
                         raise GatewayProviderError(f"Falha inesperada no provedor {adapter.name}: {str(e)}", status_code=500)
@@ -219,6 +246,10 @@ class TierRouter:
         if combo:
             return await self._try_combo(request, combo, lambda req, prov: self.route_and_stream(
                 req, client, force_offline, enable_rtk, prov))
+        address = None if only_provider else self._resolve_address(request)
+        if address:
+            return await self.route_and_stream(request.model_copy(update={"model": address[1]}), client,
+                                               force_offline, enable_rtk, address[0])
         eligible = self._select_adapters(request, force_offline, enable_rtk, only_provider)
         await self.semaphore.acquire()
         released = False
@@ -235,6 +266,7 @@ class TierRouter:
             last_error: Optional[Exception] = None
             for i, adapter in enumerate(eligible):
                 rec.attempts = i + 1
+                opened = time.monotonic()
                 try:
                     handle = await asyncio.wait_for(adapter.open_stream(request, client),
                                                     timeout=self.total_timeout_seconds)
@@ -243,13 +275,16 @@ class TierRouter:
                     last_error = GatewayProviderError(
                         f"Provedor {adapter.name} não abriu o stream em {self.total_timeout_seconds:.0f}s",
                         status_code=504, retryable=True)
+                    self._record(adapter.name, request.model, False, 504, None, opened, stream=True)
                 except GatewayProviderError as e:
                     last_error = e
+                    self._record(adapter.name, request.model, False, e.status_code, None, opened, stream=True)
                     if not e.retryable:
                         raise
                 except Exception as e:                        # noqa: BLE001 - qualquer falha pré-resposta
                     last_error = GatewayProviderError(
                         f"Falha inesperada no provedor {adapter.name}: {type(e).__name__}", status_code=500)
+                    self._record(adapter.name, request.model, False, 500, None, opened, stream=True)
             if handle is None:
                 raise last_error or GatewayProviderError("Nenhum provedor abriu o stream.", status_code=503)
         except BaseException:
@@ -342,6 +377,10 @@ class TierRouter:
                 pass
             rec.total_ms = int((time.monotonic() - rec.started) * 1000)
             self.telemetry.add(rec)
+            if self.usage is not None:
+                self.usage.record(rec.provider, rec.model, rec.outcome in ("completed", "cancelled"),
+                                  200 if rec.outcome != "error" else 502, rec.prompt_tokens, rec.completion_tokens,
+                                  rec.total_ms, True)
             logging.getLogger("hera.gateway").info(
                 "[stream] %s provider=%s model=%s outcome=%s ttfb_ms=%s total_ms=%s chunks=%s fallbacks=%s native=%s",
                 rec.request_id, rec.provider, rec.model, rec.outcome, rec.ttfb_ms, rec.total_ms, rec.chunks,

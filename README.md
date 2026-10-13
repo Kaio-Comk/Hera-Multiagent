@@ -74,8 +74,10 @@ In **Motores & IAs**, the Ollama card has **Iniciar / Parar** buttons. The comma
 
 The **Roteador** tab configures cloud providers (Groq, OpenRouter, DeepSeek, Gemini, Mistral, Cerebras, Together, NVIDIA, OpenAI, xAI) and **combos**: ordered chains of `provider + model` that Hera tries until one answers. Use a combo name as the model in the Task Studio, in the Plan tab, or from any tool pointed at `http://127.0.0.1:8000/v1`. No external process or port is needed (engine `hera_router`).
 
-- API keys are never stored by Hera: set the variable (e.g. `setx GROQ_API_KEY "..."`) and restart Hera. Names must end in `_API_KEY`.
-- Adding/enabling a provider needs the human approval code; disabling does not.
+- **Keys:** paste them in the panel (they go to a local vault protected by Windows DPAPI, never shown again) or, if you prefer, set an environment variable (`setx GROQ_API_KEY "..."`, name must end in `_API_KEY`). Pasting/enabling needs the human approval code.
+- **Addressing:** use a combo name, `provider/model` (e.g. `groq/llama-3.3-70b-versatile`) or `default` as the model in any OpenAI-compatible tool pointed at `http://127.0.0.1:8000/v1` (the card "Conectar suas ferramentas" shows the URL and key).
+- **Usage:** calls, errors, tokens and latency per provider/model/day (metadata only, never the conversation).
+- **Discovery:** "Buscar modelos" asks the provider for its model list; any HTTPS OpenAI-compatible API can be added as a custom provider.
 - The privacy gate applies to every step: secrets or Offline mode skip cloud steps, so end combos with an `ollama` step as a local plan B.
 
 ## 🧭 Engines on/off & multi-agent plan
