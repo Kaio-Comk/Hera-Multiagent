@@ -66,6 +66,14 @@
 
 ---
 
+## 🌐 Built-in Router (the "9Router inside Hera")
+
+The **Roteador** tab configures cloud providers (Groq, OpenRouter, DeepSeek, Gemini, Mistral, Cerebras, Together, NVIDIA, OpenAI, xAI) and **combos**: ordered chains of `provider + model` that Hera tries until one answers. Use a combo name as the model in the Task Studio, in the Plan tab, or from any tool pointed at `http://127.0.0.1:8000/v1`. No external process or port is needed (engine `hera_router`).
+
+- API keys are never stored by Hera: set the variable (e.g. `setx GROQ_API_KEY "..."`) and restart Hera. Names must end in `_API_KEY`.
+- Adding/enabling a provider needs the human approval code; disabling does not.
+- The privacy gate applies to every step: secrets or Offline mode skip cloud steps, so end combos with an `ollama` step as a local plan B.
+
 ## 🧭 Engines on/off & multi-agent plan
 
 In the web panel you can switch each engine on or off and pick its default model (**Motores & IAs** tab), and choose which engine/model is the **planner** (**Plano** tab). The planner splits your goal into steps; you review/edit them, then the enabled engines execute them (DAG, dependencies respected).
