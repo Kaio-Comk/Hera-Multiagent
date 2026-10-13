@@ -13,9 +13,21 @@ class TaskRouter:
     def __init__(self, adapters: Dict[str, AgentAdapter], default_offline: bool = False):
         self.adapters = adapters
         self.default_offline = default_offline
+        # Ligar/desligar motores e escolher o modelo de cada um pelo painel (sem reiniciar).
+        self.disabled: set = set()
+        self.default_models: Dict[str, str] = {}
+
+    def active_adapters(self) -> Dict[str, AgentAdapter]:
+        return {name: ad for name, ad in self.adapters.items() if name not in self.disabled}
+
+    def _model(self, engine: str, fallback: str) -> str:
+        return self.default_models.get(engine) or fallback
 
     async def route(self, task: AgentTask) -> Tuple[AgentAdapter, str, str]:
         """Seleciona o adaptador ideal, modelo sugerido e justificativa para auditoria."""
+        adapters = self.active_adapters()
+        if not adapters:
+            raise PermissionError("Nenhum motor esta ligado: ligue ao menos um na aba Motores & IAs.")
 
         # 1. GATE DE PRIVACIDADE E POLÍTICA OFFLINE (Prioridade Máxima)
         is_offline_req = self.default_offline or (task.task_type == "offline")
@@ -33,9 +45,9 @@ class TaskRouter:
                 reason_privacy += " Tentativa de envio para 9Router (nuvem) bloqueada pelo Gate DLP."
 
             # Garantir executor local Ollama (Fail-Closed)
-            adapter = self.adapters.get("ollama")
+            adapter = adapters.get("ollama")
             if adapter:
-                return adapter, "qwen2.5-coder:1.5b", f"{reason_privacy} Executado 100% na GPU local via Ollama."
+                return adapter, self._model("ollama", "qwen2.5-coder:1.5b"), f"{reason_privacy} Executado 100% na GPU local via Ollama."
 
             # Se não houver executor local disponível, FALHAR FECHADO (não fazer fallback para nuvem!)
             raise PermissionError(
@@ -44,8 +56,8 @@ class TaskRouter:
             )
 
         # 2. Atribuição manual direta (quando segura)
-        if task.assigned_agent and task.assigned_agent in self.adapters:
-            adapter = self.adapters[task.assigned_agent]
+        if task.assigned_agent and task.assigned_agent in adapters:
+            adapter = adapters[task.assigned_agent]
             model = task.assigned_model or getattr(adapter, "default_model", "default")
             reason = f"Atribuição manual direta solicitada para '{task.assigned_agent}'"
             return adapter, model, reason
@@ -53,24 +65,24 @@ class TaskRouter:
         # 3. Tarefas de codificação e refatoração
         if task.task_type == "coding":
             # Preferir Antigravity ou Claude Code para edição de código e ferramentas de sistema
-            if "antigravity" in self.adapters:
-                return self.adapters["antigravity"], "gemini-2.5-pro", "Codificação com suporte a workspace e terminal via Antigravity CLI"
-            if "claude_code" in self.adapters:
-                return self.adapters["claude_code"], "claude-3-7-sonnet", "Codificação avançada via Claude Code CLI"
+            if "antigravity" in adapters:
+                return adapters["antigravity"], self._model("antigravity", "gemini-2.5-pro"), "Codificação com suporte a workspace e terminal via Antigravity CLI"
+            if "claude_code" in adapters:
+                return adapters["claude_code"], self._model("claude_code", "claude-3-7-sonnet"), "Codificação avançada via Claude Code CLI"
             # Fallback local
-            if "ollama" in self.adapters:
-                return self.adapters["ollama"], "qwen2.5-coder:1.5b", "Codificação local em GPU via Ollama (qwen2.5-coder)"
+            if "ollama" in adapters:
+                return adapters["ollama"], self._model("ollama", "qwen2.5-coder:1.5b"), "Codificação local em GPU via Ollama (qwen2.5-coder)"
 
         # 4. Tarefas de pesquisa, triagem, segunda opinião ou resumo
         if task.task_type in ("research", "review", "summary"):
             # Preferir 9Router se disponível (modelos em nuvem rápidos/gratuitos)
-            if "9router" in self.adapters:
-                return self.adapters["9router"], "alicode-intl/qwen3.5-plus", "Triagem/pesquisa via 9Router (alta velocidade e modelos atualizados)"
-            if "ollama" in self.adapters:
-                return self.adapters["ollama"], "qwen2.5-coder:1.5b", "Resumo local via Ollama"
+            if "9router" in adapters:
+                return adapters["9router"], self._model("9router", "alicode-intl/qwen3.5-plus"), "Triagem/pesquisa via 9Router (alta velocidade e modelos atualizados)"
+            if "ollama" in adapters:
+                return adapters["ollama"], self._model("ollama", "qwen2.5-coder:1.5b"), "Resumo local via Ollama"
 
         # 5. Default Fallback determinístico
-        if "ollama" in self.adapters:
-            return self.adapters["ollama"], "qwen2.5-coder:1.5b", "Roteamento padrão para motor local (GPU GTX 1650 SUPER)"
-        first_key = next(iter(self.adapters.keys()))
-        return self.adapters[first_key], "default", f"Roteamento de fallback para o primeiro adaptador disponível ({first_key})"
+        if "ollama" in adapters:
+            return adapters["ollama"], self._model("ollama", "qwen2.5-coder:1.5b"), "Roteamento padrão para motor local (GPU GTX 1650 SUPER)"
+        first_key = next(iter(adapters.keys()))
+        return adapters[first_key], "default", f"Roteamento de fallback para o primeiro adaptador disponível ({first_key})"

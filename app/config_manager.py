@@ -36,6 +36,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "timeout": 300.0
         }
     },
+    # Plano multiagente: qual motor/modelo planeja e distribui os passos aos demais (aba "Plano").
+    "orchestration": {
+        "planner": {"engine": "ollama", "model": ""},     # model vazio = padrao do motor
+        "max_steps": 8
+    },
     "feature_flags": {
         "enable_gateway": True,
         "enable_rtk": False,
@@ -84,7 +89,7 @@ class ConfigManager:
             
             # Mesclagem defensiva com defaults
             merged = DEFAULT_CONFIG.copy()
-            for section in ("general", "engines", "feature_flags", "gateway", "mcp", "providers"):
+            for section in ("general", "engines", "feature_flags", "gateway", "mcp", "providers", "orchestration"):
                 if section in data and isinstance(data[section], dict):
                     merged[section] = {**merged.get(section, {}), **data[section]}
             return merged
