@@ -13,85 +13,90 @@
       darkMode: 'class',
       theme: {
         extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
           colors: {
-            brand: {
-              50: '#f5f3ff',
-              500: '#8b5cf6',
-              600: '#7c3aed',
-              700: '#6d28d9',
-              900: '#4c1d95'
-            }
+            // paleta do painel do 9Router: neutros quentes + laranja
+            zinc: { 50: '#fafaf9', 100: '#ededed', 200: '#d4d4d4', 300: '#b8b8b8', 400: '#9ca3af', 500: '#6b7280',
+                    600: '#4a4a4a', 700: '#3a3a3a', 800: '#333333', 900: '#262626', 950: '#161616' },
+            brand: { 50: '#fff4f0', 300: '#f5a58f', 400: '#ee8466', 500: '#e56a4a', 600: '#e56a4a', 700: '#cc5236', 900: '#6b2a1a' }
           }
         }
       }
     }
   </script>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+    body { font-family: 'Inter', system-ui, sans-serif; background-color: #1a1a1a;
+           background-image: linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+           background-size: 32px 32px; }
     .font-mono { font-family: 'JetBrains Mono', monospace; }
     ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: #09090b; }
-    ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+    ::-webkit-scrollbar-track { background: #1a1a1a; }
+    ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #4a4a4a; }
+    .card { background: #262626; border: 1px solid #333; border-radius: 14px; }
+    .switch { position: relative; display: inline-block; width: 40px; height: 22px; flex: none; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .switch span { position: absolute; inset: 0; background: #4a4a4a; border-radius: 999px; cursor: pointer; transition: .2s; }
+    .switch span:before { content: ""; position: absolute; height: 16px; width: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+    .switch input:checked + span { background: #e56a4a; }
+    .switch input:checked + span:before { transform: translateX(18px); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
   </style>
 </head>
-<body class="bg-zinc-950 text-zinc-100 min-h-screen flex flex-col antialiased selection:bg-brand-500 selection:text-white">
 
-  <!-- Header Superior -->
-  <header class="border-b border-zinc-800/80 bg-zinc-900/60 backdrop-blur-md sticky top-0 z-50 px-6 py-3.5 flex items-center justify-between">
-    <div class="flex items-center gap-3">
-      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-brand-500/20 text-white font-bold text-xl">
-        👑
-      </div>
+<body class="text-zinc-100 min-h-screen flex antialiased selection:bg-brand-500 selection:text-white">
+
+  <!-- Barra lateral -->
+  <aside class="w-60 shrink-0 sticky top-0 h-screen flex flex-col border-r border-zinc-800 bg-[#1e1e1ed9] backdrop-blur-md">
+    <div class="px-5 py-5 flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-brand-500 flex items-center justify-center shadow-lg shadow-brand-500/20 text-xl">👑</div>
       <div>
-        <div class="flex items-center gap-2">
-          <h1 class="text-lg font-bold tracking-tight text-white">HERA Multiagent</h1>
-          <span class="px-2 py-0.5 text-xs font-semibold rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20">v1.0.0</span>
-        </div>
-        <p class="text-xs text-zinc-400">Sovereign Local AI Orchestrator for Windows</p>
+        <h1 class="text-base font-extrabold tracking-tight text-white leading-tight">HERA</h1>
+        <p class="text-[11px] text-zinc-500 leading-tight">Multiagent · v1.0.0</p>
       </div>
     </div>
-
-    <!-- Navegação por Abas -->
-    <nav class="flex items-center gap-1 bg-zinc-900/80 p-1 rounded-xl border border-zinc-800">
-      <button onclick="switchTab('studio')" id="tab-btn-studio" class="tab-btn active px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all bg-brand-600 text-white shadow-sm flex items-center gap-2">
+    <nav class="flex-1 overflow-y-auto px-3 pb-4 space-y-0.5">
+      <div class="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Trabalho</div>
+      <button onclick="switchTab('studio')" id="tab-btn-studio" class="tab-btn w-full px-3 py-2 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/70 flex items-center gap-3">
         <i data-lucide="play" class="w-4 h-4"></i> Task Studio
       </button>
-      <button onclick="switchTab('engines')" id="tab-btn-engines" class="tab-btn px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/60 flex items-center gap-2">
-        <i data-lucide="cpu" class="w-4 h-4"></i> Motores & IAs
-      </button>
-      <button onclick="switchTab('hardware')" id="tab-btn-hardware" class="tab-btn px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/60 flex items-center gap-2">
-        <i data-lucide="activity" class="w-4 h-4"></i> GPU & Hardware
-      </button>
-      <button onclick="switchTab('vault')" id="tab-btn-vault" class="tab-btn px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/60 flex items-center gap-2">
-        <i data-lucide="book-open" class="w-4 h-4"></i> Obsidian Vault
-      </button>
-      <button onclick="switchTab('history')" id="tab-btn-history" class="tab-btn px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/60 flex items-center gap-2">
-        <i data-lucide="history" class="w-4 h-4"></i> Histórico (WAL)
-      </button>
-      <button onclick="switchTab('hitl')" id="tab-btn-hitl" class="tab-btn px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/60 flex items-center gap-2">
-        <i data-lucide="git-pull-request" class="w-4 h-4"></i> Diff Review (HITL)
-      </button>
-      <button onclick="switchTab('arena')" id="tab-btn-arena" class="tab-btn px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/60 flex items-center gap-2">
-        <i data-lucide="swords" class="w-4 h-4"></i> Arena & MCP
-      </button>
-      <button onclick="switchTab('plan')" id="tab-btn-plan" class="tab-btn px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/60 flex items-center gap-2">
+      <button onclick="switchTab('plan')" id="tab-btn-plan" class="tab-btn w-full px-3 py-2 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/70 flex items-center gap-3">
         <i data-lucide="network" class="w-4 h-4"></i> Plano
       </button>
-      <button onclick="switchTab('router')" id="tab-btn-router" class="tab-btn px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/60 flex items-center gap-2">
+      <button onclick="switchTab('history')" id="tab-btn-history" class="tab-btn w-full px-3 py-2 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/70 flex items-center gap-3">
+        <i data-lucide="history" class="w-4 h-4"></i> Histórico
+      </button>
+      <button onclick="switchTab('hitl')" id="tab-btn-hitl" class="tab-btn w-full px-3 py-2 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/70 flex items-center gap-3">
+        <i data-lucide="git-pull-request" class="w-4 h-4"></i> Diff Review
+      </button>
+      <div class="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Motores</div>
+      <button onclick="switchTab('engines')" id="tab-btn-engines" class="tab-btn w-full px-3 py-2 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/70 flex items-center gap-3">
+        <i data-lucide="cpu" class="w-4 h-4"></i> Motores & IAs
+      </button>
+      <button onclick="switchTab('router')" id="tab-btn-router" class="tab-btn w-full px-3 py-2 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/70 flex items-center gap-3">
         <i data-lucide="route" class="w-4 h-4"></i> Roteador
       </button>
+      <button onclick="switchTab('arena')" id="tab-btn-arena" class="tab-btn w-full px-3 py-2 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/70 flex items-center gap-3">
+        <i data-lucide="swords" class="w-4 h-4"></i> Arena & MCP
+      </button>
+      <div class="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Sistema</div>
+      <button onclick="switchTab('hardware')" id="tab-btn-hardware" class="tab-btn w-full px-3 py-2 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/70 flex items-center gap-3">
+        <i data-lucide="activity" class="w-4 h-4"></i> Hardware
+      </button>
+      <button onclick="switchTab('vault')" id="tab-btn-vault" class="tab-btn w-full px-3 py-2 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/70 flex items-center gap-3">
+        <i data-lucide="book-open" class="w-4 h-4"></i> Obsidian
+      </button>
     </nav>
-
-    <!-- Indicador de Status WS -->
-    <div class="flex items-center gap-3">
+    <div class="p-4 border-t border-zinc-800">
       <div id="ws-badge" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
         <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
         <span>Conectado</span>
       </div>
     </div>
-  </header>
+  </aside>
+
+  <div class="flex-1 min-w-0 flex flex-col">
 
   <!-- Container Principal -->
   <main class="flex-1 p-6 max-w-7xl w-full mx-auto">
@@ -160,7 +165,7 @@
                 Salvar no Obsidian Vault
               </label>
 
-              <button onclick="submitTask()" id="btn-run-task" class="px-5 py-2.5 bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-brand-500/25 transition-all flex items-center gap-2">
+              <button onclick="submitTask()" id="btn-run-task" class="px-5 py-2.5 bg-gradient-to-r from-brand-500 to-brand-700 hover:from-brand-500 hover:to-brand-700 text-white rounded-xl text-sm font-semibold shadow-lg shadow-brand-500/25 transition-all flex items-center gap-2">
                 <i data-lucide="play" class="w-4 h-4"></i> Executar Tarefa
               </button>
             </div>
@@ -202,8 +207,17 @@
     <!-- ==================== ABA 2: MOTORES & IAs ==================== -->
     <section id="tab-engines" class="tab-content hidden space-y-6">
       
-      <!-- Cards de Saúde dos Motores -->
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" id="engines-cards-container">
+      <div class="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 class="text-xl font-bold text-white">Motores &amp; IAs</h2>
+          <p class="text-sm text-zinc-400">Ligue os serviços locais, escolha o modelo de cada motor e decida o que o Hera pode usar.</p>
+        </div>
+        <button onclick="refreshEngines()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-lg text-xs font-semibold flex items-center gap-2">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Atualizar
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 xl:grid-cols-2 gap-4" id="engines-cards-container">
         <!-- Renderizado dinamicamente via JS -->
       </div>
 
@@ -214,7 +228,7 @@
         <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
           <div class="flex items-center justify-between">
             <h3 class="text-sm font-bold text-white flex items-center gap-2">
-              <i data-lucide="download-cloud" class="w-5 h-5 text-indigo-400"></i> Baixar Novo Modelo Local (Ollama)
+              <i data-lucide="download-cloud" class="w-5 h-5 text-brand-400"></i> Baixar Novo Modelo Local (Ollama)
             </h3>
             <span class="text-xs text-zinc-500">ollama pull</span>
           </div>
@@ -236,7 +250,7 @@
               <span id="pull-pct-text" class="font-mono text-brand-400 font-bold">0%</span>
             </div>
             <div class="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
-              <div id="pull-progress-bar" class="h-full bg-gradient-to-r from-brand-600 to-indigo-500 w-0 transition-all duration-300"></div>
+              <div id="pull-progress-bar" class="h-full bg-gradient-to-r from-brand-500 to-brand-700 w-0 transition-all duration-300"></div>
             </div>
           </div>
         </div>
@@ -256,7 +270,7 @@
                 <div class="text-sm font-semibold text-zinc-200">Modo 100% Offline (Soberano)</div>
                 <div class="text-xs text-zinc-500">Força todas as rotas para o Ollama na GPU local</div>
               </div>
-              <input type="checkbox" id="toggle-strict-offline" onchange="toggleOfflineMode()" class="w-5 h-5 accent-brand-600 cursor-pointer">
+              <label class="switch"><input type="checkbox" id="toggle-strict-offline" onchange="toggleOfflineMode()"><span></span></label>
             </div>
 
             <div class="p-3 bg-zinc-950 rounded-xl border border-zinc-800 flex items-center justify-between">
@@ -377,7 +391,7 @@
       <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
-            <i data-lucide="shield-check" class="w-5 h-5 text-indigo-400"></i>
+            <i data-lucide="shield-check" class="w-5 h-5 text-brand-400"></i>
             <div>
               <h3 class="text-sm font-bold text-white">Visual Diff Review & Human-in-the-Loop</h3>
               <p class="text-xs text-zinc-400">Revisão e autorização criptográfica de patches antes do merge em disco</p>
@@ -447,7 +461,7 @@
           <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
-                <i data-lucide="blocks" class="w-5 h-5 text-indigo-400"></i>
+                <i data-lucide="blocks" class="w-5 h-5 text-brand-400"></i>
                 <h3 class="text-sm font-bold text-white">Model Context Protocol (MCP)</h3>
               </div>
               <button onclick="loadMcpTools()" class="text-xs text-zinc-400 hover:text-white flex items-center gap-1">
@@ -471,7 +485,7 @@
     <section id="tab-plan" class="tab-content hidden space-y-6">
       <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
         <div class="flex items-center gap-2">
-          <i data-lucide="brain" class="w-5 h-5 text-indigo-400"></i>
+          <i data-lucide="brain" class="w-5 h-5 text-brand-400"></i>
           <h3 class="text-sm font-bold text-white">Quem faz o plano</h3>
         </div>
         <p class="text-xs text-zinc-400">O planejador divide o objetivo em passos; os motores que estiverem <strong>ligados</strong> em "Motores &amp; IAs" executam cada passo.</p>
@@ -495,7 +509,7 @@
         <label class="block text-xs font-semibold text-zinc-400">Objetivo</label>
         <textarea id="plan-goal" rows="4" placeholder="Descreva o que você quer que o time de IAs faça..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-brand-500 resize-none"></textarea>
         <div class="flex flex-wrap items-center gap-3">
-          <button onclick="generatePlan()" id="btn-gen-plan" class="px-5 py-2.5 bg-gradient-to-r from-brand-600 to-indigo-600 text-white rounded-xl text-sm font-bold flex items-center gap-2">
+          <button onclick="generatePlan()" id="btn-gen-plan" class="px-5 py-2.5 bg-gradient-to-r from-brand-500 to-brand-700 text-white rounded-xl text-sm font-bold flex items-center gap-2">
             <i data-lucide="sparkles" class="w-4 h-4"></i> Gerar plano
           </button>
           <button onclick="executePlan()" id="btn-run-plan" disabled class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold flex items-center gap-2">
@@ -513,7 +527,7 @@
     <section id="tab-router" class="tab-content hidden space-y-6">
       <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-3">
         <div class="flex items-center gap-2">
-          <i data-lucide="route" class="w-5 h-5 text-indigo-400"></i>
+          <i data-lucide="route" class="w-5 h-5 text-brand-400"></i>
           <h3 class="text-sm font-bold text-white">Roteador do Hera (embutido)</h3>
         </div>
         <p class="text-xs text-zinc-400">
@@ -555,6 +569,7 @@
       </div>
     </section>
   </main>
+  </div>
 
   <!-- Script Lógico da Interface -->
   <script>
@@ -565,7 +580,10 @@
     document.addEventListener("DOMContentLoaded", () => {
       lucide.createIcons();
       initWebSocket();
-      loadHealth();
+      switchTab(document.getElementById('tab-' + location.hash.slice(1)) ? location.hash.slice(1) : 'studio');
+      loadServices().then(loadHealth);
+      setInterval(loadServices, 5000);
+      setInterval(() => { if (!document.getElementById('tab-engines').classList.contains('hidden')) loadHealth(); }, 8000);
       loadHardware();
       loadTasksHistory();
       loadHitlProposals();
@@ -709,41 +727,136 @@
     // nome interno do motor -> chave no config.yaml
     const ENGINE_CONFIG_KEY = { ollama: "ollama", "9router": "nine_router", claude_code: "claude_code", antigravity: "antigravity" };
 
+    const ENGINE_META = {
+      ollama:      { icon: "cpu",      sub: "Modelos locais na sua GPU" },
+      "9router":   { icon: "globe",    sub: "Roteador externo (opcional): o Roteador embutido do Hera já faz o mesmo" },
+      claude_code: { icon: "terminal", sub: "CLI do Claude Code, para tarefas de código" },
+      antigravity: { icon: "rocket",   sub: "CLI Antigravity, com acesso ao workspace" },
+      hera_router: { icon: "route",    sub: "Roteador embutido: nuvem com fallback e combos" }
+    };
+    let globalServices = {};
+    const servicesBusy = {};
+
     function renderEngineCards(engines) {
       const container = document.getElementById("engines-cards-container");
       container.innerHTML = "";
+      const order = ["ollama", "hera_router", "9router", "claude_code", "antigravity"];
+      const names = [...order.filter(n => engines[n]), ...Object.keys(engines).filter(n => !order.includes(n))];
 
-      for (const [name, info] of Object.entries(engines)) {
+      for (const name of names) {
+        const info = engines[name];
+        const meta = ENGINE_META[name] || { icon: "box", sub: "" };
+        const sv = globalServices[name];
         const on = info.enabled !== false;
-        const statusColor = !on ? "text-zinc-400 bg-zinc-500/10 border-zinc-500/20"
-          : info.healthy ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-rose-400 bg-rose-500/10 border-rose-500/20";
-        const statusText = !on ? "DESLIGADO" : info.healthy ? "ONLINE" : "OFFLINE";
+        let pill = ["DESLIGADO", "#6b7280", "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"];
+        if (on && info.healthy) pill = ["ONLINE", "#10b981", "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"];
+        else if (on) pill = ["OFFLINE", "#ef4444", "bg-rose-500/10 text-rose-400 border-rose-500/20"];
         const models = [...(info.available_models || [])];
         if (info.default_model && !models.includes(info.default_model)) models.unshift(info.default_model);
         const options = models.map(m => `<option value="${escAttr(m)}" ${m === info.default_model ? "selected" : ""}>${escapeHtml(m)}</option>`).join("");
 
+        let service = "";
+        if (sv) {
+          const busy = !!servicesBusy[name];
+          let state, action = "";
+          if (busy) {
+            state = `<span class="text-zinc-300">Aguarde...</span>`;
+            action = `<button disabled class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-700 text-zinc-300 opacity-70">Trabalhando...</button>`;
+          } else if (sv.running) {
+            state = `<span class="text-emerald-400">Rodando</span> <span class="text-zinc-500">· porta ${sv.port}${sv.managed ? " · iniciado pelo Hera" : " · aberto fora do Hera"}</span>`;
+            if (sv.managed) action = `<button onclick="stopService('${escAttr(name)}')" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-700 hover:bg-zinc-600 text-white">Parar</button>`;
+            if (sv.dashboard) action += ` <a href="${escAttr(sv.dashboard)}" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-700 hover:bg-zinc-600 text-white">Abrir painel</a>`;
+          } else if (!sv.installed) {
+            state = `<span class="text-amber-400">Não instalado</span> <span class="text-zinc-500">· ${escapeHtml(sv.install_hint)}</span>`;
+          } else {
+            state = `<span class="text-rose-400">Parado</span>`;
+            action = `<button onclick="startService('${escAttr(name)}')" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-brand-500 hover:bg-brand-600 text-white">Iniciar ${escapeHtml(sv.label)}</button>`;
+          }
+          const crash = (!sv.running && sv.exit_code !== undefined && sv.exit_code !== null)
+            ? `<div class="text-[11px] text-rose-300 font-mono break-all">Fechou com código ${sv.exit_code}. ${escapeHtml(sv.last_log || "")}</div>` : "";
+          service = `
+            <div class="rounded-xl bg-zinc-950 border border-zinc-800 p-3 space-y-2">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="text-xs">${state}</div>
+                <div class="flex items-center gap-2">${action}</div>
+              </div>${crash}
+            </div>`;
+        }
+
         const card = document.createElement("div");
-        card.className = "bg-zinc-900/60 border border-zinc-800 rounded-2xl p-4 shadow-xl space-y-3" + (on ? "" : " opacity-70");
+        card.className = "card p-5 space-y-4" + (on ? "" : " opacity-75");
         card.innerHTML = `
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-sm font-bold text-white uppercase tracking-wider">${escapeHtml(name)}</span>
-            <span class="px-2 py-0.5 rounded-full text-xs font-bold border ${statusColor}">${statusText}</span>
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="w-10 h-10 rounded-xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center shrink-0">
+                <i data-lucide="${meta.icon}" class="w-5 h-5 text-brand-400"></i>
+              </div>
+              <div class="min-w-0">
+                <div class="text-sm font-bold text-white">${escapeHtml(name)}</div>
+                <div class="text-xs text-zinc-500 truncate" title="${escAttr(meta.sub)}">${escapeHtml(meta.sub)}</div>
+              </div>
+            </div>
+            <span class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${pill[2]} shrink-0">
+              <span class="dot" style="background:${pill[1]}"></span>${pill[0]}
+            </span>
           </div>
-          <label class="flex items-center justify-between text-xs text-zinc-300 cursor-pointer">
-            <span>Ligado</span>
-            <input type="checkbox" ${on ? "checked" : ""} onchange="toggleEngine('${escAttr(name)}', this.checked)" class="w-5 h-5 accent-brand-600 cursor-pointer">
-          </label>
-          <div>
-            <label class="block text-[11px] font-semibold text-zinc-400 mb-1">Modelo padrão</label>
-            <select onchange="setEngineModel('${escAttr(name)}', this.value)" ${models.length ? "" : "disabled"} class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-brand-500">
-              ${options || '<option value="">(nenhum modelo listado)</option>'}
-            </select>
+          ${service}
+          <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-end">
+            <div>
+              <label class="block text-[11px] font-semibold text-zinc-400 mb-1">Modelo padrão</label>
+              <select onchange="setEngineModel('${escAttr(name)}', this.value)" ${models.length ? "" : "disabled"} class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-2 text-xs text-zinc-100 focus:outline-none focus:border-brand-500">
+                ${options || '<option value="">(nenhum modelo listado)</option>'}
+              </select>
+            </div>
+            <label class="flex items-center gap-2.5 text-xs text-zinc-300 cursor-pointer pb-1.5">
+              Usar no Hera
+              <span class="switch"><input type="checkbox" ${on ? "checked" : ""} onchange="toggleEngine('${escAttr(name)}', this.checked)"><span></span></span>
+            </label>
           </div>
-          <div class="text-[11px] text-zinc-500 truncate">${escapeHtml(info.error_message || (models.length + " modelo(s)"))}</div>
+          ${info.error_message && !info.healthy ? `<div class="text-[11px] text-zinc-500 truncate" title="${escAttr(info.error_message)}">${escapeHtml(info.error_message)}</div>` : ""}
         `;
         container.appendChild(card);
       }
       lucide.createIcons();
+    }
+
+    async function loadServices() {
+      try {
+        const res = await fetch("/api/services");
+        const data = await res.json();
+        const next = {};
+        data.services.forEach(sv => { next[sv.name] = sv; });
+        const changed = JSON.stringify(next) !== JSON.stringify(globalServices);
+        globalServices = next;
+        if (changed && globalHealth && Object.keys(globalHealth).length) renderEngineCards(globalHealth);
+      } catch (e) { console.error("Falha ao ler serviços:", e); }
+    }
+
+    async function refreshEngines() { await loadServices(); await loadHealth(); }
+
+    async function startService(name) {
+      servicesBusy[name] = true;
+      renderEngineCards(globalHealth);
+      try {
+        const res = await fetch(`/api/services/${encodeURIComponent(name)}/start`, { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) alert((data.detail && data.detail.message) || "Não foi possível iniciar o serviço.");
+      } catch (e) { alert("Erro ao iniciar: " + e); }
+      delete servicesBusy[name];
+      await refreshEngines();
+      setTimeout(refreshEngines, 2500);     // o servico pode levar um instante para listar os modelos
+    }
+
+    async function stopService(name) {
+      servicesBusy[name] = true;
+      renderEngineCards(globalHealth);
+      try {
+        const res = await fetch(`/api/services/${encodeURIComponent(name)}/stop`, { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) alert((data.detail && data.detail.message) || "Não foi possível parar o serviço.");
+      } catch (e) { alert("Erro ao parar: " + e); }
+      delete servicesBusy[name];
+      await refreshEngines();
     }
 
     async function saveEngineConfig(name, patch) {
@@ -877,6 +990,7 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(cfg)
         });
+        loadHealth();
       } catch (e) {
         console.error(e);
       }
@@ -1024,7 +1138,7 @@
           } else if (line.startsWith("-") && !line.startsWith("---")) {
             return `<div class="bg-rose-950/40 text-rose-300 px-2 py-0.5">${escapeHtml(line)}</div>`;
           } else if (line.startsWith("@@")) {
-            return `<div class="bg-indigo-950/40 text-indigo-300 px-2 py-0.5 font-bold">${escapeHtml(line)}</div>`;
+            return `<div class="bg-brand-900/40 text-brand-300 px-2 py-0.5 font-bold">${escapeHtml(line)}</div>`;
           }
           return `<div class="px-2 py-0.5 text-zinc-400">${escapeHtml(line)}</div>`;
         }).join("");
@@ -1196,7 +1310,7 @@
           card.className = "p-3 bg-zinc-950 border border-zinc-800 rounded-xl space-y-1";
           card.innerHTML = `
             <div class="flex items-center justify-between">
-              <span class="font-bold text-xs text-indigo-300 font-mono">${t.name}</span>
+              <span class="font-bold text-xs text-brand-300 font-mono">${t.name}</span>
               <span class="text-[10px] font-mono px-2 py-0.5 rounded-full border ${badgeCol}">${t.effect}</span>
             </div>
             <p class="text-xs text-zinc-400">${t.description}</p>

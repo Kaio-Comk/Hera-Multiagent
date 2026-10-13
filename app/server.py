@@ -33,6 +33,7 @@ from app.validator import TaskValidator
 from app.auto_fix import AutoFixEngine
 from app.dag_scheduler import TaskDAG, DAGScheduler
 from app import orchestration
+from app.services_control import SERVICES, ServiceManager
 from adapters.ollama import OllamaAdapter
 from adapters.nine_router import NineRouterAdapter
 from adapters.claude_code import ClaudeCodeAdapter
@@ -589,6 +590,51 @@ async def execute_plan(req: PlanExecuteRequest, background_tasks: BackgroundTask
 
     background_tasks.add_task(_execute)
     return {"status": "enqueued", "run_id": run_id, "steps": steps, "warnings": warnings}
+
+
+# ---------------------------------------------------------------------------------------------
+# Servicos locais (Ollama / 9Router): iniciar e parar pelo painel. Comandos FIXOS (ver services_control).
+# ---------------------------------------------------------------------------------------------
+service_manager = ServiceManager(DATA_DIR / "logs")
+
+
+def _service_or_404(name: str) -> str:
+    if name not in SERVICES:
+        raise HTTPException(status_code=404, detail={"error": "unknown_service", "message": "Servico desconhecido."})
+    return name
+
+
+@app.get("/api/services")
+async def list_services():
+    return {"services": await asyncio.to_thread(service_manager.all_status)}
+
+
+@app.post("/api/services/{name}/start")
+async def start_service(name: str):
+    _service_or_404(name)
+    try:
+        info = await asyncio.to_thread(service_manager.start, name)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail={"error": "not_installed", "message": str(exc)})
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail={"error": "start_failed", "message": f"Nao foi possivel iniciar: {exc}"})
+    if not info["running"]:
+        ready = await asyncio.to_thread(service_manager.wait_until_up, name, 25.0)
+        info = await asyncio.to_thread(service_manager.status, name)
+        info["message"] = f"{info['label']} no ar." if ready else f"{info['label']} nao respondeu a tempo."
+    broadcast_log(f"🔌 [SERVICOS] {info['message']}", level="success" if info["running"] else "warning")
+    return info
+
+
+@app.post("/api/services/{name}/stop")
+async def stop_service(name: str):
+    _service_or_404(name)
+    try:
+        info = await asyncio.to_thread(service_manager.stop, name)
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail={"error": "not_managed", "message": str(exc)})
+    broadcast_log(f"🔌 [SERVICOS] {info['message']}", level="info")
+    return info
 
 
 @app.post("/api/ollama/pull")
