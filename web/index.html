@@ -8,6 +8,9 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Markdown + sanitizador (o conteudo das notas NUNCA entra na pagina sem passar pelo DOMPurify) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
   <script>
     tailwind.config = {
       darkMode: 'class',
@@ -42,6 +45,36 @@
     .switch input:checked + span { background: #e56a4a; }
     .switch input:checked + span:before { transform: translateX(18px); }
     .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .md-preview { font-size: 14px; line-height: 1.7; color: #e5e5e5; word-wrap: break-word; }
+    .md-preview h1 { font-size: 1.7em; font-weight: 800; margin: 1.1em 0 .5em; color: #fff; }
+    .md-preview h2 { font-size: 1.4em; font-weight: 700; margin: 1.1em 0 .4em; color: #fff; border-bottom: 1px solid #333; padding-bottom: .2em; }
+    .md-preview h3 { font-size: 1.15em; font-weight: 700; margin: 1em 0 .3em; color: #fff; }
+    .md-preview h4, .md-preview h5, .md-preview h6 { font-weight: 700; margin: 1em 0 .3em; color: #ddd; }
+    .md-preview p { margin: .6em 0; }
+    .md-preview ul { list-style: disc; padding-left: 1.5em; margin: .5em 0; }
+    .md-preview ol { list-style: decimal; padding-left: 1.5em; margin: .5em 0; }
+    .md-preview li > input[type=checkbox] { margin-right: .4em; accent-color: #e56a4a; }
+    .md-preview a { color: #ee8466; text-decoration: underline; cursor: pointer; }
+    .md-preview a.wl-missing { color: #f87171; }
+    .md-preview code { background: #1f1f1f; border: 1px solid #333; border-radius: 4px; padding: .1em .35em; font-family: 'JetBrains Mono', monospace; font-size: .88em; }
+    .md-preview pre { background: #161616; border: 1px solid #333; border-radius: 8px; padding: 12px; overflow-x: auto; margin: .8em 0; }
+    .md-preview pre code { background: none; border: 0; padding: 0; }
+    .md-preview blockquote { border-left: 3px solid #e56a4a; background: rgba(229,106,74,.07); margin: .8em 0; padding: .4em 1em; border-radius: 0 8px 8px 0; color: #d4d4d4; }
+    .md-preview blockquote.callout { border-left-color: #3b82f6; background: rgba(59,130,246,.08); }
+    .md-preview blockquote.callout-warning, .md-preview blockquote.callout-caution { border-left-color: #f59e0b; background: rgba(245,158,11,.08); }
+    .md-preview blockquote.callout-danger, .md-preview blockquote.callout-bug, .md-preview blockquote.callout-failure { border-left-color: #ef4444; background: rgba(239,68,68,.08); }
+    .md-preview blockquote.callout-tip, .md-preview blockquote.callout-success, .md-preview blockquote.callout-check { border-left-color: #10b981; background: rgba(16,185,129,.08); }
+    .md-preview blockquote.callout-abstract, .md-preview blockquote.callout-summary { border-left-color: #14b8a6; background: rgba(20,184,166,.08); }
+    .md-preview .callout-title { color: #fff; }
+    .md-preview table { border-collapse: collapse; margin: .8em 0; }
+    .md-preview th, .md-preview td { border: 1px solid #333; padding: 4px 10px; }
+    .md-preview th { background: #1f1f1f; }
+    .md-preview hr { border: 0; border-top: 1px solid #333; margin: 1.2em 0; }
+    .md-preview img { max-width: 100%; border-radius: 8px; }
+    .md-preview .ext-img { color: #9ca3af; font-size: 12px; border: 1px dashed #4a4a4a; border-radius: 6px; padding: 2px 8px; }
+    .vt-row { display: flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; color: #b8b8b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .vt-row:hover { background: #2f2f2f; color: #fff; }
+    .vt-row.active { background: rgba(229,106,74,.18); color: #fff; }
   </style>
 </head>
 
@@ -332,26 +365,101 @@
     </section>
 
     <!-- ==================== ABA 4: OBSIDIAN VAULT ==================== -->
-    <section id="tab-vault" class="tab-content hidden space-y-6">
-      <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
-        <h3 class="text-sm font-bold text-white flex items-center gap-2">
-          <i data-lucide="search" class="w-5 h-5 text-brand-400"></i> Busca Semântica no Segundo Cérebro (Obsidian)
-        </h3>
-        <p class="text-xs text-zinc-400">
-          Pesquise convenções, decisões arquiteturais (ADRs) e memórias de tarefas passadas indexadas no Vault.
-        </p>
-
-        <div class="flex gap-2">
-          <input type="text" id="vault-query" placeholder="Ex: seguranca, sqlite wal, regras de commit..." class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-sm text-zinc-100 focus:outline-none focus:border-brand-500">
-          <button onclick="searchVault()" class="px-5 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-sm font-semibold transition-all flex items-center gap-2">
-            <i data-lucide="search" class="w-4 h-4"></i> Buscar
-          </button>
+    <section id="tab-vault" class="tab-content hidden space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 class="text-xl font-bold text-white">Obsidian</h2>
+          <p id="ov-info" class="text-sm text-zinc-400">Carregando o cofre...</p>
         </div>
-
-        <div id="vault-results" class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
-          <!-- Resultados dinâmicos da pesquisa -->
+        <div class="flex flex-wrap items-center gap-2">
+          <button onclick="ovNewNote('')" class="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-semibold">+ Nova nota</button>
+          <button onclick="ovNewFolder()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold">+ Pasta</button>
+          <button onclick="ovDaily()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold">Nota diária</button>
+          <button onclick="ovGraph()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold">Mapa de notas</button>
+          <button onclick="ovReload()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold">Atualizar</button>
         </div>
       </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-[250px_minmax(0,1fr)_230px] gap-4" style="min-height: 70vh">
+        <!-- Esquerda: busca, árvore e tags -->
+        <div class="card p-3 flex flex-col gap-3 lg:max-h-[78vh]">
+          <input id="ov-search" oninput="ovSearchDebounced()" placeholder="Buscar nas notas..." class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-brand-500">
+          <div id="ov-tree" class="flex-1 overflow-y-auto min-h-[200px]"></div>
+          <div class="border-t border-zinc-800 pt-2">
+            <div class="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1.5">Tags</div>
+            <div id="ov-tags" class="flex flex-wrap gap-1 max-h-24 overflow-y-auto"></div>
+          </div>
+        </div>
+
+        <!-- Centro: editor e pré-visualização -->
+        <div class="card p-4 flex flex-col gap-3 min-w-0">
+          <div id="ov-empty" class="flex-1 flex items-center justify-center text-sm text-zinc-500 text-center p-8">Escolha uma nota na lista, busque por algo ou crie uma nova.</div>
+          <div id="ov-note" class="hidden flex-col gap-3 flex-1 min-h-0">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="min-w-0">
+                <div id="ov-title" class="text-base font-bold text-white truncate"></div>
+                <div id="ov-path" class="text-[11px] text-zinc-500 font-mono truncate"></div>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <span id="ov-dirty" class="hidden text-[11px] text-amber-400">● não salvo</span>
+                <label class="flex items-center gap-1.5 text-[11px] text-zinc-400 cursor-pointer">auto
+                  <span class="switch" style="transform:scale(.8)"><input id="ov-auto" type="checkbox" onchange="ovAutoToggle()"><span></span></span></label>
+                <div class="flex rounded-lg overflow-hidden border border-zinc-800 text-[11px]">
+                  <button id="ovm-edit" onclick="ovMode('edit')" class="px-2.5 py-1 bg-zinc-900 text-zinc-300">Editar</button>
+                  <button id="ovm-split" onclick="ovMode('split')" class="px-2.5 py-1 bg-zinc-900 text-zinc-300">Dividir</button>
+                  <button id="ovm-view" onclick="ovMode('view')" class="px-2.5 py-1 bg-zinc-900 text-zinc-300">Ler</button>
+                </div>
+                <button onclick="ovSave()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold">Salvar (Ctrl+S)</button>
+                <div class="relative">
+                  <button onclick="document.getElementById('ov-ai-menu').classList.toggle('hidden')" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold">✨ Hera</button>
+                  <div id="ov-ai-menu" class="hidden absolute right-0 mt-1 z-20 w-56 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl p-1 text-xs">
+                    <button onclick="ovAi('summarize')" class="block w-full text-left px-3 py-2 rounded-lg hover:bg-zinc-800">Resumir a nota</button>
+                    <button onclick="ovAi('continue')" class="block w-full text-left px-3 py-2 rounded-lg hover:bg-zinc-800">Continuar escrevendo</button>
+                    <button onclick="ovAi('improve')" class="block w-full text-left px-3 py-2 rounded-lg hover:bg-zinc-800">Melhorar o trecho selecionado</button>
+                    <button onclick="ovAi('tags')" class="block w-full text-left px-3 py-2 rounded-lg hover:bg-zinc-800">Sugerir tags</button>
+                    <button onclick="ovAi('ask')" class="block w-full text-left px-3 py-2 rounded-lg hover:bg-zinc-800">Perguntar sobre a nota...</button>
+                  </div>
+                </div>
+                <button onclick="ovRename()" class="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs">Renomear</button>
+                <button onclick="ovDelete()" class="px-2.5 py-1.5 text-rose-400 hover:text-rose-300 text-xs">Excluir</button>
+              </div>
+            </div>
+            <div id="ov-props" class="hidden text-[11px] text-zinc-400 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 font-mono whitespace-pre-wrap"></div>
+            <div id="ov-panes" class="grid gap-3 flex-1 min-h-[420px] grid-cols-1">
+              <textarea id="ov-editor" spellcheck="false" class="w-full min-h-[420px] h-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-[13px] text-zinc-100 font-mono leading-relaxed focus:outline-none focus:border-brand-500 resize-none"></textarea>
+              <div id="ov-preview" class="md-preview hidden overflow-y-auto bg-zinc-950 border border-zinc-800 rounded-xl p-4 min-h-[420px] max-h-[70vh]"></div>
+            </div>
+            <div id="ov-ai-result" class="hidden bg-zinc-950 border border-brand-500/30 rounded-xl p-3 space-y-2">
+              <div class="flex items-center justify-between"><span id="ov-ai-title" class="text-xs font-bold text-brand-300"></span>
+                <button onclick="document.getElementById('ov-ai-result').classList.add('hidden')" class="text-xs text-zinc-500">fechar</button></div>
+              <pre id="ov-ai-text" class="text-xs text-zinc-200 whitespace-pre-wrap font-mono max-h-56 overflow-y-auto"></pre>
+              <div class="flex gap-2">
+                <button onclick="ovAiInsert()" class="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-semibold">Inserir na nota</button>
+                <button onclick="ovAiCopy()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs">Copiar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Direita: ligações -->
+        <div class="card p-3 space-y-4 lg:max-h-[78vh] overflow-y-auto">
+          <div><div class="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1.5">Backlinks</div><div id="ov-backlinks" class="space-y-0.5 text-xs text-zinc-500">-</div></div>
+          <div><div class="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1.5">Links desta nota</div><div id="ov-outgoing" class="space-y-0.5 text-xs text-zinc-500">-</div></div>
+          <div><div class="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1.5">Tags</div><div id="ov-notetags" class="flex flex-wrap gap-1 text-xs text-zinc-500">-</div></div>
+          <div><div class="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1.5">Estrutura</div><div id="ov-outline" class="space-y-0.5 text-xs text-zinc-500">-</div></div>
+        </div>
+      </div>
+
+      <!-- Mapa de notas -->
+      <div id="ov-graph-modal" class="hidden fixed inset-0 z-[60] bg-black/70 flex items-center justify-center p-6">
+        <div class="card w-full max-w-5xl p-4 space-y-3">
+          <div class="flex items-center justify-between"><h3 class="text-sm font-bold text-white">Mapa de notas</h3>
+            <button onclick="document.getElementById('ov-graph-modal').classList.add('hidden')" class="text-xs text-zinc-400 hover:text-white">fechar</button></div>
+          <svg id="ov-graph" viewBox="0 0 960 560" class="w-full h-[60vh] bg-zinc-950 rounded-xl border border-zinc-800"></svg>
+          <div class="text-[11px] text-zinc-500">As notas mais ligadas aparecem maiores. Clique para abrir.</div>
+        </div>
+      </div>
+      <div id="ov-toast" class="hidden fixed bottom-6 right-6 z-[70] bg-zinc-900 border border-zinc-700 text-sm text-zinc-100 rounded-xl px-4 py-2.5 shadow-xl"></div>
     </section>
 
     <!-- ==================== ABA 5: HISTÓRICO (WAL) ==================== -->
@@ -1030,41 +1138,6 @@
         loadHealth();
       } catch (e) {
         console.error(e);
-      }
-    }
-
-    // Busca no Obsidian
-    async function searchVault() {
-      const q = document.getElementById("vault-query").value.trim();
-      if (!q) return;
-
-      const container = document.getElementById("vault-results");
-      container.innerHTML = '<div class="text-xs text-zinc-500">Buscando...</div>';
-
-      try {
-        const res = await fetch(`/api/vault/search?q=${encodeURIComponent(q)}`);
-        const notes = await res.json();
-        container.innerHTML = "";
-
-        if (notes.length === 0) {
-          container.innerHTML = '<div class="text-xs text-zinc-500">Nenhuma nota encontrada.</div>';
-          return;
-        }
-
-        notes.forEach(n => {
-          const card = document.createElement("div");
-          card.className = "p-4 bg-zinc-950 border border-zinc-800 rounded-xl space-y-2";
-          card.innerHTML = `
-            <div class="flex items-center justify-between">
-              <span class="font-bold text-sm text-brand-300">📄 [[${n.title}]]</span>
-              <span class="text-xs text-zinc-500 font-mono">Score: ${n.score}</span>
-            </div>
-            <p class="text-xs text-zinc-400 line-clamp-3">${n.content}</p>
-          `;
-          container.appendChild(card);
-        });
-      } catch (e) {
-        container.innerHTML = `<div class="text-xs text-rose-400">Erro: ${e}</div>`;
       }
     }
 
@@ -1855,6 +1928,440 @@
         await loadRouterState();
         alert("Combos salvos. Já dá para usar o nome do combo como modelo.");
       } catch (e) { alert("Não foi possível salvar os combos: " + e.message); }
+    }
+    // ==================== OBSIDIAN ====================
+    function lsGet(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }
+    function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* sem armazenamento: segue sem lembrar */ } }
+
+    const OV = { loaded: false, tree: null, path: null, hash: null, original: "", mode: lsGet("ov-mode", "view"),
+                 open: new Set(JSON.parse(lsGet("ov-open", "[]"))), auto: lsGet("ov-auto", "0") === "1", stems: new Map(),
+                 aiText: "", aiAction: "", aiRange: null, timers: {}, searching: false };
+
+    function ovToast(msg, ms = 2600) {
+      const el = document.getElementById("ov-toast");
+      el.innerText = msg; el.classList.remove("hidden");
+      clearTimeout(OV.timers.toast);
+      OV.timers.toast = setTimeout(() => el.classList.add("hidden"), ms);
+    }
+
+    async function ovApi(url, method = "GET", body) {
+      const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const d = data.detail || {};
+        const err = new Error((typeof d === "string" ? d : d.message) || ("HTTP " + res.status));
+        err.status = res.status; err.detail = d; throw err;
+      }
+      return data;
+    }
+
+    const _switchTabOriginal = switchTab;
+    switchTab = function (tabId) { _switchTabOriginal(tabId); if (tabId === "vault") ovEnsureLoaded(); };
+
+    async function ovEnsureLoaded() {
+      if (OV.loaded) return;
+      OV.loaded = true;
+      await ovReload();
+      ovMode(OV.mode);
+      document.getElementById("ov-auto").checked = OV.auto;
+      const ed = document.getElementById("ov-editor");
+      ed.addEventListener("input", ovOnInput);
+      ed.addEventListener("keydown", ovEditorKeys);
+      document.getElementById("ov-tree").addEventListener("click", ovTreeClick);
+      document.getElementById("ov-preview").addEventListener("click", ovPreviewClick);
+      document.getElementById("ov-preview").addEventListener("dblclick", () => { if (OV.mode === "view") { ovMode("edit"); document.getElementById("ov-editor").focus(); } });
+      document.getElementById("ov-backlinks").addEventListener("click", ovSideClick);
+      document.getElementById("ov-outgoing").addEventListener("click", ovSideClick);
+      document.getElementById("ov-outline").addEventListener("click", ovOutlineClick);
+      document.getElementById("ov-tags").addEventListener("click", ovTagClick);
+      document.getElementById("ov-notetags").addEventListener("click", ovTagClick);
+      window.addEventListener("focus", ovCheckExternal);
+      window.addEventListener("beforeunload", e => { if (ovDirty()) { e.preventDefault(); e.returnValue = ""; } });
+      if (window.DOMPurify) {
+        DOMPurify.addHook("afterSanitizeAttributes", node => {
+          if (node.tagName === "A" && /^https?:/i.test(node.getAttribute("href") || "")) { node.setAttribute("target", "_blank"); node.setAttribute("rel", "noopener noreferrer"); }
+        });
+      }
+    }
+
+    async function ovReload() {
+      try {
+        const [info, tree, tags] = await Promise.all([ovApi("/api/obsidian/info"), ovApi("/api/obsidian/tree"), ovApi("/api/obsidian/tags")]);
+        document.getElementById("ov-info").innerText = `Cofre "${info.name}" · ${info.notes} nota(s)${info.writable ? "" : " · somente leitura"}`;
+        OV.tree = tree;
+        OV.stems = new Map();
+        (function walk(n) { for (const c of n.children) { if (c.type === "folder") walk(c); else { const k = c.name.toLowerCase(); OV.stems.set(k, [...(OV.stems.get(k) || []), c.path]); } } })(tree);
+        ovRenderTree();
+        document.getElementById("ov-tags").innerHTML = tags.tags.length
+          ? tags.tags.slice(0, 40).map(t => `<span data-tag="${escAttr(t.tag)}" class="px-2 py-0.5 rounded-full bg-zinc-800 hover:bg-zinc-700 text-[11px] text-brand-300 cursor-pointer">#${escapeHtml(t.tag)} ${t.count}</span>`).join("")
+          : '<span class="text-[11px] text-zinc-600">nenhuma</span>';
+      } catch (e) {
+        document.getElementById("ov-info").innerText = e.message;
+      }
+    }
+
+    // ---------- árvore e busca
+    function ovRenderTree() {
+      const box = document.getElementById("ov-tree");
+      const rows = [];
+      (function walk(node, depth) {
+        for (const c of node.children) {
+          const pad = `style="padding-left:${8 + depth * 14}px"`;
+          if (c.type === "folder") {
+            const open = OV.open.has(c.path);
+            rows.push(`<div class="vt-row" ${pad} data-act="folder" data-path="${escAttr(c.path)}"><span class="text-zinc-500 w-3">${open ? "▾" : "▸"}</span><span class="font-semibold">${escapeHtml(c.name)}</span><span data-act="newhere" data-path="${escAttr(c.path)}" class="ml-auto text-zinc-600 hover:text-brand-400" title="Nova nota aqui">+</span></div>`);
+            if (open) walk(c, depth + 1);
+          } else {
+            rows.push(`<div class="vt-row ${c.path === OV.path ? "active" : ""}" ${pad} data-act="note" data-path="${escAttr(c.path)}" title="${escAttr(c.path)}"><span class="text-zinc-600">·</span>${escapeHtml(c.name)}</div>`);
+          }
+        }
+      })(OV.tree, 0);
+      box.innerHTML = rows.join("") || '<div class="text-xs text-zinc-500 p-2">Cofre vazio.</div>';
+    }
+
+    function ovTreeClick(e) {
+      const el = e.target.closest("[data-act]");
+      if (!el) return;
+      const path = el.dataset.path, act = el.dataset.act;
+      if (act === "newhere") { e.stopPropagation(); ovNewNote(path); return; }
+      if (act === "folder") { OV.open.has(path) ? OV.open.delete(path) : OV.open.add(path); lsSet("ov-open", JSON.stringify([...OV.open])); ovRenderTree(); return; }
+      if (act === "note") ovOpen(path);
+    }
+
+    function ovSearchDebounced() { clearTimeout(OV.timers.search); OV.timers.search = setTimeout(ovSearch, 250); }
+
+    async function ovSearch() {
+      const q = document.getElementById("ov-search").value.trim();
+      if (!q) { OV.searching = false; ovRenderTree(); return; }
+      OV.searching = true;
+      try {
+        const r = await ovApi(`/api/obsidian/search?q=${encodeURIComponent(q)}`);
+        ovRenderResults(r.results.map(x => ({ path: x.path, title: x.title, snippet: x.snippet })), `${r.results.length} resultado(s)`);
+      } catch (e) { document.getElementById("ov-tree").innerHTML = `<div class="text-xs text-rose-400 p-2">${escapeHtml(e.message)}</div>`; }
+    }
+
+    function ovRenderResults(items, header) {
+      document.getElementById("ov-tree").innerHTML = `<div class="text-[11px] text-zinc-500 px-2 pb-1">${escapeHtml(header)}</div>` + (items.map(x =>
+        `<div class="vt-row !whitespace-normal !block" data-act="note" data-path="${escAttr(x.path)}"><div class="font-semibold text-zinc-200">${escapeHtml(x.title)}</div><div class="text-[10px] text-zinc-500">${escapeHtml(x.path)}</div>${x.snippet ? `<div class="text-[11px] text-zinc-500 mt-0.5">${escapeHtml(x.snippet)}</div>` : ""}</div>`).join("") || '<div class="text-xs text-zinc-500 p-2">Nada encontrado.</div>');
+    }
+
+    async function ovTagClick(e) {
+      const el = e.target.closest("[data-tag]");
+      if (!el) return;
+      try {
+        const r = await ovApi(`/api/obsidian/tags?tag=${encodeURIComponent(el.dataset.tag)}`);
+        ovRenderResults(r.tags.map(p => ({ path: p, title: p.split("/").pop().replace(/\.md$/, ""), snippet: "" })), `#${el.dataset.tag}: ${r.tags.length} nota(s)`);
+      } catch (err) { ovToast(err.message); }
+    }
+
+    // ---------- abrir, editar, salvar
+    function ovDirty() { return OV.path !== null && document.getElementById("ov-editor").value !== OV.original; }
+
+    function ovResolve(name) {
+      const clean = name.split("|")[0].split("#")[0].trim().replace(/\.md$/i, "");
+      if (!clean) return null;
+      if (clean.includes("/")) {
+        for (const paths of OV.stems.values()) for (const p of paths) { const lp = p.toLowerCase().replace(/\.md$/, ""); if (lp === clean.toLowerCase() || lp.endsWith("/" + clean.toLowerCase())) return p; }
+        return null;
+      }
+      const hit = OV.stems.get(clean.toLowerCase());
+      return hit ? hit[0] : null;
+    }
+
+    async function ovOpen(path, opts = {}) {
+      if (!opts.force && ovDirty() && !confirm("Esta nota tem mudanças não salvas. Descartar e abrir outra?")) return;
+      try {
+        const n = await ovApi(`/api/obsidian/note?path=${encodeURIComponent(path)}`);
+        OV.path = n.path; OV.hash = n.hash; OV.original = n.content;
+        document.getElementById("ov-empty").classList.add("hidden");
+        const wrap = document.getElementById("ov-note");
+        wrap.classList.remove("hidden"); wrap.classList.add("flex");
+        document.getElementById("ov-title").innerText = n.path.split("/").pop().replace(/\.md$/, "");
+        document.getElementById("ov-path").innerText = n.path;
+        document.getElementById("ov-editor").value = n.content;
+        document.getElementById("ov-ai-result").classList.add("hidden");
+        ovSetDirty(false);
+        ovRenderMeta(n);
+        ovRenderPreview();
+        const parent = n.path.split("/").slice(0, -1);
+        for (let i = 1; i <= parent.length; i++) OV.open.add(parent.slice(0, i).join("/"));
+        if (!OV.searching) ovRenderTree();
+      } catch (e) { ovToast("Não abriu: " + e.message, 4000); }
+    }
+
+    function ovRenderMeta(n) {
+      const li = (p, label) => `<div class="vt-row" data-path="${escAttr(p)}" title="${escAttr(p)}">${escapeHtml(label || p.split("/").pop().replace(/\.md$/, ""))}</div>`;
+      document.getElementById("ov-backlinks").innerHTML = n.backlinks.length ? n.backlinks.map(p => li(p)).join("") : "nenhum";
+      document.getElementById("ov-outgoing").innerHTML = n.outgoing.length
+        ? n.outgoing.map(o => o.path ? li(o.path, o.target) : `<div class="px-2 py-0.5 text-rose-400" title="nota inexistente">${escapeHtml(o.target)}</div>`).join("") : "nenhum";
+      document.getElementById("ov-notetags").innerHTML = n.tags.length
+        ? n.tags.map(t => `<span data-tag="${escAttr(t)}" class="px-2 py-0.5 rounded-full bg-zinc-800 text-brand-300 cursor-pointer">#${escapeHtml(t)}</span>`).join("") : "nenhuma";
+      document.getElementById("ov-outline").innerHTML = n.headings.length
+        ? n.headings.map(h => `<div class="vt-row" data-head="${escAttr(h.text)}" style="padding-left:${8 + (h.level - 1) * 10}px">${escapeHtml(h.text)}</div>`).join("") : "sem títulos";
+    }
+
+    function ovSideClick(e) { const el = e.target.closest("[data-path]"); if (el) ovOpen(el.dataset.path); }
+
+    function ovOutlineClick(e) {
+      const el = e.target.closest("[data-head]");
+      if (!el) return;
+      const target = [...document.querySelectorAll("#ov-preview h1,#ov-preview h2,#ov-preview h3,#ov-preview h4,#ov-preview h5,#ov-preview h6")].find(h => h.innerText.trim() === el.dataset.head);
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+      else {
+        const ed = document.getElementById("ov-editor"); const idx = ed.value.indexOf(el.dataset.head);
+        if (idx >= 0) { ed.focus(); ed.setSelectionRange(idx, idx + el.dataset.head.length); }
+      }
+    }
+
+    function ovSetDirty(flag) { document.getElementById("ov-dirty").classList.toggle("hidden", !flag); }
+
+    function ovOnInput() {
+      ovSetDirty(ovDirty());
+      clearTimeout(OV.timers.preview); OV.timers.preview = setTimeout(ovRenderPreview, 140);
+      if (OV.auto) { clearTimeout(OV.timers.auto); OV.timers.auto = setTimeout(() => { if (ovDirty()) ovSave(false, true); }, 1500); }
+    }
+
+    function ovEditorKeys(e) {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const ed = e.target, a = ed.selectionStart, b = ed.selectionEnd;
+        ed.value = ed.value.slice(0, a) + "  " + ed.value.slice(b);
+        ed.selectionStart = ed.selectionEnd = a + 2;
+        ovOnInput();
+      }
+    }
+    document.addEventListener("keydown", e => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s" && OV.path && !document.getElementById("tab-vault").classList.contains("hidden")) { e.preventDefault(); ovSave(); }
+    });
+
+    function ovAutoToggle() { OV.auto = document.getElementById("ov-auto").checked; lsSet("ov-auto", OV.auto ? "1" : "0"); }
+
+    async function ovSave(force = false, silent = false) {
+      if (!OV.path) return;
+      const content = document.getElementById("ov-editor").value;
+      try {
+        const r = await ovApi("/api/obsidian/note", "PUT", { path: OV.path, content, base_hash: OV.hash, force });
+        OV.hash = r.hash; OV.original = content; ovSetDirty(ovDirty());
+        if (!silent) ovToast("Salvo.");
+        const n = await ovApi(`/api/obsidian/note?path=${encodeURIComponent(OV.path)}`);
+        OV.hash = n.hash; ovRenderMeta(n);
+      } catch (e) {
+        if (e.status === 409 && e.detail && e.detail.error === "conflict") {
+          if (confirm("A nota mudou no disco depois que você a abriu (talvez no Obsidian).\n\nOK = sobrescrever com a SUA versão\nCancelar = manter o editor como está e decidir depois")) return ovSave(true);
+          ovToast("Não salvo: a nota mudou no disco.", 5000);
+        } else { ovToast("Não salvou: " + e.message, 5000); }
+      }
+    }
+
+    async function ovCheckExternal() {
+      if (!OV.path || ovDirty() || document.getElementById("tab-vault").classList.contains("hidden")) return;
+      try {
+        const n = await ovApi(`/api/obsidian/note?path=${encodeURIComponent(OV.path)}`);
+        if (n.hash !== OV.hash) { await ovOpen(OV.path, { force: true }); ovToast("Nota atualizada com a versão do disco."); }
+      } catch (e) { /* a nota pode ter sido movida */ }
+    }
+
+    // ---------- modos e pré-visualização
+    function ovMode(m) {
+      OV.mode = m; lsSet("ov-mode", m);
+      const ed = document.getElementById("ov-editor"), pv = document.getElementById("ov-preview"), panes = document.getElementById("ov-panes");
+      ed.classList.toggle("hidden", m === "view");
+      pv.classList.toggle("hidden", m === "edit");
+      panes.className = "grid gap-3 flex-1 min-h-[420px] " + (m === "split" ? "grid-cols-1 2xl:grid-cols-2" : "grid-cols-1");
+      for (const id of ["edit", "split", "view"]) {
+        document.getElementById("ovm-" + id).className = "px-2.5 py-1 " + (id === m ? "bg-brand-500 text-white" : "bg-zinc-900 text-zinc-300");
+      }
+      if (m !== "edit") ovRenderPreview();
+    }
+
+    function ovPreprocess(text) {
+      return text.split(/(```[\s\S]*?```|~~~[\s\S]*?~~~)/g).map((part, i) => {
+        if (i % 2 === 1) return part;
+        return part
+          .replace(/!\[\[([^\]\n|]+)(?:\|[^\]\n]*)?\]\]/g, (_, name) => `![${name}](#img:${encodeURIComponent(name.trim())})`)
+          .replace(/\[\[([^\]\n]+?)\]\]/g, (_, inner) => {
+            const [target, ...alias] = inner.split("|");
+            return `[${(alias.join("|") || target).replace(/[\[\]]/g, "")}](#wl:${encodeURIComponent(target.trim())})`;
+          });
+      }).join("");
+    }
+
+    function ovRenderPreview() {
+      if (!OV.path || OV.mode === "edit") return;
+      const pv = document.getElementById("ov-preview");
+      let text = document.getElementById("ov-editor").value;
+      const front = text.match(/^---\n([\s\S]*?)\n---\n?/);
+      const propsBox = document.getElementById("ov-props");
+      if (front) { propsBox.innerText = front[1]; propsBox.classList.remove("hidden"); text = text.slice(front[0].length); } else propsBox.classList.add("hidden");
+      if (!window.marked || !window.DOMPurify) { pv.innerHTML = "<pre>" + escapeHtml(text) + "</pre>"; return; }
+      pv.innerHTML = DOMPurify.sanitize(marked.parse(ovPreprocess(text), { gfm: true }), { FORBID_TAGS: ["style", "form"], FORBID_ATTR: ["style"] });
+      pv.querySelectorAll('a[href^="#wl:"]').forEach(a => {
+        const name = decodeURIComponent(a.getAttribute("href").slice(4));
+        if (!ovResolve(name)) a.classList.add("wl-missing");
+      });
+      pv.querySelectorAll("img").forEach(img => ovLoadImage(img));
+      pv.querySelectorAll("blockquote").forEach(bq => {
+        const first = bq.querySelector("p");
+        const m = first && first.textContent.match(/^\[!(\w+)\][+-]?\s*(.*)/);
+        if (!m) return;
+        bq.classList.add("callout", "callout-" + m[1].toLowerCase());
+        const body = first.innerHTML.replace(/^\[![^\]]+\][+-]?\s*[^<\n]*(<br>)?/, "");
+        first.innerHTML = `<strong class="callout-title">${escapeHtml(m[2] || m[1])}</strong>` + (body.trim() ? "<br>" + body : "");
+      });
+    }
+
+    async function ovLoadImage(img) {
+      const src = img.getAttribute("src") || "";
+      let url = null;
+      if (src.startsWith("#img:")) url = `/api/obsidian/file?name=${encodeURIComponent(decodeURIComponent(src.slice(5)))}`;
+      else if (/^(https?:)?\/\//i.test(src)) { const s = document.createElement("span"); s.className = "ext-img"; s.innerText = "imagem externa bloqueada"; img.replaceWith(s); return; }
+      else if (src.startsWith("data:") || src.startsWith("blob:")) { if (src.startsWith("data:")) img.removeAttribute("src"); return; }
+      else if (src) url = `/api/obsidian/file?path=${encodeURIComponent(decodeURI(src))}`;
+      if (!url) return;
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("x");
+        img.src = URL.createObjectURL(await res.blob());
+      } catch (e) { img.alt = (img.alt || "imagem") + " (não encontrada)"; img.removeAttribute("src"); }
+    }
+
+    async function ovPreviewClick(e) {
+      const a = e.target.closest("a");
+      if (!a) return;
+      const href = a.getAttribute("href") || "";
+      if (!href.startsWith("#wl:")) return;
+      e.preventDefault();
+      const name = decodeURIComponent(href.slice(4));
+      const path = ovResolve(name);
+      if (path) return ovOpen(path);
+      if (confirm(`A nota "${name}" não existe. Criar agora?`)) ovCreate(name.split("#")[0].trim());
+    }
+
+    // ---------- criar, renomear, excluir
+    async function ovCreate(path, content = "") {
+      try {
+        const r = await ovApi("/api/obsidian/note", "POST", { path, content });
+        await ovReload(); await ovOpen(r.path, { force: true });
+      } catch (e) { ovToast("Não criou: " + e.message, 5000); }
+    }
+
+    function ovNewNote(folder) {
+      const name = (prompt(folder ? `Nome da nota em "${folder}":` : "Nome da nota (pode incluir pastas: Projetos/Ideia):") || "").trim();
+      if (name) ovCreate((folder ? folder + "/" : "") + name);
+    }
+
+    async function ovNewFolder() {
+      const name = (prompt("Nome da pasta (pode incluir subpastas: Projetos/Novo):") || "").trim();
+      if (!name) return;
+      try { await ovApi("/api/obsidian/folder", "POST", { path: name }); OV.open.add(name); await ovReload(); } catch (e) { ovToast("Não criou: " + e.message, 5000); }
+    }
+
+    async function ovDaily() {
+      try { const r = await ovApi("/api/obsidian/daily", "POST"); await ovReload(); await ovOpen(r.path); } catch (e) { ovToast(e.message, 5000); }
+    }
+
+    async function ovRename() {
+      if (!OV.path) return;
+      const dst = (prompt("Novo nome/caminho (relativo ao cofre):", OV.path) || "").trim();
+      if (!dst || dst === OV.path) return;
+      try {
+        const dry = await ovApi("/api/obsidian/rename", "POST", { src: OV.path, dst, dry_run: true });
+        const n = dry.notes_to_update.length;
+        if (!confirm(`Renomear para "${dry.to}"?` + (n ? `\n\nOs links [[...]] em ${n} nota(s) serão atualizados.` : ""))) return;
+        if (ovDirty()) await ovSave();
+        const r = await ovApi("/api/obsidian/rename", "POST", { src: OV.path, dst });
+        await ovReload(); await ovOpen(r.to, { force: true });
+        ovToast(`Renomeada; ${r.notes_updated.length} nota(s) com links atualizados.`);
+      } catch (e) { ovToast("Não renomeou: " + e.message, 5000); }
+    }
+
+    async function ovDelete() {
+      if (!OV.path || !confirm(`Mover "${OV.path}" para a lixeira do cofre (.trash)?\nVocê pode recuperá-la pelo Obsidian.`)) return;
+      try {
+        await ovApi(`/api/obsidian/note?path=${encodeURIComponent(OV.path)}`, "DELETE");
+        OV.path = null; OV.original = "";
+        document.getElementById("ov-note").classList.add("hidden"); document.getElementById("ov-note").classList.remove("flex");
+        document.getElementById("ov-empty").classList.remove("hidden");
+        await ovReload(); ovToast("Movida para a lixeira.");
+      } catch (e) { ovToast("Não excluiu: " + e.message, 5000); }
+    }
+
+    // ---------- Hera ajuda com a nota
+    async function ovAi(action, confirmCloud = false) {
+      document.getElementById("ov-ai-menu").classList.add("hidden");
+      if (!OV.path) return;
+      const ed = document.getElementById("ov-editor");
+      const body = { action, path: OV.path, confirm_cloud: confirmCloud };
+      if (ovDirty()) await ovSave(false, true);
+      if (action === "improve") {
+        if (ed.selectionStart === ed.selectionEnd) { ovToast("Selecione um trecho no editor primeiro."); return; }
+        body.selection = ed.value.slice(ed.selectionStart, ed.selectionEnd);
+        OV.aiRange = [ed.selectionStart, ed.selectionEnd];
+      } else { OV.aiRange = null; }
+      if (action === "ask") { body.question = (prompt("O que você quer saber sobre esta nota?") || "").trim(); if (!body.question) return; }
+      ovToast("O Hera está pensando...", 60000);
+      try {
+        const r = await ovApi("/api/obsidian/ai", "POST", body);
+        OV.aiText = r.text; OV.aiAction = action;
+        document.getElementById("ov-ai-title").innerText = `${action === "ask" ? "Resposta" : "Sugestão"} · ${r.engine}${r.local ? " (local)" : " (nuvem)"}`;
+        document.getElementById("ov-ai-text").innerText = r.text;
+        document.getElementById("ov-ai-result").classList.remove("hidden");
+        ovToast("Pronto.");
+      } catch (e) {
+        if (e.status === 409 && e.detail && e.detail.error === "cloud_confirm") {
+          if (confirm(e.detail.message)) return ovAi(action, true);
+          ovToast("Cancelado.");
+        } else { ovToast("Hera: " + e.message, 6000); }
+      }
+    }
+
+    function ovAiInsert() {
+      const ed = document.getElementById("ov-editor");
+      const text = OV.aiText;
+      if (OV.aiAction === "improve" && OV.aiRange) { ed.value = ed.value.slice(0, OV.aiRange[0]) + text + ed.value.slice(OV.aiRange[1]); }
+      else if (OV.aiAction === "tags") { ed.value = ed.value.replace(/\s*$/, "") + "\n\n" + text.trim() + "\n"; }
+      else { const pos = ed.selectionStart || ed.value.length; ed.value = ed.value.slice(0, pos) + (pos > 0 ? "\n\n" : "") + text + "\n" + ed.value.slice(pos); }
+      ovOnInput(); document.getElementById("ov-ai-result").classList.add("hidden"); ovToast("Inserido. Revise e salve.");
+    }
+    async function ovAiCopy() { try { await navigator.clipboard.writeText(OV.aiText); ovToast("Copiado."); } catch (e) { ovToast("Não consegui copiar."); } }
+
+    // ---------- mapa de notas
+    async function ovGraph() {
+      const modal = document.getElementById("ov-graph-modal");
+      modal.classList.remove("hidden");
+      const svg = document.getElementById("ov-graph");
+      svg.innerHTML = '<text x="480" y="280" fill="#9ca3af" text-anchor="middle" font-size="14">Montando o mapa...</text>';
+      let g;
+      try { g = await ovApi("/api/obsidian/graph"); } catch (e) { svg.innerHTML = `<text x="480" y="280" fill="#f87171" text-anchor="middle">${escapeHtml(e.message)}</text>`; return; }
+      let seed = 7;
+      const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;     // posicao inicial estavel (sempre o mesmo mapa)
+      const nodes = g.nodes.map(n => ({ ...n, x: 480 + (rnd() - 0.5) * 160, y: 280 + (rnd() - 0.5) * 160, vx: 0, vy: 0 }));
+      const idx = new Map(nodes.map((n, i) => [n.path, i]));
+      const edges = g.edges.map(e => [idx.get(e.from), idx.get(e.to)]).filter(e => e[0] !== undefined && e[1] !== undefined);
+      const ITERS = 400;
+      for (let it = 0; it < ITERS; it++) {
+        const cool = 1 - it / ITERS;
+        for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+          const dx = nodes[i].x - nodes[j].x, dy = nodes[i].y - nodes[j].y, d2 = dx * dx + dy * dy + 4, f = 18 / d2;
+          nodes[i].vx += dx * f; nodes[i].vy += dy * f; nodes[j].vx -= dx * f; nodes[j].vy -= dy * f;
+        }
+        for (const [a, b] of edges) {
+          const dx = nodes[b].x - nodes[a].x, dy = nodes[b].y - nodes[a].y, d = Math.sqrt(dx * dx + dy * dy) + 0.01, f = (d - 25) * 0.04;
+          nodes[a].vx += dx / d * f; nodes[a].vy += dy / d * f; nodes[b].vx -= dx / d * f; nodes[b].vy -= dy / d * f;
+        }
+        for (const n of nodes) {
+          n.vx += (480 - n.x) * 0.015; n.vy += (280 - n.y) * 0.015;
+          const step = 0.15 + 0.85 * cool;
+          n.x = Math.min(930, Math.max(30, n.x + Math.max(-4, Math.min(4, n.vx)) * step));
+          n.y = Math.min(530, Math.max(30, n.y + Math.max(-4, Math.min(4, n.vy)) * step));
+          n.vx *= 0.55; n.vy *= 0.55;
+        }
+      }
+      const top = new Set([...nodes].sort((a, b) => b.degree - a.degree).slice(0, 12).map(n => n.path));
+      svg.innerHTML = edges.map(([a, b]) => `<line x1="${nodes[a].x.toFixed(1)}" y1="${nodes[a].y.toFixed(1)}" x2="${nodes[b].x.toFixed(1)}" y2="${nodes[b].y.toFixed(1)}" stroke="#4a4a4a" stroke-opacity="0.35" stroke-width="1"/>`).join("")
+        + nodes.map(n => `<g data-path="${escAttr(n.path)}" style="cursor:pointer"><circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${4 + Math.min(n.degree, 12) * 0.9}" fill="${n.path === OV.path ? "#e56a4a" : "#9ca3af"}" opacity="0.9"><title>${escapeHtml(n.path)}</title></circle>`
+          + (top.has(n.path) ? `<text x="${(n.x + 8).toFixed(1)}" y="${(n.y + 3).toFixed(1)}" fill="#d4d4d4" font-size="10">${escapeHtml(n.title.slice(0, 24))}</text>` : "") + "</g>").join("");
+      svg.onclick = e => { const gEl = e.target.closest("[data-path]"); if (gEl) { modal.classList.add("hidden"); ovOpen(gEl.dataset.path); } };
     }
   </script>
 </body>

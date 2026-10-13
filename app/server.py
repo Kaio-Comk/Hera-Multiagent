@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Literal, Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks
-from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, StringConstraints
 from typing_extensions import Annotated
@@ -34,6 +34,8 @@ from app.auto_fix import AutoFixEngine
 from app.dag_scheduler import TaskDAG, DAGScheduler
 from app import orchestration
 from app.services_control import SERVICES, ServiceManager, port_open
+from app.vault_manager import VaultManager, VaultError, VaultConflict
+from app.locations import find_vault_root, resolve_vault_dir
 from adapters.ollama import OllamaAdapter
 from adapters.claude_code import ClaudeCodeAdapter
 from adapters.antigravity import AntigravityAdapter
@@ -364,10 +366,10 @@ async def get_config():
     """Retorna a configuração atual de config.yaml."""
     return config_mgr.load_config()
 
-ALLOWED_GENERAL_KEYS = {"host", "port", "default_offline", "default_engine", "vault_dir", "db_path",
+ALLOWED_GENERAL_KEYS = {"host", "port", "default_offline", "default_engine", "vault_dir", "vault_root", "db_path",
                         "allowed_repo_roots"}
 # Ajustes de INICIALIZACAO: a API nao pode muda-los (so editando o config.yaml com o servidor parado).
-FROZEN_GENERAL_KEYS = ("host", "port", "vault_dir", "db_path", "allowed_repo_roots")
+FROZEN_GENERAL_KEYS = ("host", "port", "vault_dir", "vault_root", "db_path", "allowed_repo_roots")
 ALLOWED_ENGINES = {"ollama", "claude_code", "antigravity", "hera_router"}
 ALLOWED_ENGINE_FIELDS = {"enabled", "base_url", "default_model", "timeout"}
 LOCAL_ONLY_URL_ENGINES = {"ollama"}
@@ -795,6 +797,175 @@ async def search_vault(q: str):
     if not q.strip():
         return []
     return memory_manager.search_context(q.strip(), max_notes=6)
+
+# ---------------------------------------------------------------------------------------------
+# Obsidian dentro do Hera: explorar, ler, escrever, renomear (com links), lixeira, busca, tags, grafo, IA
+# (as regras de seguranca estao em app/vault_manager.py)
+# ---------------------------------------------------------------------------------------------
+VAULT = VaultManager(find_vault_root(resolve_vault_dir(cfg["general"].get("vault_dir")),
+                                     cfg["general"].get("vault_root")))
+
+
+async def _vault(fn, *args, **kwargs):
+    """Roda uma operacao do cofre fora do loop e converte os erros do cofre em HTTP."""
+    if not VAULT.exists():
+        raise HTTPException(status_code=503, detail={"error": "vault_missing",
+                                                     "message": "O cofre do Obsidian nao foi encontrado. Ajuste `general.vault_root` no config.yaml."})
+    try:
+        return await asyncio.to_thread(fn, *args, **kwargs)
+    except VaultConflict as exc:
+        raise HTTPException(status_code=409, detail={"error": "conflict", "message": str(exc), "current_hash": exc.current_hash})
+    except VaultError as exc:
+        raise HTTPException(status_code=exc.status, detail={"error": "vault", "message": str(exc)})
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail={"error": "vault_io", "message": f"Erro de disco: {exc.strerror or type(exc).__name__}"})
+
+
+class VaultCreateBody(BaseModel):
+    path: Annotated[str, StringConstraints(min_length=1, max_length=600)]
+    content: Annotated[str, StringConstraints(max_length=2_200_000)] = ""
+
+
+class VaultWriteBody(VaultCreateBody):
+    base_hash: Optional[Annotated[str, StringConstraints(max_length=64)]] = None
+    force: bool = False
+
+
+class VaultPathBody(BaseModel):
+    path: Annotated[str, StringConstraints(min_length=1, max_length=600)]
+
+
+class VaultRenameBody(BaseModel):
+    src: Annotated[str, StringConstraints(min_length=1, max_length=600)]
+    dst: Annotated[str, StringConstraints(min_length=1, max_length=600)]
+    update_links: bool = True
+    dry_run: bool = False
+
+
+class VaultAiBody(BaseModel):
+    action: Literal["summarize", "continue", "improve", "ask", "tags"]
+    path: Annotated[str, StringConstraints(min_length=1, max_length=600)]
+    selection: Optional[Annotated[str, StringConstraints(max_length=8000)]] = None
+    question: Optional[Annotated[str, StringConstraints(max_length=500)]] = None
+    confirm_cloud: bool = False
+
+
+@app.get("/api/obsidian/info")
+async def obsidian_info():
+    return await _vault(VAULT.info)
+
+
+@app.get("/api/obsidian/tree")
+async def obsidian_tree():
+    return await _vault(VAULT.tree)
+
+
+@app.get("/api/obsidian/note")
+async def obsidian_read(path: str):
+    return await _vault(VAULT.read, path)
+
+
+@app.put("/api/obsidian/note")
+async def obsidian_write(body: VaultWriteBody):
+    return await _vault(VAULT.write, body.path, body.content, body.base_hash, body.force)
+
+
+@app.post("/api/obsidian/note")
+async def obsidian_create(body: VaultCreateBody):
+    return await _vault(VAULT.create, body.path, body.content)
+
+
+@app.delete("/api/obsidian/note")
+async def obsidian_trash(path: str):
+    return await _vault(VAULT.trash, path)
+
+
+@app.post("/api/obsidian/folder")
+async def obsidian_mkdir(body: VaultPathBody):
+    return await _vault(VAULT.mkdir, body.path)
+
+
+@app.post("/api/obsidian/rename")
+async def obsidian_rename(body: VaultRenameBody):
+    return await _vault(VAULT.rename, body.src, body.dst, body.update_links, body.dry_run)
+
+
+@app.get("/api/obsidian/search")
+async def obsidian_search(q: str):
+    return {"results": await _vault(VAULT.search, q[:200])}
+
+
+@app.get("/api/obsidian/tags")
+async def obsidian_tags(tag: Optional[str] = None):
+    return {"tags": await _vault(VAULT.tags, tag)}
+
+
+@app.get("/api/obsidian/graph")
+async def obsidian_graph():
+    return await _vault(VAULT.graph)
+
+
+@app.post("/api/obsidian/daily")
+async def obsidian_daily():
+    return await _vault(VAULT.daily)
+
+
+@app.get("/api/obsidian/file")
+async def obsidian_file(path: Optional[str] = None, name: Optional[str] = None):
+    """Imagem do cofre (para a pre-visualizacao). `name` procura pelo nome, como o Obsidian faz com ![[foto.png]]."""
+    if name and not path:
+        path = await _vault(VAULT.find_attachment, name)
+        if not path:
+            raise HTTPException(status_code=404, detail={"error": "vault", "message": "Imagem nao encontrada."})
+    if not path:
+        raise HTTPException(status_code=400, detail={"error": "vault", "message": "Informe path ou name."})
+    data, kind = await _vault(VAULT.read_image, path)
+    return Response(content=data, media_type=kind, headers={"X-Content-Type-Options": "nosniff",
+                                                            "Content-Security-Policy": "sandbox", "Cache-Control": "private, max-age=60"})
+
+
+AI_PROMPTS = {
+    "summarize": "Resuma a nota abaixo em portugues, em ate 8 topicos curtos.",
+    "continue": "Continue escrevendo a nota abaixo em portugues, no mesmo estilo e formato Markdown. Devolva so o texto novo.",
+    "improve": "Reescreva o trecho abaixo em portugues, mais claro e organizado, mantendo o sentido e o Markdown. Devolva so o texto reescrito.",
+    "tags": "Sugira de 3 a 8 tags (no formato #tag, sem espacos) para a nota abaixo. Devolva so as tags, separadas por espaco.",
+}
+
+
+@app.post("/api/obsidian/ai")
+async def obsidian_ai(body: VaultAiBody):
+    """Pede ao Hera ajuda com uma nota. NADA e gravado: o texto volta para voce decidir. O roteador aplica o filtro
+    de segredos e o Modo Offline; se o motor escolhido nao for local, e preciso confirmar (`confirm_cloud`)."""
+    note = await _vault(VAULT.read, body.path)
+    text = (body.selection or note["content"])[:12000]
+    if body.action == "ask":
+        if not (body.question or "").strip():
+            raise HTTPException(status_code=400, detail={"error": "vault", "message": "Escreva a pergunta."})
+        head = f"Responda em portugues, usando apenas a nota abaixo. Pergunta: {body.question.strip()}"
+    else:
+        head = AI_PROMPTS[body.action]
+    task = AgentTask(id=f"vault-ai-{uuid.uuid4().hex[:8]}", title=f"Obsidian: {body.action}", task_type="summary",
+                     instruction=f"{head}\n\n--- NOTA ({note['path']}) ---\n{text}", timeout_seconds=120, max_retries=0,
+                     workspace=str(ROOT_DIR))
+    try:
+        adapter, model, reason = await router.route(task)
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail={"error": "blocked", "message": str(exc)})
+    local = adapter.name == "ollama"
+    if not local and not body.confirm_cloud:
+        raise HTTPException(status_code=409, detail={
+            "error": "cloud_confirm", "engine": adapter.name,
+            "message": f"O texto desta nota sera enviado para '{adapter.name}' (fora do seu PC). Confirme para continuar."})
+    task.assigned_agent, task.assigned_model = adapter.name, model
+    try:
+        handle = await adapter.submit(task)
+        result = await asyncio.wait_for(adapter.collect(handle), timeout=140)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail={"error": "timeout", "message": "O motor demorou demais."})
+    if result.status != TaskStatus.SUCCEEDED:
+        raise HTTPException(status_code=502, detail={"error": "engine", "message": (result.error_message or result.summary or "falhou")[:300]})
+    return {"text": result.output_text, "engine": adapter.name, "model": model, "local": local}
+
 
 @app.websocket("/ws/events")
 async def websocket_endpoint(websocket: WebSocket):

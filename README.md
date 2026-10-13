@@ -70,6 +70,14 @@
 
 In **Motores & IAs**, the Ollama card has **Iniciar / Parar** buttons. The commands are fixed (nothing comes from the request), the process starts hidden on loopback with a minimal environment (no API keys), and **Parar** only stops what Hera itself started (whole process tree). A service opened elsewhere (tray icon, another terminal) is shown as running but is left alone. Logs go to `data/logs/`. Services started by Hera keep running if you close Hera.
 
+## 📓 Obsidian inside Hera
+
+The **Obsidian** tab opens your whole vault (auto-detected from the folder that has `.obsidian`, or `general.vault_root` in `config.yaml`): file tree, search, tags, **editor with live preview** (wikilinks, callouts, tasks, images), backlinks/outgoing links/outline, daily note, note graph, create / rename (rewriting `[[links]]`) / delete (to `.trash`), and **✨ Hera** actions (summarize, continue, improve selection, suggest tags, ask about the note).
+
+- Safe by design: paths are contained to the vault, hidden folders (`.obsidian`, `.git`, `.trash`) are untouchable, only UTF-8 `.md` up to 2 MiB is editable, writes are atomic, and a hash check stops Hera from overwriting a note you changed in Obsidian.
+- Note previews are sanitized (DOMPurify); external images are blocked; SVG is never served.
+- AI actions go through the privacy gate: Offline mode or a secret in the note forces local Ollama; if the engine is not local you must confirm before the text leaves your PC. Nothing is written until you click *Inserir* and save.
+
 ## 🌐 Built-in Router
 
 The **Roteador** tab configures cloud providers (Groq, OpenRouter, DeepSeek, Gemini, Mistral, Cerebras, Together, NVIDIA, OpenAI, xAI) and **combos**: ordered chains of `provider + model` that Hera tries until one answers. Use a combo name as the model in the Task Studio, in the Plan tab, or from any tool pointed at `http://127.0.0.1:8000/v1`. No external process or port is needed (engine `hera_router`).
