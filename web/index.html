@@ -1677,25 +1677,58 @@
       }
     }
 
+    const STRENGTH_STYLE = { leve: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", equilibrado: "bg-sky-500/10 text-sky-400 border-sky-500/20", forte: "bg-brand-500/10 text-brand-400 border-brand-500/20" };
+
+    function planCatalogEntry(engine) { return (currentPlan.catalog || []).find(c => c.engine === engine); }
+
+    function planModelStrength(engine, model) {
+      const c = planCatalogEntry(engine);
+      const m = c && c.models.find(x => x.id === model);
+      return m ? m.strength : "";
+    }
+
+    function planModelOptions(engine, selected) {
+      const c = planCatalogEntry(engine);
+      const models = c ? c.models : [];
+      return ['<option value="">Modelo padrão do motor</option>']
+        .concat(models.map(m => `<option value="${escAttr(m.id)}" ${m.id === selected ? "selected" : ""}>${escapeHtml(m.id)} · ${escapeHtml(m.strength)}</option>`)).join("");
+    }
+
+    function onPlanEngineChange(i, value) {
+      currentPlan.steps[i].engine = value;
+      currentPlan.steps[i].model = "";
+      renderPlan();
+    }
+
     function renderPlan() {
       const warn = document.getElementById("plan-warnings");
       warn.innerHTML = (currentPlan.warnings || []).map(w =>
         `<div class="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">${escapeHtml(w)}</div>`).join("");
       const box = document.getElementById("plan-steps");
       box.innerHTML = "";
+      const used = {};
+      currentPlan.steps.forEach(st => { const k = st.engine ? `${st.engine}${st.model ? " / " + st.model : ""}` : "automático"; used[k] = (used[k] || 0) + 1; });
+      const summary = document.createElement("div");
+      summary.className = "text-[11px] text-zinc-400";
+      summary.innerHTML = "Distribuição: " + Object.entries(used).map(([k, n]) => `<span class="px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-200 mr-1">${escapeHtml(k)} ×${n}</span>`).join("");
+      box.appendChild(summary);
       currentPlan.steps.forEach((st, i) => {
         const row = document.createElement("div");
         row.className = "bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-2";
         const engineOpts = ['<option value="">Automático (Hera escolhe)</option>']
           .concat(currentPlan.executors.map(e => `<option value="${escAttr(e)}" ${e === st.engine ? "selected" : ""}>${escapeHtml(e)}</option>`)).join("");
+        const strength = planModelStrength(st.engine, st.model);
         row.innerHTML = `
-          <div class="flex items-center justify-between gap-2">
+          <div class="flex flex-wrap items-center justify-between gap-2">
             <span class="text-xs font-bold text-white">${i + 1}. ${escapeHtml(st.title)}</span>
-            <div class="flex items-center gap-2">
-              <select onchange="currentPlan.steps[${i}].engine = this.value" class="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100">${engineOpts}</select>
+            <div class="flex flex-wrap items-center gap-2">
+              <select onchange="onPlanEngineChange(${i}, this.value)" class="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100">${engineOpts}</select>
+              <select onchange="currentPlan.steps[${i}].model = this.value; renderPlan()" ${st.engine ? "" : "disabled"} class="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100 max-w-[300px]">${planModelOptions(st.engine, st.model)}</select>
+              ${strength ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold border ${STRENGTH_STYLE[strength] || ""}">${escapeHtml(strength)}</span>` : ""}
               <button onclick="removePlanStep(${i})" class="text-xs text-rose-400 hover:text-rose-300">remover</button>
             </div>
           </div>
+          ${st.reason ? `<div class="text-[11px] text-zinc-400 italic">Por quê: ${escapeHtml(st.reason)}</div>` : ""}
           <textarea rows="3" oninput="currentPlan.steps[${i}].instruction = this.value" class="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-2 text-xs text-zinc-200 font-mono resize-y">${escapeHtml(st.instruction)}</textarea>
           <div class="text-[11px] text-zinc-500">${st.depends_on.length ? "depende de: " + escapeHtml(st.depends_on.join(", ")) : "sem dependências"}</div>
         `;
