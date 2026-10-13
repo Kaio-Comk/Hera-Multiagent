@@ -117,6 +117,9 @@ cfg = config_mgr.load_config()
 ROOT_DIR = Path(__file__).resolve().parent.parent
 WEB_DIR = ROOT_DIR / "web"
 WEB_DIR.mkdir(parents=True, exist_ok=True)
+(WEB_DIR / "static").mkdir(parents=True, exist_ok=True)
+# CSS, fontes e bibliotecas da UI saem daqui (nada de CDN). Gerados por tools/build_ui.py.
+app.mount("/static", StaticFiles(directory=str(WEB_DIR / "static")), name="static")
 
 # Inicializar adaptadores
 adapters = {
@@ -994,6 +997,18 @@ async def healthz():
     """Verificacao de vida SEM dados (publica). O estado dos motores fica em /api/health (autenticada)."""
     return {"status": "ok"}
 
+# A UI so carrega do proprio servidor (scripts inline sao dela mesma; as notas passam pelo DOMPurify). Sem CDN, sem frames.
+UI_CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+          "img-src 'self' blob: data:; font-src 'self'; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; "
+          "object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """O navegador sempre pede o icone: responde vazio (sem pedir token) em vez de um 401 no console."""
+    return Response(status_code=204)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
     """Serve a UI com o token da sessao embutido. A pagina so e legivel pela propria origem
@@ -1003,7 +1018,7 @@ async def serve_index():
         html = index_file.read_text(encoding="utf-8")
         inject = f"<script>window.HERA_TOKEN = {json.dumps(SECURITY.token)};</script>"
         html = html.replace("</head>", inject + "</head>", 1)
-        return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+        return HTMLResponse(html, headers={"Cache-Control": "no-store", "Content-Security-Policy": UI_CSP})
     return HTMLResponse("<h1>Hera Multiagent — Frontend inicializando...</h1>")
 
 # Endpoints OpenAI-Compatible Gateway (/v1)
