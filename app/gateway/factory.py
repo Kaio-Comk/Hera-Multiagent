@@ -13,6 +13,7 @@ Config (`providers:` no config.yaml; as CHAVES nunca ficam no arquivo):
         timeout: 60
         daily_request_limit: 1000         # opcional, por chave
 
+A chave vem das variáveis de ambiente (`api_key_env`) E/OU do cofre local (colada no painel).
 Um provedor ligado sem chave, ou com URL reprovada pela política anti-SSRF, é IGNORADO com aviso
 (o Hera continua subindo só com o que está válido).
 """
@@ -31,8 +32,8 @@ log = logging.getLogger("hera.gateway.factory")
 CLOUD_TIERS = ("cloud_premium", "cloud_cheap", "cloud_free")
 
 
-def build_gateway_adapters(cfg: Mapping[str, Any], environ: Optional[Mapping[str, str]] = None
-                           ) -> List[BaseGatewayAdapter]:
+def build_gateway_adapters(cfg: Mapping[str, Any], environ: Optional[Mapping[str, str]] = None,
+                           secrets: Optional[Any] = None) -> List[BaseGatewayAdapter]:
     env = os.environ if environ is None else environ
     ollama_cfg = (cfg.get("engines") or {}).get("ollama") or {}
     adapters: List[BaseGatewayAdapter] = [OllamaGatewayAdapter(
@@ -49,8 +50,10 @@ def build_gateway_adapters(cfg: Mapping[str, Any], environ: Optional[Mapping[str
             continue
         env_names = [n.strip() for n in str(p.get("api_key_env") or "").split(",") if n.strip()]
         keys = load_keys_from_env(env_names, env)
+        if secrets is not None:                          # chaves coladas no painel (cofre protegido pela DPAPI)
+            keys = list(dict.fromkeys([*keys, *secrets.get(str(name))]))
         if not keys:
-            log.warning("[gateway] provedor %r ignorado: nenhuma chave nas variaveis %s", name, env_names or "(api_key_env vazio)")
+            log.warning("[gateway] provedor %r ignorado: nenhuma chave (variaveis %s ou cofre)", name, env_names or "-")
             continue
         limit = p.get("daily_request_limit")
         manager = KeyManager(keys, label=(env_names[0] if env_names else name),

@@ -33,7 +33,7 @@ from app.validator import TaskValidator
 from app.auto_fix import AutoFixEngine
 from app.dag_scheduler import TaskDAG, DAGScheduler
 from app import orchestration
-from app.services_control import SERVICES, ServiceManager
+from app.services_control import SERVICES, ServiceManager, port_open
 from adapters.ollama import OllamaAdapter
 from adapters.claude_code import ClaudeCodeAdapter
 from adapters.antigravity import AntigravityAdapter
@@ -41,6 +41,8 @@ from adapters.antigravity import AntigravityAdapter
 from app.gateway.schemas import ChatCompletionRequest, ChatCompletionResponse, ChatMessage
 from app.gateway.presets import PROVIDER_PRESETS, get_preset
 from app.gateway.key_manager import load_keys_from_env
+from app.gateway.secret_store import SecretStore, SecretStoreError
+from app.gateway.usage import UsageLedger
 from adapters.hera_router import HeraRouterAdapter
 from app.gateway.privacy import GatewayPrivacyManager
 from app.gateway.providers import OllamaGatewayAdapter, GatewayProviderError
@@ -851,6 +853,9 @@ async def list_gateway_models():
         for m in sorted(ad.served_models or []):
             if m not in [x["id"] for x in models_list]:
                 models_list.append({"id": m, "object": "model", "created": 1700000000, "owned_by": f"hera-{ad.name}"})
+    for ad in gateway_tier_router.adapters:                    # enderecamento direto: provedor/modelo
+        for m in sorted(ad.served_models or [])[:20]:
+            models_list.append({"id": f"{ad.name}/{m}", "object": "model", "created": 1700000000, "owned_by": f"hera-{ad.name}"})
     for combo in gateway_tier_router.combos:                   # combos do Roteador embutido
         if combo not in [x["id"] for x in models_list]:
             models_list.append({"id": combo, "object": "model", "created": 1700000000, "owned_by": "hera-combo"})
@@ -904,10 +909,15 @@ def _combos_from_cfg(config: Dict[str, Any]) -> Dict[str, List[Dict[str, str]]]:
     return out
 
 
+SECRET_STORE = SecretStore(DATA_DIR / ".hera_provider_keys.json")
+USAGE = UsageLedger(DATA_DIR / "usage.db")
+gateway_tier_router.usage = USAGE
+
+
 def reload_gateway() -> None:
-    """Reconstroi os provedores do gateway a partir do config.yaml + variaveis de ambiente (sem reiniciar)."""
+    """Reconstroi os provedores do gateway a partir do config.yaml + variaveis de ambiente + cofre (sem reiniciar)."""
     fresh = config_mgr.load_config()
-    gateway_tier_router.adapters = build_gateway_adapters(fresh)
+    gateway_tier_router.adapters = build_gateway_adapters(fresh, secrets=SECRET_STORE)
     gateway_tier_router.combos = _combos_from_cfg(fresh)
 
 
@@ -916,6 +926,11 @@ reload_gateway()
 
 def _env_keys_found(key_env: str) -> int:
     return len(load_keys_from_env([n.strip() for n in str(key_env or "").split(",") if n.strip()], os.environ))
+
+
+class RouterKeysBody(BaseModel):
+    keys: List[Annotated[str, StringConstraints(max_length=600)]] = Field(min_length=1, max_length=10)
+    human_code: Optional[str] = None
 
 
 def _clean_models(models: Any) -> List[str]:
@@ -969,7 +984,8 @@ def _provider_view(name: str, p: Dict[str, Any]) -> Dict[str, Any]:
     return {"name": name, "enabled": bool(p.get("enabled")), "tier": p.get("tier", "cloud_cheap"),
             "base_url": p.get("base_url", ""), "default_model": p.get("default_model", ""),
             "models": list(p.get("models") or []), "key_env": p.get("api_key_env", ""),
-            "keys_found": _env_keys_found(p.get("api_key_env", "")), "active": live is not None,
+            "keys_env": _env_keys_found(p.get("api_key_env", "")), "keys_stored": SECRET_STORE.count(name),
+            "keys_found": _env_keys_found(p.get("api_key_env", "")) + SECRET_STORE.count(name), "active": live is not None,
             "keys": km.status() if km else [], "daily_request_limit": p.get("daily_request_limit")}
 
 
@@ -979,8 +995,9 @@ async def router_state():
     current = config_mgr.load_config()
     providers = [_provider_view(n, p) for n, p in (current.get("providers") or {}).items() if isinstance(p, dict)]
     ollama_models: List[str] = []
-    try:
-        ollama_models = (await adapters["ollama"].health_check()).available_models if "ollama" in adapters else []
+    try:        # so pergunta ao Ollama se a porta responde (senao a tela esperava o timeout a cada leitura)
+        if "ollama" in adapters and await asyncio.to_thread(port_open, SERVICES["ollama"]["port"]):
+            ollama_models = (await adapters["ollama"].health_check()).available_models
     except Exception:       # noqa: BLE001
         pass
     return {"presets": PROVIDER_PRESETS, "providers": providers, "combos": _combos_from_cfg(current),
@@ -1003,8 +1020,8 @@ async def router_upsert_provider(body: RouterProviderBody):
     tier = body.tier or base.get("tier") or "cloud_cheap"
     if tier not in TIERS:
         _bad_router(f"'tier' precisa ser um de {TIERS}")
-    key_env = (body.key_env or base.get("key_env") or "").strip()
-    if not _KEY_ENV.match(key_env) or key_env.startswith("HERA_"):
+    key_env = (body.key_env if body.key_env is not None else base.get("key_env") or "").strip()
+    if key_env and (not _KEY_ENV.match(key_env) or key_env.startswith("HERA_")):
         _bad_router("O nome da variavel da chave precisa terminar em _API_KEY (ex.: GROQ_API_KEY) e nao pode comecar com HERA_.")
     base_url = (body.base_url or base.get("base_url") or "").strip()
     try:
@@ -1056,8 +1073,72 @@ async def router_delete_provider(name: str):
                                                      "message": f"O provedor esta nos combos: {', '.join(used)}. Tire-o de la primeiro."})
     providers.pop(name)
     config_mgr.save_config({**current, "providers": providers})
+    SECRET_STORE.delete(name)
     reload_gateway()
     return {"status": "ok"}
+
+
+@app.post("/api/router/providers/{name}/keys")
+async def router_set_keys(name: str, body: RouterKeysBody):
+    """Guarda as chaves do provedor no cofre local (DPAPI). Exige o codigo humano. Nunca devolve a chave."""
+    if name not in (config_mgr.load_config().get("providers") or {}):
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": "Provedor desconhecido."})
+    _require_human_code(body.human_code, f"Chave de API do provedor '{name}' sera gravada no cofre")
+    try:
+        count = SECRET_STORE.set(name, body.keys)
+    except SecretStoreError as exc:
+        _bad_router(str(exc))
+    reload_gateway()
+    broadcast_log(f"🔐 [ROTEADOR] {count} chave(s) de '{name}' gravada(s) no cofre.", level="success")
+    return {"status": "ok", "keys_stored": count}
+
+
+@app.delete("/api/router/providers/{name}/keys")
+async def router_clear_keys(name: str):
+    SECRET_STORE.delete(name)
+    reload_gateway()
+    return {"status": "ok", "keys_stored": 0}
+
+
+@app.post("/api/router/providers/{name}/discover")
+async def router_discover_models(name: str):
+    """Pergunta ao provedor quais modelos ele tem (GET /models) e grava a lista (ate 200). Usa uma chave dele."""
+    adapter = next((a for a in gateway_tier_router.adapters if a.name == name), None)
+    km = getattr(adapter, "key_manager", None)
+    if adapter is None or km is None:
+        raise HTTPException(status_code=404, detail={"error": "not_active", "message": "Provedor desligado ou sem chave."})
+    lease = km.acquire()
+    client = make_safe_async_client(timeout=20.0)
+    try:
+        resp = await client.get(f"{adapter.base_url}/models", headers={"Authorization": f"Bearer {lease.secret}"})
+    except Exception as exc:        # noqa: BLE001
+        return {"ok": False, "error": f"Nao foi possivel consultar o provedor ({type(exc).__name__})."}
+    finally:
+        await client.aclose()
+    if resp.status_code != 200:
+        return {"ok": False, "status": resp.status_code, "error": f"O provedor respondeu HTTP {resp.status_code}."}
+    try:
+        items = resp.json().get("data") or resp.json().get("models") or []
+        ids = [str(i.get("id") or i.get("name")) for i in items if isinstance(i, dict)]
+    except (ValueError, AttributeError):
+        return {"ok": False, "error": "Resposta do provedor em formato inesperado."}
+    ids = [m.removeprefix("models/") for m in ids if _MODEL_OK.match(m)]
+    ids = list(dict.fromkeys(ids))[:200]
+    if not ids:
+        return {"ok": False, "error": "O provedor nao listou nenhum modelo."}
+    current = config_mgr.load_config()
+    providers = dict(current.get("providers") or {})
+    if name in providers:
+        providers[name] = {**providers[name], "models": ids}
+        config_mgr.save_config({**current, "providers": providers})
+        reload_gateway()
+    return {"ok": True, "count": len(ids), "models": ids[:50]}
+
+
+@app.get("/api/router/usage")
+async def router_usage(days: int = 7):
+    """Chamadas, tokens, erros e latencia por provedor/modelo/dia. So metadados: nunca o conteudo."""
+    return await asyncio.to_thread(USAGE.summary, days)
 
 
 @app.put("/api/router/combos")

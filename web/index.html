@@ -524,39 +524,58 @@
 
     <!-- ==================== ABA 9: ROTEADOR EMBUTIDO ==================== -->
     <section id="tab-router" class="tab-content hidden space-y-6">
-      <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-3">
-        <div class="flex items-center gap-2">
-          <i data-lucide="route" class="w-5 h-5 text-brand-400"></i>
-          <h3 class="text-sm font-bold text-white">Roteador do Hera (embutido)</h3>
+      <div class="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 class="text-xl font-bold text-white">Roteador</h2>
+          <p class="text-sm text-zinc-400">Provedores de IA na nuvem com rodízio de chaves, camadas e combos com fallback. Tudo roda dentro do Hera.</p>
         </div>
-        <p class="text-xs text-zinc-400">
-          Provedores de nuvem com rodízio de chaves, camadas (premium → barato → grátis → local) e <strong>combos</strong>: cadeias de modelos que o Hera tenta em ordem até uma responder.
-          Tudo passa antes pelo filtro de segredos e pelo Modo Offline. Use um combo como modelo no Task Studio, no Plano ou em qualquer ferramenta que fale com <code class="text-brand-400">http://127.0.0.1:8000/v1</code>.
-        </p>
-        <div id="router-offline-banner" class="hidden text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
-          O <strong>Modo 100% Offline</strong> está ligado: nenhum provedor de nuvem será usado até você desligá-lo em "Motores &amp; IAs".
-        </div>
+        <button onclick="loadRouterState()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-lg text-xs font-semibold flex items-center gap-2">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Atualizar
+        </button>
       </div>
 
-      <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
-        <h3 class="text-sm font-bold text-white">Provedores</h3>
+      <div id="router-offline-banner" class="hidden text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
+        O <strong>Modo 100% Offline</strong> está ligado: nenhum provedor de nuvem será usado até você desligá-lo em "Motores &amp; IAs".
+      </div>
+
+      <!-- Uso -->
+      <div class="card p-5 space-y-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="bar-chart-3" class="w-4 h-4 text-brand-400"></i> Uso (últimos 7 dias)</h3>
+          <span class="text-[11px] text-zinc-500">só contagens: o conteúdo das conversas nunca é guardado</span>
+        </div>
+        <div id="router-usage-kpis" class="grid grid-cols-2 md:grid-cols-5 gap-3"></div>
+        <div id="router-usage-days" class="flex items-end gap-1.5 h-16"></div>
+        <div id="router-usage-table" class="overflow-x-auto"></div>
+      </div>
+
+      <!-- Provedores -->
+      <div class="card p-5 space-y-4">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="cloud" class="w-4 h-4 text-brand-400"></i> Provedores</h3>
         <div id="router-providers" class="space-y-3"></div>
         <div class="border-t border-zinc-800 pt-4 space-y-3">
           <div class="text-xs font-semibold text-zinc-300">Adicionar provedor</div>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+          <div class="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
             <div>
               <label class="block text-xs text-zinc-400 mb-1">Catálogo</label>
               <select id="router-preset" onchange="onRouterPresetChange()" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100"></select>
             </div>
-            <button onclick="addRouterProvider()" class="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-sm font-semibold">Adicionar e ligar</button>
+            <button onclick="addRouterProvider()" class="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-sm font-semibold">Adicionar e ligar</button>
           </div>
+          <div id="router-custom" class="hidden grid grid-cols-1 md:grid-cols-3 gap-3">
+            <input id="rc-name" placeholder="nome (ex.: meuprov)" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100">
+            <input id="rc-url" placeholder="https://api.exemplo.com/v1" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 font-mono">
+            <input id="rc-model" placeholder="modelo padrão" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 font-mono">
+          </div>
+          <input id="router-newkey" type="password" autocomplete="off" placeholder="Chave de API (opcional agora; dá para colar depois)" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 font-mono">
           <div id="router-preset-info" class="text-xs text-zinc-400 space-y-1"></div>
         </div>
       </div>
 
-      <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
+      <!-- Combos -->
+      <div class="card p-5 space-y-4">
         <div class="flex items-center justify-between">
-          <h3 class="text-sm font-bold text-white">Combos (fallback entre modelos)</h3>
+          <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="git-branch" class="w-4 h-4 text-brand-400"></i> Combos (fallback entre modelos)</h3>
           <div class="flex gap-2">
             <button onclick="addRouterCombo()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold">+ Novo combo</button>
             <button onclick="saveRouterCombos()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold">Salvar combos</button>
@@ -565,6 +584,26 @@
         <p class="text-xs text-zinc-500">Cada passo é "provedor + modelo". O primeiro que responder vence; se der erro ou limite, o Hera passa ao próximo. Termine com um passo do Ollama para ter sempre um plano B local.</p>
         <div id="router-combos" class="space-y-3"></div>
         <div id="router-datalists"></div>
+      </div>
+
+      <!-- Conectar ferramentas -->
+      <div class="card p-5 space-y-3">
+        <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="plug" class="w-4 h-4 text-brand-400"></i> Conectar suas ferramentas</h3>
+        <p class="text-xs text-zinc-400">Qualquer ferramenta que fale com a API da OpenAI (Cursor, Cline, Continue, scripts...) pode usar o Roteador do Hera:</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+          <div class="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-1">
+            <div class="text-zinc-500">Endereço (Base URL)</div>
+            <div class="flex items-center justify-between gap-2"><code id="conn-url" class="text-brand-300 font-mono"></code>
+              <button onclick="copyText('conn-url')" class="text-zinc-400 hover:text-white">copiar</button></div>
+          </div>
+          <div class="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-1">
+            <div class="text-zinc-500">Chave de API (o token local do Hera)</div>
+            <div class="flex items-center justify-between gap-2"><code id="conn-key" class="text-brand-300 font-mono truncate">••••••••••••</code>
+              <span class="flex gap-3 shrink-0"><button onclick="toggleConnKey()" class="text-zinc-400 hover:text-white">mostrar</button>
+              <button onclick="copyKey()" class="text-zinc-400 hover:text-white">copiar</button></span></div>
+          </div>
+        </div>
+        <p class="text-xs text-zinc-500">Modelo: use o nome de um <strong>combo</strong>, ou <code class="text-brand-300">provedor/modelo</code> (ex.: <code class="text-brand-300">groq/llama-3.3-70b-versatile</code>), ou <code class="text-brand-300">default</code> para o Hera escolher.</p>
       </div>
     </section>
   </main>
@@ -1553,6 +1592,7 @@
     // ==================== ROTEADOR EMBUTIDO ====================
     let routerState = null;
     let routerCombosDraft = {};
+    const CUSTOM_PRESET = "__custom__";
 
     async function loadRouterState() {
       try {
@@ -1561,10 +1601,15 @@
         routerCombosDraft = JSON.parse(JSON.stringify(routerState.combos || {}));
         document.getElementById("router-offline-banner").classList.toggle("hidden", !routerState.offline);
         const sel = document.getElementById("router-preset");
-        sel.innerHTML = routerState.presets.map(p => `<option value="${escAttr(p.id)}">${escapeHtml(p.label)} (${escapeHtml(p.tier.replace("cloud_", ""))})</option>`).join("");
+        const keep = sel.value;
+        sel.innerHTML = routerState.presets.map(p => `<option value="${escAttr(p.id)}">${escapeHtml(p.label)} (${escapeHtml(p.tier.replace("cloud_", ""))})</option>`).join("")
+          + `<option value="${CUSTOM_PRESET}">Personalizado (qualquer API compatível com OpenAI)</option>`;
+        if (keep) sel.value = keep;
         onRouterPresetChange();
         renderRouterProviders();
         renderRouterCombos();
+        loadRouterUsage();
+        renderConnect();
       } catch (e) {
         console.error("Falha ao carregar o roteador:", e);
       }
@@ -1572,12 +1617,13 @@
 
     function onRouterPresetChange() {
       const id = document.getElementById("router-preset").value;
+      const custom = id === CUSTOM_PRESET;
+      document.getElementById("router-custom").classList.toggle("hidden", !custom);
       const p = (routerState.presets || []).find(x => x.id === id);
-      document.getElementById("router-preset-info").innerHTML = p ? `
-        <div>${escapeHtml(p.note || "")}</div>
-        <div>1) Crie a chave em <a class="text-brand-400 underline" target="_blank" rel="noopener noreferrer" href="${escAttr(p.signup)}">${escapeHtml(p.signup)}</a></div>
-        <div>2) No PowerShell: <code class="text-brand-400">setx ${escapeHtml(p.key_env)} "SUA_CHAVE"</code> e <strong>reinicie o Hera</strong> (a chave nunca é guardada pelo Hera, só lida do ambiente).</div>
-      ` : "";
+      document.getElementById("router-preset-info").innerHTML = custom
+        ? "<div>Use o endereço base da API (termina em <code>/v1</code>, só HTTPS). A chave fica no cofre do Hera, protegida pelo Windows.</div>"
+        : (p ? `<div>${escapeHtml(p.note || "")}</div>
+        <div>Crie a chave em <a class="text-brand-400 underline" target="_blank" rel="noopener noreferrer" href="${escAttr(p.signup)}">${escapeHtml(p.signup)}</a> e cole acima. Ela fica no cofre do Hera (protegido pelo Windows); o Hera nunca a mostra de volta.</div>` : "");
     }
 
     function askHumanCode(what) {
@@ -1598,58 +1644,96 @@
       const box = document.getElementById("router-providers");
       const list = routerState.providers;
       if (!list.length) {
-        box.innerHTML = '<div class="text-xs text-zinc-500">Nenhum provedor de nuvem configurado. Adicione um abaixo; o Ollama local já é usado sempre.</div>';
+        box.innerHTML = '<div class="text-xs text-zinc-500">Nenhum provedor de nuvem ainda. Adicione um abaixo; o Ollama local já é usado sempre.</div>';
         return;
       }
       box.innerHTML = list.map(p => {
-        const state = !p.enabled ? ["DESLIGADO", "text-zinc-400 bg-zinc-500/10 border-zinc-500/20"]
-          : p.active ? ["ATIVO", "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"]
-          : ["SEM CHAVE", "text-amber-400 bg-amber-500/10 border-amber-500/20"];
+        const st = !p.enabled ? ["DESLIGADO", "#6b7280", "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"]
+          : p.active ? ["ATIVO", "#10b981", "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"]
+          : ["SEM CHAVE", "#f59e0b", "bg-amber-500/10 text-amber-400 border-amber-500/20"];
         const keys = (p.keys || []).map(k => `<span class="px-1.5 py-0.5 rounded bg-zinc-800 text-[10px] font-mono">${escapeHtml(k.id)}: ${escapeHtml(k.state)}</span>`).join(" ");
-        const hint = p.enabled && !p.active
-          ? `<div class="text-[11px] text-amber-300">A variável <code>${escapeHtml(p.key_env)}</code> não foi encontrada. Defina-a (setx) e reinicie o Hera.</div>` : "";
-        return `<div class="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-2">
+        const where = [p.keys_stored ? `${p.keys_stored} no cofre` : "", p.keys_env ? `${p.keys_env} no ambiente` : ""].filter(Boolean).join(" · ") || "nenhuma chave";
+        const n = escAttr(p.name);
+        return `<div class="bg-zinc-950 border border-zinc-800 rounded-xl p-4 space-y-3">
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2.5">
               <span class="text-sm font-bold text-white">${escapeHtml(p.name)}</span>
-              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border ${state[1]}">${state[0]}</span>
-              <span class="text-[11px] text-zinc-500">${escapeHtml(p.tier)} · ${p.keys_found} chave(s) · ${escapeHtml(p.default_model)}</span>
+              <span class="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${st[2]}"><span class="dot" style="background:${st[1]}"></span>${st[0]}</span>
+              <span class="text-[11px] text-zinc-500">${escapeHtml(p.tier)} · ${escapeHtml(p.default_model)} · ${(p.models || []).length} modelo(s)</span>
             </div>
-            <div class="flex items-center gap-2">
-              <button onclick="testRouterProvider('${escAttr(p.name)}')" class="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs">Testar</button>
-              <button onclick="toggleRouterProvider('${escAttr(p.name)}', ${!p.enabled})" class="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs">${p.enabled ? "Desligar" : "Ligar"}</button>
-              <button onclick="deleteRouterProvider('${escAttr(p.name)}')" class="px-2.5 py-1 text-rose-400 hover:text-rose-300 text-xs">Remover</button>
-            </div>
+            <label class="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">Ligado
+              <span class="switch"><input type="checkbox" ${p.enabled ? "checked" : ""} onchange="toggleRouterProvider('${n}', this.checked)"><span></span></span>
+            </label>
           </div>
-          <div class="flex flex-wrap gap-1">${keys}</div>
-          ${hint}
-          <div id="router-test-${escAttr(p.name)}" class="text-[11px] font-mono text-zinc-400"></div>
+          <div class="text-[11px] text-zinc-400">Chaves: ${where} ${keys ? " · " + keys : ""}</div>
+          <div class="flex flex-wrap items-center gap-2">
+            <input id="key-${n}" type="password" autocomplete="off" placeholder="Colar chave de API" class="flex-1 min-w-[220px] bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 font-mono">
+            <button onclick="saveRouterKey('${n}')" class="px-2.5 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-semibold">Guardar chave</button>
+            ${p.keys_stored ? `<button onclick="clearRouterKeys('${n}')" class="px-2.5 py-1.5 text-rose-400 hover:text-rose-300 text-xs">Apagar chaves</button>` : ""}
+            <button onclick="testRouterProvider('${n}')" class="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs">Testar</button>
+            <button onclick="discoverRouterModels('${n}')" class="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs">Buscar modelos</button>
+            <button onclick="deleteRouterProvider('${n}')" class="px-2.5 py-1.5 text-zinc-500 hover:text-rose-300 text-xs">Remover</button>
+          </div>
+          <div id="router-test-${n}" class="text-[11px] font-mono text-zinc-400"></div>
         </div>`;
       }).join("");
     }
 
     async function addRouterProvider() {
       const preset = document.getElementById("router-preset").value;
+      const newKey = document.getElementById("router-newkey").value.trim();
+      const body = { enabled: true };
+      if (preset === CUSTOM_PRESET) {
+        body.name = document.getElementById("rc-name").value.trim().toLowerCase();
+        body.base_url = document.getElementById("rc-url").value.trim();
+        body.default_model = document.getElementById("rc-model").value.trim();
+        body.key_env = "";
+        if (!body.name || !body.base_url || !body.default_model) { alert("Preencha nome, endereço e modelo padrão."); return; }
+      } else {
+        body.preset = preset;
+      }
       const code = askHumanCode("ligar um provedor de nuvem (seus prompts passarão a poder ir para ele)");
       if (!code) return;
+      body.human_code = code;
       try {
-        await routerCall("/api/router/providers", "POST", { preset, enabled: true, human_code: code });
+        const r = await routerCall("/api/router/providers", "POST", body);
+        if (newKey) await routerCall(`/api/router/providers/${encodeURIComponent(r.provider.name)}/keys`, "POST", { keys: [newKey], human_code: code });
+        document.getElementById("router-newkey").value = "";
         await loadRouterState();
         loadHealth();
-      } catch (e) { alert("Não foi possível adicionar: " + e.message); }
+      } catch (e) { alert("Não foi possível adicionar: " + e.message); await loadRouterState(); }
+    }
+
+    async function saveRouterKey(name) {
+      const input = document.getElementById("key-" + name);
+      const value = input.value.trim();
+      if (!value) { alert("Cole a chave de API no campo."); return; }
+      const code = askHumanCode(`guardar a chave de ${name} no cofre`);
+      if (!code) return;
+      try {
+        await routerCall(`/api/router/providers/${encodeURIComponent(name)}/keys`, "POST", { keys: value.split(/[\s,;]+/).filter(Boolean), human_code: code });
+        input.value = "";
+        await loadRouterState();
+      } catch (e) { alert("Não foi possível guardar a chave: " + e.message); }
+    }
+
+    async function clearRouterKeys(name) {
+      if (!confirm(`Apagar as chaves de ${name} guardadas no cofre?`)) return;
+      try { await routerCall(`/api/router/providers/${encodeURIComponent(name)}/keys`, "DELETE"); await loadRouterState(); }
+      catch (e) { alert("Erro: " + e.message); }
     }
 
     async function toggleRouterProvider(name, enabled) {
       const body = { enabled };
-      if (enabled) { body.human_code = askHumanCode(`ligar o provedor ${name}`); if (!body.human_code) return; }
+      if (enabled) { body.human_code = askHumanCode(`ligar o provedor ${name}`); if (!body.human_code) { await loadRouterState(); return; } }
       try {
         await routerCall(`/api/router/providers/${encodeURIComponent(name)}/enabled`, "POST", body);
-        await loadRouterState();
       } catch (e) { alert("Não foi possível alterar: " + e.message); }
+      await loadRouterState();
     }
 
     async function deleteRouterProvider(name) {
-      if (!confirm(`Remover o provedor ${name}?`)) return;
+      if (!confirm(`Remover o provedor ${name} (e as chaves dele no cofre)?`)) return;
       try {
         await routerCall(`/api/router/providers/${encodeURIComponent(name)}`, "DELETE");
         await loadRouterState();
@@ -1662,8 +1746,53 @@
       try {
         const r = await routerCall("/api/router/test", "POST", { provider: name });
         if (out) out.innerText = r.ok ? `OK em ${r.latency_ms} ms (${r.model}): ${r.text}` : `Falhou (HTTP ${r.status}): ${r.error}`;
+        loadRouterUsage();
       } catch (e) { if (out) out.innerText = "Erro: " + e.message; }
     }
+
+    async function discoverRouterModels(name) {
+      const out = document.getElementById("router-test-" + name);
+      if (out) out.innerText = "buscando modelos...";
+      try {
+        const r = await routerCall(`/api/router/providers/${encodeURIComponent(name)}/discover`, "POST");
+        if (out) out.innerText = r.ok ? `${r.count} modelo(s) encontrados e salvos.` : `Não deu: ${r.error}`;
+        if (r.ok) await loadRouterState();
+      } catch (e) { if (out) out.innerText = "Erro: " + e.message; }
+    }
+
+    function fmt(n) { return (n ?? 0).toLocaleString("pt-BR"); }
+
+    async function loadRouterUsage() {
+      try {
+        const u = await (await fetch("/api/router/usage?days=7")).json();
+        const t = u.totals;
+        const kpi = (label, value) => `<div class="bg-zinc-950 border border-zinc-800 rounded-xl p-3"><div class="text-[11px] text-zinc-500">${label}</div><div class="text-lg font-bold text-white">${value}</div></div>`;
+        document.getElementById("router-usage-kpis").innerHTML =
+          kpi("Chamadas", fmt(t.requests)) + kpi("Com sucesso", fmt(t.ok)) + kpi("Erros", fmt(t.errors))
+          + kpi("Tokens (entrada/saída)", `${fmt(t.prompt_tokens)} / ${fmt(t.completion_tokens)}`) + kpi("Latência média", t.avg_latency_ms ? t.avg_latency_ms + " ms" : "-");
+        const max = Math.max(1, ...u.by_day.map(d => d.requests));
+        document.getElementById("router-usage-days").innerHTML = u.by_day.map(d =>
+          `<div class="flex-1 flex flex-col items-center justify-end gap-1" title="${escAttr(d.day)}: ${d.requests} chamada(s)">
+             <div class="w-full rounded bg-brand-500/70" style="height:${Math.max(4, Math.round(d.requests / max * 48))}px"></div>
+             <div class="text-[9px] text-zinc-500">${escapeHtml(d.day.slice(5))}</div></div>`).join("") || '<div class="text-xs text-zinc-500">Sem uso ainda.</div>';
+        document.getElementById("router-usage-table").innerHTML = u.by_provider.length ? `<table class="w-full text-xs">
+          <thead><tr class="text-left text-zinc-500"><th class="py-1 pr-3">Provedor</th><th class="pr-3">Modelo</th><th class="pr-3">Chamadas</th><th class="pr-3">Erros</th><th class="pr-3">Tokens</th><th>Latência</th></tr></thead>
+          <tbody>${u.by_provider.map(r => `<tr class="border-t border-zinc-800 text-zinc-300">
+            <td class="py-1.5 pr-3 font-semibold">${escapeHtml(r.provider)}</td><td class="pr-3 font-mono">${escapeHtml(r.model)}</td>
+            <td class="pr-3">${fmt(r.requests)}</td><td class="pr-3">${fmt(r.requests - r.ok)}</td>
+            <td class="pr-3">${fmt(r.prompt_tokens + r.completion_tokens)}</td><td>${r.avg_latency_ms ? r.avg_latency_ms + " ms" : "-"}</td></tr>`).join("")}</tbody></table>` : "";
+      } catch (e) { console.error("Falha ao ler o uso:", e); }
+    }
+
+    // ---- conectar ferramentas
+    let connKeyShown = false;
+    function renderConnect() {
+      document.getElementById("conn-url").innerText = `${location.origin}/v1`;
+      document.getElementById("conn-key").innerText = connKeyShown ? (window.HERA_TOKEN || "") : "•".repeat(24);
+    }
+    function toggleConnKey() { connKeyShown = !connKeyShown; renderConnect(); }
+    async function copyText(id) { try { await navigator.clipboard.writeText(document.getElementById(id).innerText); } catch (e) { alert("Não consegui copiar; selecione o texto."); } }
+    async function copyKey() { try { await navigator.clipboard.writeText(window.HERA_TOKEN || ""); } catch (e) { alert("Não consegui copiar."); } }
 
     function stepProviders() {
       return [...routerState.providers.filter(p => p.active).map(p => p.name), "ollama"];
