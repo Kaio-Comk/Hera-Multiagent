@@ -10,6 +10,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "default_offline": False,
         "default_engine": "ollama",
         "vault_dir": "",  # vazio = $HERA_VAULT_DIR ou ~/Documents/Obsidian Vault/Orquestrador Multiagente
+        "vault_root": "",  # cofre inteiro que a aba Obsidian abre; vazio = acha a pasta com .obsidian acima de vault_dir
         "db_path": "data/orchestrator.db"
     },
     "engines": {

@@ -32,6 +32,18 @@ def resolve_vault_dir(configured: Optional[str] = None, environ: Optional[Mappin
     return value if value else default_vault_dir(environ)
 
 
+def find_vault_root(vault_dir: str, configured: Optional[str] = None) -> Path:
+    """Raiz do cofre do Obsidian: `general.vault_root` > a pasta acima de `vault_dir` que tem `.obsidian` > `vault_dir`."""
+    value = (configured or "").strip()
+    if value:
+        return Path(value)
+    start = Path(vault_dir)
+    for candidate in (start, *start.parents):
+        if (candidate / ".obsidian").is_dir():
+            return candidate
+    return start
+
+
 def find_agy_binary(environ: Optional[Mapping[str, str]] = None) -> str:
     r"""Executavel do Antigravity: $HERA_AGY_PATH > PATH > %LOCALAPPDATA%\agy\bin > nome simples."""
     env = os.environ if environ is None else environ
