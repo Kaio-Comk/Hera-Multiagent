@@ -66,6 +66,10 @@
 
 ---
 
+## 🔌 Start/stop local services from the panel
+
+In **Motores & IAs**, the Ollama and 9Router cards have **Iniciar / Parar** buttons. The commands are fixed (nothing comes from the request), the process starts hidden on loopback with a minimal environment (no API keys), and **Parar** only stops what Hera itself started (whole process tree). A service opened elsewhere (tray icon, another terminal) is shown as running but is left alone. Logs go to `data/logs/`. Services started by Hera keep running if you close Hera.
+
 ## 🌐 Built-in Router (the "9Router inside Hera")
 
 The **Roteador** tab configures cloud providers (Groq, OpenRouter, DeepSeek, Gemini, Mistral, Cerebras, Together, NVIDIA, OpenAI, xAI) and **combos**: ordered chains of `provider + model` that Hera tries until one answers. Use a combo name as the model in the Task Studio, in the Plan tab, or from any tool pointed at `http://127.0.0.1:8000/v1`. No external process or port is needed (engine `hera_router`).
