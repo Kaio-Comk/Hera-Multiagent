@@ -22,12 +22,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         },
         "claude_code": {
             "enabled": True,
-            "default_model": "claude-3-7-sonnet",
+            "default_model": "sonnet",
             "timeout": 300.0
         },
         "antigravity": {
             "enabled": True,
-            "default_model": "gemini-2.5-pro",
+            "default_model": "default",    # "default" = o padrao do CLI; escolha um da lista no painel
             "timeout": 300.0
         },
         # Roteador embutido do Hera (provedores de nuvem + combos com fallback).
@@ -95,6 +95,12 @@ class ConfigManager:
                     merged[section] = {**merged.get(section, {}), **data[section]}
             # motores que nao existem mais (removidos do projeto) somem do config em vez de quebrar a UI
             merged["engines"] = {k: v for k, v in merged["engines"].items() if k in DEFAULT_CONFIG["engines"]}
+            # nomes de modelo antigos que os CLIs nao aceitam mais viram o padrao novo
+            for engine, old_names, new_name in (("claude_code", {"claude-3-7-sonnet", "claude-3-5-sonnet", "claude-3-5-haiku"}, "sonnet"),
+                                                ("antigravity", {"gemini-2.5-pro", "gemini-2.5-flash"}, "default")):
+                eng = merged["engines"].get(engine)
+                if isinstance(eng, dict) and eng.get("default_model") in old_names:
+                    merged["engines"][engine] = {**eng, "default_model": new_name}
             return merged
         except Exception:
             return DEFAULT_CONFIG.copy()

@@ -2,11 +2,18 @@ import os
 import shutil
 import time
 import asyncio
+from adapters.model_args import model_args
 from typing import Dict, Any, Optional, List
 
 from models.task import AgentTask, AgentResult, TaskStatus
 from models.agent import HealthStatus, AgentCapabilities, RunHandle
 from adapters.base import AgentAdapter
+
+# O Claude Code nao tem um comando que liste modelos: sao os APELIDOS (sempre o mais novo da familia) e os nomes
+# completos conhecidos. O campo de modelo do painel aceita qualquer nome valido, esta lista so sugere.
+CLAUDE_MODELS = ["sonnet", "opus", "haiku", "fable", "claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5",
+                 "claude-haiku-5-5", "claude-opus-4-1", "claude-sonnet-4-5", "claude-haiku-4-5"]
+
 
 class ClaudeCodeAdapter:
     """Adaptador para Claude Code CLI no Windows.
@@ -50,7 +57,7 @@ class ClaudeCodeAdapter:
                 return HealthStatus(
                     healthy=True,
                     version=ver_text,
-                    available_models=["claude-3-7-sonnet", "claude-3-5-sonnet", "claude-3-5-haiku"]
+                    available_models=list(CLAUDE_MODELS)
                 )
             else:
                 return HealthStatus(
@@ -88,7 +95,7 @@ Instrução:
         prompt = self._build_prompt(task)
         timeout = task.timeout_seconds or self.timeout
 
-        cmd = [self.binary_path, "-p", prompt]
+        cmd = [self.binary_path, *model_args(task.assigned_model), "-p", prompt]   # o modelo escolhido agora vale
 
         # Validação estrita de workspace
         if task.workspace and not os.path.isdir(task.workspace):

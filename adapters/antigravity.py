@@ -1,4 +1,5 @@
 import os
+from adapters.model_args import clean_model, model_args
 from app.locations import find_agy_binary
 import shutil
 import time
@@ -8,6 +9,10 @@ from typing import Dict, Any, Optional, List
 from models.task import AgentTask, AgentResult, TaskStatus
 from models.agent import HealthStatus, AgentCapabilities, RunHandle
 from adapters.base import AgentAdapter
+
+FALLBACK_MODELS = ["gemini-3.8-flash-high", "gemini-3.8-flash-medium", "gemini-3.8-flash-low"]
+MODELS_TTL = 300.0
+
 
 class AntigravityAdapter:
     """Adaptador para Antigravity CLI (agy) no Windows.
@@ -31,6 +36,30 @@ class AntigravityAdapter:
         # $HERA_AGY_PATH > PATH > %LOCALAPPDATA%\agy\bin (sem caminho de usuario fixo no codigo)
         return find_agy_binary()
 
+    async def _discover_models(self):
+        """Lista REAL de modelos (`agy models`), em cache por 5 min. Devolve (lista, veio_do_cli)."""
+        import time as _time
+        cached = getattr(self, "_models_cache", None)
+        if cached and _time.monotonic() - cached[0] < MODELS_TTL:
+            return cached[1], cached[2]
+        models, real = list(FALLBACK_MODELS), False
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                self.binary_path, "models", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30.0)
+            if proc.returncode == 0:
+                found = []
+                for line in stdout.decode("utf-8", errors="replace").splitlines():
+                    ident = line.split("\t", 1)[0].strip()
+                    if ident and clean_model(ident) and " " not in ident:
+                        found.append(ident)
+                if found:
+                    models, real = list(dict.fromkeys(found)), True
+        except Exception:                                   # noqa: BLE001 - sem lista, cai nos modelos conhecidos
+            pass
+        self._models_cache = (_time.monotonic(), models, real)
+        return models, real
+
     async def health_check(self) -> HealthStatus:
         """Verifica se o binário do Antigravity está acessível e obtém sua versão."""
         try:
@@ -43,10 +72,11 @@ class AntigravityAdapter:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10.0)
             if proc.returncode == 0:
                 ver_text = stdout.decode("utf-8", errors="replace").strip()
+                models, _ = await self._discover_models()
                 return HealthStatus(
                     healthy=True,
                     version=ver_text,
-                    available_models=["gemini-2.5-pro", "gemini-2.5-flash"]
+                    available_models=models
                 )
             else:
                 return HealthStatus(
@@ -84,7 +114,9 @@ Instrução:
         prompt = self._build_prompt(task)
         timeout = task.timeout_seconds or self.timeout
 
-        cmd = [self.binary_path, "-p", prompt, "--output-format", "text"]
+        models, real = await self._discover_models()
+        # o modelo escolhido agora vale; com a lista real do CLI, so passa o que ele conhece (senao usa o padrao dele)
+        cmd = [self.binary_path, *model_args(task.assigned_model, models if real else None), "-p", prompt, "--output-format", "text"]
 
         # Validação estrita de workspace
         if task.workspace and not os.path.isdir(task.workspace):

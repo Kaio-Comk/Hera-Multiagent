@@ -66,9 +66,9 @@ class TaskRouter:
         if task.task_type == "coding":
             # Preferir Antigravity ou Claude Code para edição de código e ferramentas de sistema
             if "antigravity" in adapters:
-                return adapters["antigravity"], self._model("antigravity", "gemini-2.5-pro"), "Codificação com suporte a workspace e terminal via Antigravity CLI"
+                return adapters["antigravity"], self._model("antigravity", "default"), "Codificação com suporte a workspace e terminal via Antigravity CLI"
             if "claude_code" in adapters:
-                return adapters["claude_code"], self._model("claude_code", "claude-3-7-sonnet"), "Codificação avançada via Claude Code CLI"
+                return adapters["claude_code"], self._model("claude_code", "sonnet"), "Codificação avançada via Claude Code CLI"
             # Fallback local
             if "ollama" in adapters:
                 return adapters["ollama"], self._model("ollama", "qwen2.5-coder:1.5b"), "Codificação local em GPU via Ollama (qwen2.5-coder)"
