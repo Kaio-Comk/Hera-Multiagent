@@ -19,12 +19,6 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "default_model": "qwen2.5-coder:1.5b",
             "timeout": 120.0
         },
-        "nine_router": {
-            "enabled": True,
-            "base_url": "http://127.0.0.1:20128/v1",
-            "default_model": "alicode-intl/qwen3.5-plus",
-            "timeout": 60.0
-        },
         "claude_code": {
             "enabled": True,
             "default_model": "claude-3-7-sonnet",
@@ -35,7 +29,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "default_model": "gemini-2.5-pro",
             "timeout": 300.0
         },
-        # Roteador embutido do Hera (provedores de nuvem + combos): substitui o 9Router externo.
+        # Roteador embutido do Hera (provedores de nuvem + combos com fallback).
         "hera_router": {
             "enabled": True,
             "default_model": "default",   # "default" = o roteador escolhe; ou o nome de um combo
@@ -98,6 +92,8 @@ class ConfigManager:
             for section in ("general", "engines", "feature_flags", "gateway", "mcp", "providers", "orchestration"):
                 if section in data and isinstance(data[section], dict):
                     merged[section] = {**merged.get(section, {}), **data[section]}
+            # motores que nao existem mais (removidos do projeto) somem do config em vez de quebrar a UI
+            merged["engines"] = {k: v for k, v in merged["engines"].items() if k in DEFAULT_CONFIG["engines"]}
             return merged
         except Exception:
             return DEFAULT_CONFIG.copy()

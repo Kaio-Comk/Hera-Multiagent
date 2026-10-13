@@ -145,7 +145,6 @@ async def test_loopback_so_para_host_local_em_porta_local_autorizada(monkeypatch
     _resolve_to(monkeypatch, "127.0.0.1")
     _, inner = await _connect("localhost", 11434)                                    # Ollama
     assert inner.calls == [("127.0.0.1", 11434)]
-    _, inner = await _connect("127.0.0.1", 20128)                                    # 9Router
     for host, port in (("localhost", 22), ("localhost", 8000), ("127.0.0.1", 6379)):  # outras portas locais
         with pytest.raises(BlockedDestinationError):
             await _connect(host, port)

@@ -126,7 +126,7 @@ def test_config_chaves_congeladas_e_desconhecidas_sao_recusadas(isolated_config,
     {"ollama": {"base_url": "http://169.254.169.254/latest/meta-data"}},
     {"ollama": {"base_url": "http://evil.com:11434"}},
     {"ollama": {"base_url": "http://127.0.0.1:22"}},
-    {"nine_router": {"base_url": "http://evil.com/v1"}},
+    {"hera_router": {"base_url": "http://evil.com/v1"}},
     {"claude_code": {"base_url": "http://x"}},
     {"motor_novo": {"enabled": True}},
     {"ollama": {"comando": "calc.exe"}},
@@ -139,8 +139,7 @@ def test_config_engines_invalidos_sao_recusados(isolated_config, engines):
 
 
 def test_config_urls_locais_legitimas_passam(isolated_config):
-    r = _post(engines={"ollama": {"base_url": "http://localhost:11434"},
-                       "nine_router": {"base_url": "http://127.0.0.1:20128/v1"}})
+    r = _post(engines={"ollama": {"base_url": "http://localhost:11434"}})
     assert r.status_code == 200
 
 

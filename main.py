@@ -19,7 +19,6 @@ from app.validator import TaskValidator
 from app.auto_fix import AutoFixEngine
 from app.benchmark import LocalBenchmark
 from adapters.ollama import OllamaAdapter
-from adapters.nine_router import NineRouterAdapter
 from adapters.claude_code import ClaudeCodeAdapter
 from adapters.antigravity import AntigravityAdapter
 
@@ -33,7 +32,6 @@ class MultiagentOrchestrator:
         # Configurar adaptadores
         self.adapters = {
             "ollama": OllamaAdapter(),
-            "9router": NineRouterAdapter(),
             "claude_code": ClaudeCodeAdapter(),
             "antigravity": AntigravityAdapter(),
         }
@@ -195,7 +193,7 @@ async def main():
     run_parser.add_argument("instruction", type=str, help="Instrução da tarefa")
     run_parser.add_argument("--title", type=str, default="", help="Título da tarefa")
     run_parser.add_argument("--type", type=str, default="summary", choices=["coding", "research", "review", "summary", "offline"])
-    run_parser.add_argument("--agent", type=str, default=None, choices=["ollama", "9router", "claude_code", "antigravity"])
+    run_parser.add_argument("--agent", type=str, default=None, choices=["ollama", "claude_code", "antigravity"])
     run_parser.add_argument("--model", type=str, default=None, help="Modelo específico")
     run_parser.add_argument("--criteria", type=str, nargs="*", default=[], help="Critérios de aceite")
     run_parser.add_argument("--val-cmd", action="append", default=[], help="Comando de validação (repetível)")

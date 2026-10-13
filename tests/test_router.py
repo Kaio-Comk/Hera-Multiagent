@@ -1,7 +1,7 @@
 import pytest
 from models.task import AgentTask
 from adapters.ollama import OllamaAdapter
-from adapters.nine_router import NineRouterAdapter
+from adapters.hera_router import HeraRouterAdapter
 from adapters.claude_code import ClaudeCodeAdapter
 from adapters.antigravity import AntigravityAdapter
 from app.router import TaskRouter
@@ -10,7 +10,7 @@ from app.router import TaskRouter
 def mock_router():
     adapters = {
         "ollama": OllamaAdapter(),
-        "9router": NineRouterAdapter(),
+        "hera_router": HeraRouterAdapter(call=None, models=lambda: [], has_cloud=lambda: True),
         "claude_code": ClaudeCodeAdapter(),
         "antigravity": AntigravityAdapter(),
     }
@@ -52,7 +52,7 @@ async def test_route_research_task(mock_router):
         task_type="research"
     )
     adapter, model, reason = await mock_router.route(task)
-    assert adapter.name == "9router"
+    assert adapter.name == "hera_router"
 
 @pytest.mark.asyncio
 async def test_route_offline_task(mock_router):

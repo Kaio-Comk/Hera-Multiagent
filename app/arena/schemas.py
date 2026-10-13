@@ -6,7 +6,7 @@ import time
 class ArenaCandidate(BaseModel):
     """Candidato configurado para competir na Multi-Model Arena."""
     model_id: str
-    adapter_name: str  # ollama, 9router, claude_code, antigravity
+    adapter_name: str  # ollama, hera_router, claude_code, antigravity
     is_local: bool = True
     max_tokens: int = 1024
     temperature: float = 0.2

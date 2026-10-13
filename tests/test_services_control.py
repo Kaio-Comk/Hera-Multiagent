@@ -1,4 +1,4 @@
-"""Iniciar/parar Ollama e 9Router pelo painel: comandos fixos, ambiente enxuto, so para o que o Hera iniciou."""
+"""Iniciar/parar o Ollama pelo painel: comandos fixos, ambiente enxuto, so para o que o Hera iniciou."""
 import socket
 import sys
 from pathlib import Path
@@ -91,7 +91,7 @@ async def test_api_servicos(svc, monkeypatch):
     monkeypatch.setattr(server, "service_manager", mgr)
     async with AsyncClient(transport=ASGITransport(app=server.app), base_url=TEST_BASE_URL, headers=AUTH_HEADERS) as c:
         listed = (await c.get("/api/services")).json()["services"]
-        assert {s["name"] for s in listed} == {"ollama", "9router"}
+        assert {s["name"] for s in listed} == {"ollama"}
         assert (await c.post("/api/services/qualquer-coisa/start")).status_code == 404
         started = (await c.post("/api/services/ollama/start")).json()
         assert started["running"] is True and started["managed"] is True

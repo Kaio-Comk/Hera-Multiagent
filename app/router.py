@@ -40,9 +40,9 @@ class TaskRouter:
                 if has_secret else
                 "Política de privacidade/offline: rota restrita a execução local."
             )
-            # Se o usuário tentou forçar 9router (nuvem) em uma tarefa sensível, barrar!
-            if task.assigned_agent == "9router":
-                reason_privacy += " Tentativa de envio para 9Router (nuvem) bloqueada pelo Gate DLP."
+            # Se o usuário tentou forçar um motor que não é local em uma tarefa sensível, barrar!
+            if task.assigned_agent and task.assigned_agent != "ollama":
+                reason_privacy += f" Tentativa de envio para '{task.assigned_agent}' bloqueada pelo Gate DLP."
 
             # Garantir executor local Ollama (Fail-Closed)
             adapter = adapters.get("ollama")
@@ -75,13 +75,10 @@ class TaskRouter:
 
         # 4. Tarefas de pesquisa, triagem, segunda opinião ou resumo
         if task.task_type in ("research", "review", "summary"):
-            # Roteador embutido do Hera, se houver provedor de nuvem ligado; senão o 9Router externo
+            # Roteador embutido do Hera, se houver provedor de nuvem ligado
             hera = adapters.get("hera_router")
             if hera is not None and getattr(hera, "has_cloud", lambda: False)():
                 return hera, self._model("hera_router", "default"), "Pesquisa/triagem via Roteador embutido do Hera (nuvem com fallback)"
-            # Preferir 9Router se disponível (modelos em nuvem rápidos/gratuitos)
-            if "9router" in adapters:
-                return adapters["9router"], self._model("9router", "alicode-intl/qwen3.5-plus"), "Triagem/pesquisa via 9Router (alta velocidade e modelos atualizados)"
             if "ollama" in adapters:
                 return adapters["ollama"], self._model("ollama", "qwen2.5-coder:1.5b"), "Resumo local via Ollama"
 

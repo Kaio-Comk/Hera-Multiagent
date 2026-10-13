@@ -15,7 +15,7 @@
         extend: {
           fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
           colors: {
-            // paleta do painel do 9Router: neutros quentes + laranja
+            // neutros quentes + laranja
             zinc: { 50: '#fafaf9', 100: '#ededed', 200: '#d4d4d4', 300: '#b8b8b8', 400: '#9ca3af', 500: '#6b7280',
                     600: '#4a4a4a', 700: '#3a3a3a', 800: '#333333', 900: '#262626', 950: '#161616' },
             brand: { 50: '#fff4f0', 300: '#f5a58f', 400: '#ee8466', 500: '#e56a4a', 600: '#e56a4a', 700: '#cc5236', 900: '#6b2a1a' }
@@ -140,7 +140,6 @@
                   <option value="">⚡ Automático (Hera Roteia)</option>
                   <option value="ollama">🦙 Ollama (Local)</option>
                   <option value="hera_router">🧭 Roteador Hera (embutido)</option>
-                  <option value="9router">🌐 9Router (Gateway)</option>
                   <option value="claude_code">⚙️ Claude Code CLI</option>
                   <option value="antigravity">🚀 Antigravity CLI</option>
                 </select>
@@ -725,11 +724,10 @@
     }
 
     // nome interno do motor -> chave no config.yaml
-    const ENGINE_CONFIG_KEY = { ollama: "ollama", "9router": "nine_router", claude_code: "claude_code", antigravity: "antigravity" };
+    const ENGINE_CONFIG_KEY = { ollama: "ollama", claude_code: "claude_code", antigravity: "antigravity" };
 
     const ENGINE_META = {
       ollama:      { icon: "cpu",      sub: "Modelos locais na sua GPU" },
-      "9router":   { icon: "globe",    sub: "Roteador externo (opcional): o Roteador embutido do Hera já faz o mesmo" },
       claude_code: { icon: "terminal", sub: "CLI do Claude Code, para tarefas de código" },
       antigravity: { icon: "rocket",   sub: "CLI Antigravity, com acesso ao workspace" },
       hera_router: { icon: "route",    sub: "Roteador embutido: nuvem com fallback e combos" }
@@ -740,7 +738,7 @@
     function renderEngineCards(engines) {
       const container = document.getElementById("engines-cards-container");
       container.innerHTML = "";
-      const order = ["ollama", "hera_router", "9router", "claude_code", "antigravity"];
+      const order = ["ollama", "hera_router", "claude_code", "antigravity"];
       const names = [...order.filter(n => engines[n]), ...Object.keys(engines).filter(n => !order.includes(n))];
 
       for (const name of names) {
@@ -1346,7 +1344,7 @@
             prompt: promptText,
             candidates: [
               { model_id: defaultOllama, adapter_name: "ollama", is_local: true },
-              { model_id: "alicode-intl/qwen3.5-plus", adapter_name: "9router", is_local: false },
+              { model_id: "alicode-intl/qwen3.5-plus", adapter_name: "hera_router", is_local: false },
               { model_id: "claude-3-7-sonnet", adapter_name: "claude_code", is_local: false }
             ]
           })

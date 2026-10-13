@@ -1,4 +1,4 @@
-"""Motor `hera_router`: o Roteador embutido do Hera (o "9Router de dentro de casa").
+"""Motor `hera_router`: o Roteador embutido do Hera.
 
 Não abre porta nem processo externo: chama o gateway do próprio Hera (provedores de nuvem com rodízio de chaves,
 combos com fallback, camadas, DLP e modo offline) diretamente, em memória.

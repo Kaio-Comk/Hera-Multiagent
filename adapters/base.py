@@ -4,7 +4,7 @@ from models.agent import HealthStatus, AgentCapabilities, RunHandle
 
 @runtime_checkable
 class AgentAdapter(Protocol):
-    """Protocolo uniforme que todos os adaptadores (Ollama, 9Router, Claude Code, Antigravity) implementam."""
+    """Protocolo uniforme que todos os adaptadores (Ollama, Claude Code, Antigravity, Roteador Hera) implementam."""
 
     @property
     def name(self) -> str:
