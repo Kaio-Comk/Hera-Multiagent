@@ -31,6 +31,7 @@ from app.vault_memory import ObsidianMemoryManager
 from app.validator import TaskValidator
 from app.auto_fix import AutoFixEngine
 from app.dag_scheduler import TaskDAG, DAGScheduler
+from app import orchestration
 from adapters.ollama import OllamaAdapter
 from adapters.nine_router import NineRouterAdapter
 from adapters.claude_code import ClaudeCodeAdapter
@@ -246,6 +247,27 @@ def broadcast_log(msg: str, level: str = "info"):
     except RuntimeError:
         pass
 
+ENGINE_ADAPTER_NAMES = {"ollama": "ollama", "nine_router": "9router", "9router": "9router",
+                        "claude_code": "claude_code", "antigravity": "antigravity"}
+
+
+def _apply_engine_runtime(config: Dict[str, Any]) -> None:
+    """Liga/desliga motores e aplica o modelo padrao de cada um no roteador, sem reiniciar."""
+    disabled, models = set(), {}
+    for key, eng in (config.get("engines") or {}).items():
+        name = ENGINE_ADAPTER_NAMES.get(key)
+        if not name or not isinstance(eng, dict):
+            continue
+        if eng.get("enabled") is False:
+            disabled.add(name)
+        if eng.get("default_model"):
+            models[name] = eng["default_model"]
+    router.disabled = disabled
+    router.default_models = models
+
+
+_apply_engine_runtime(cfg)
+
 coordinator = Coordinator(store=store, on_progress=broadcast_log)
 autofix = AutoFixEngine(
     router=router,
@@ -288,6 +310,8 @@ async def get_health():
         try:
             status: HealthStatus = await adapter.health_check()
             results[name] = {
+                "enabled": name not in router.disabled,
+                "default_model": router.default_models.get(name),
                 "healthy": status.healthy,
                 "version": status.version,
                 "available_models": status.available_models,
@@ -295,6 +319,8 @@ async def get_health():
             }
         except Exception as e:
             results[name] = {
+                "enabled": name not in router.disabled,
+                "default_model": router.default_models.get(name),
                 "healthy": False,
                 "version": None,
                 "available_models": [],
@@ -378,7 +404,8 @@ async def update_config(req: ConfigUpdateRequest):
     config_mgr.save_config(new_cfg)
     
     # Atualizar modo offline no roteador
-    router.default_offline = req.general.get("default_offline", False)
+    router.default_offline = new_cfg["general"].get("default_offline", False)   # sem `general` na requisicao, mantem
+    _apply_engine_runtime(new_cfg)
     
     # Atualizar defaults nos adaptadores
     if "ollama" in req.engines and "ollama" in adapters:
@@ -391,6 +418,145 @@ async def update_config(req: ConfigUpdateRequest):
         
     broadcast_log("⚙️ Configurações atualizadas e sincronizadas com sucesso.", level="success")
     return {"status": "ok", "config": new_cfg}
+
+# ---------------------------------------------------------------------------------------------
+# Plano multiagente: um modelo PLANEJADOR divide o objetivo e os motores ligados executam os passos
+# ---------------------------------------------------------------------------------------------
+class PlannerChoice(BaseModel):
+    engine: ShortStr
+    model: Annotated[str, StringConstraints(max_length=200)] = ""
+
+
+class PlanRequest(BaseModel):
+    goal: Annotated[str, StringConstraints(min_length=3, max_length=orchestration.MAX_GOAL_CHARS)]
+    executors: Optional[List[ShortStr]] = Field(default=None, max_length=8)
+
+
+class PlanStepModel(BaseModel):
+    id: Annotated[str, StringConstraints(max_length=40)] = ""
+    title: Annotated[str, StringConstraints(max_length=orchestration.MAX_TITLE_CHARS)] = ""
+    instruction: Annotated[str, StringConstraints(max_length=orchestration.MAX_INSTRUCTION_CHARS)]
+    type: Annotated[str, StringConstraints(max_length=20)] = "coding"
+    engine: Annotated[str, StringConstraints(max_length=40)] = ""
+    depends_on: List[Annotated[str, StringConstraints(max_length=40)]] = Field(default_factory=list, max_length=12)
+
+
+class PlanExecuteRequest(BaseModel):
+    goal: Annotated[str, StringConstraints(max_length=orchestration.MAX_GOAL_CHARS)] = ""
+    steps: List[PlanStepModel] = Field(min_length=1, max_length=orchestration.MAX_STEPS_LIMIT)
+    executors: Optional[List[ShortStr]] = Field(default=None, max_length=8)
+
+
+def _orchestration_cfg() -> Dict[str, Any]:
+    section = config_mgr.load_config().get("orchestration") or {}
+    planner = section.get("planner") or {}
+    return {"planner": {"engine": planner.get("engine") or "ollama", "model": planner.get("model") or ""},
+            "max_steps": int(section.get("max_steps") or 8)}
+
+
+def _active_executors(requested: Optional[List[str]] = None) -> List[str]:
+    active = list(router.active_adapters())
+    if requested is not None:
+        active = [name for name in active if name in set(requested)]
+    if not active:
+        raise HTTPException(status_code=400, detail={
+            "error": "no_executor", "message": "Nenhum motor ligado para executar o plano. Ligue um em Motores & IAs."})
+    return active
+
+
+@app.get("/api/orchestration")
+async def get_orchestration():
+    """Planejador escolhido, motores ligados e se o modo offline vai forcar tudo para o Ollama."""
+    ocfg = _orchestration_cfg()
+    return {**ocfg, "active_engines": list(router.active_adapters()), "offline": router.default_offline}
+
+
+@app.post("/api/orchestration/planner")
+async def set_planner(req: PlannerChoice):
+    engine = ENGINE_ADAPTER_NAMES.get(req.engine, req.engine)
+    if engine not in adapters:
+        raise HTTPException(status_code=400, detail={"error": "invalid_planner", "message": f"Motor desconhecido: {req.engine!r}"})
+    if engine in router.disabled:
+        raise HTTPException(status_code=400, detail={"error": "invalid_planner",
+                                                     "message": "Esse motor esta desligado; ligue-o antes de escolhe-lo como planejador."})
+    model = orchestration.clean_text(req.model, 200)
+    current = config_mgr.load_config()
+    section = {**(current.get("orchestration") or {}), "planner": {"engine": engine, "model": model}}
+    config_mgr.save_config({**current, "orchestration": section})
+    broadcast_log(f"🧠 Planejador definido: {engine}{' / ' + model if model else ''}.", level="success")
+    return {"status": "ok", "planner": section["planner"]}
+
+
+@app.post("/api/orchestration/plan")
+async def make_plan(req: PlanRequest):
+    """Pede ao planejador um plano em passos. NADA e executado aqui: o usuario revisa e depois chama /execute."""
+    ocfg = _orchestration_cfg()
+    executors = _active_executors(req.executors)
+    planner_engine = ocfg["planner"]["engine"]
+    if planner_engine in router.disabled or planner_engine not in adapters:
+        raise HTTPException(status_code=400, detail={"error": "planner_off",
+                                                     "message": f"O planejador '{planner_engine}' esta desligado ou nao existe."})
+    task = orchestration.build_planning_task(req.goal, executors, ocfg["max_steps"], planner_engine,
+                                             ocfg["planner"]["model"], str(ROOT_DIR))
+    try:
+        adapter, model, reason = await router.route(task)       # o Gate DLP / modo offline continua valendo
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail={"error": "blocked", "message": str(exc)})
+    forced = adapter.name != planner_engine
+    task.assigned_agent, task.assigned_model = adapter.name, model
+    warnings: List[str] = []
+    if forced:
+        warnings.append(f"O planejador escolhido ({planner_engine}) nao pode ver este pedido: {reason}")
+    try:
+        handle = await adapter.submit(task)
+        result = await asyncio.wait_for(adapter.collect(handle), timeout=task.timeout_seconds + 20)
+        if result.status != TaskStatus.SUCCEEDED:
+            raise orchestration.PlanError(result.error_message or result.summary or "o planejador falhou")
+        steps, plan_warnings = orchestration.parse_plan(result.output_text, executors, ocfg["max_steps"])
+        warnings += plan_warnings
+    except Exception as exc:        # noqa: BLE001 - qualquer falha do planejador cai no plano de 1 passo
+        warnings.append(f"Plano automatico indisponivel ({type(exc).__name__}: {str(exc)[:200]}); usando 1 passo com o objetivo inteiro.")
+        steps, _ = orchestration.normalize_steps(orchestration.fallback_single_step(req.goal), executors, 1)
+    return {"planner": {"engine": adapter.name, "model": model, "forced_local": forced},
+            "steps": steps, "warnings": warnings, "executors": executors, "offline": router.default_offline}
+
+
+@app.post("/api/orchestration/execute")
+async def execute_plan(req: PlanExecuteRequest, background_tasks: BackgroundTasks):
+    """Executa o plano (revalidado aqui: o corpo e nao confiavel) distribuindo os passos aos motores ligados."""
+    ocfg = _orchestration_cfg()
+    executors = _active_executors(req.executors)
+    try:
+        steps, warnings = orchestration.normalize_steps([s.model_dump() for s in req.steps], executors, ocfg["max_steps"])
+    except orchestration.PlanError as exc:
+        raise HTTPException(status_code=400, detail={"error": "invalid_plan", "message": str(exc)})
+    run_id = f"run-{uuid.uuid4().hex[:8]}"
+    dag = orchestration.build_dag(steps, run_id, str(ROOT_DIR))
+
+    async def _execute():
+        broadcast_log(f"🧭 Plano {run_id}: {len(steps)} passo(s) em execucao.", level="info")
+        try:
+            scheduler = DAGScheduler(router=router, coordinator=coordinator, validator=validator,
+                                     max_concurrency=2, on_feedback=broadcast_log)
+            results = await scheduler.execute_dag(dag)
+            report = []
+            for step in steps:
+                tid = f"{run_id}-{step['id']}"
+                res, tsk = results.get(tid), dag.tasks[tid]
+                report.append({"id": step["id"], "title": step["title"], "engine": tsk.assigned_agent or "",
+                               "model": tsk.assigned_model or "",
+                               "status": res.status.value if res else "CANCELLED",
+                               "summary": (res.summary if res else "")[:500],
+                               "output_text": (res.output_text if res else "")[:20000]})
+            await ws_manager.broadcast({"type": "orchestration_finished", "run_id": run_id, "steps": report})
+        except Exception as exc:        # noqa: BLE001
+            broadcast_log(f"❌ Plano {run_id} falhou: {exc}", level="error")
+            await ws_manager.broadcast({"type": "orchestration_finished", "run_id": run_id, "steps": [],
+                                        "error": str(exc)[:500]})
+
+    background_tasks.add_task(_execute)
+    return {"status": "enqueued", "run_id": run_id, "steps": steps, "warnings": warnings}
+
 
 @app.post("/api/ollama/pull")
 async def pull_ollama_model(req: ModelPullRequest, background_tasks: BackgroundTasks):

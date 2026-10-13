@@ -66,6 +66,13 @@
 
 ---
 
+## 🧭 Engines on/off & multi-agent plan
+
+In the web panel you can switch each engine on or off and pick its default model (**Motores & IAs** tab), and choose which engine/model is the **planner** (**Plano** tab). The planner splits your goal into steps; you review/edit them, then the enabled engines execute them (DAG, dependencies respected).
+
+- Nothing runs when the plan is generated: you approve it first. The plan is re-validated server-side (max steps, only enabled engines, no cycles).
+- The privacy gate still wins: in **100% Offline** mode, or if the goal contains a secret, every step runs on local Ollama regardless of the engine chosen. If Ollama is off, it fails closed.
+
 ## 🖥️ Mission Control (Web & Desktop GUI)
 
 Hera is designed for both terminal power users and teams who want an intuitive graphical cockpit. You can launch the interface with a single command without installing Node.js, NPM, or complex build tools:

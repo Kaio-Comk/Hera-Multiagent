@@ -76,6 +76,9 @@
       <button onclick="switchTab('arena')" id="tab-btn-arena" class="tab-btn px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/60 flex items-center gap-2">
         <i data-lucide="swords" class="w-4 h-4"></i> Arena & MCP
       </button>
+      <button onclick="switchTab('plan')" id="tab-btn-plan" class="tab-btn px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/60 flex items-center gap-2">
+        <i data-lucide="network" class="w-4 h-4"></i> Plano
+      </button>
     </nav>
 
     <!-- Indicador de Status WS -->
@@ -459,6 +462,48 @@
       </div>
     </section>
 
+
+    <!-- ==================== ABA 8: PLANO MULTIAGENTE ==================== -->
+    <section id="tab-plan" class="tab-content hidden space-y-6">
+      <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div class="flex items-center gap-2">
+          <i data-lucide="brain" class="w-5 h-5 text-indigo-400"></i>
+          <h3 class="text-sm font-bold text-white">Quem faz o plano</h3>
+        </div>
+        <p class="text-xs text-zinc-400">O planejador divide o objetivo em passos; os motores que estiverem <strong>ligados</strong> em "Motores &amp; IAs" executam cada passo.</p>
+        <div id="plan-offline-banner" class="hidden text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
+          O <strong>Modo 100% Offline</strong> está ligado: todos os passos serão executados pelo Ollama, qualquer que seja o motor escolhido. Desligue-o em "Motores &amp; IAs" para usar os outros.
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+          <div>
+            <label class="block text-xs font-semibold text-zinc-400 mb-1">Motor planejador</label>
+            <select id="planner-engine" onchange="onPlannerEngineChange()" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-brand-500"></select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-zinc-400 mb-1">Modelo do planejador</label>
+            <select id="planner-model" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-brand-500"></select>
+          </div>
+          <button onclick="savePlanner()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-sm font-semibold transition-all">Salvar planejador</button>
+        </div>
+      </div>
+
+      <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <label class="block text-xs font-semibold text-zinc-400">Objetivo</label>
+        <textarea id="plan-goal" rows="4" placeholder="Descreva o que você quer que o time de IAs faça..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-brand-500 resize-none"></textarea>
+        <div class="flex flex-wrap items-center gap-3">
+          <button onclick="generatePlan()" id="btn-gen-plan" class="px-5 py-2.5 bg-gradient-to-r from-brand-600 to-indigo-600 text-white rounded-xl text-sm font-bold flex items-center gap-2">
+            <i data-lucide="sparkles" class="w-4 h-4"></i> Gerar plano
+          </button>
+          <button onclick="executePlan()" id="btn-run-plan" disabled class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold flex items-center gap-2">
+            <i data-lucide="play" class="w-4 h-4"></i> Executar plano
+          </button>
+          <span id="plan-status" class="text-xs text-zinc-400 font-mono"></span>
+        </div>
+        <div id="plan-warnings" class="space-y-1"></div>
+        <div id="plan-steps" class="space-y-3"></div>
+        <div id="plan-results" class="space-y-3"></div>
+      </div>
+    </section>
   </main>
 
   <!-- Script Lógico da Interface -->
@@ -551,6 +596,9 @@
       } else if (data.type === "task_finished") {
         showTaskResult(data);
         loadTasksHistory();
+      } else if (data.type === "orchestration_finished") {
+        showPlanResults(data);
+        loadTasksHistory();
       }
     }
 
@@ -594,6 +642,7 @@
         globalHealth = data.engines;
         renderEngineCards(data.engines);
         updateModelDropdown();
+        loadOrchestration();
         
         // Modo offline
         document.getElementById("toggle-strict-offline").checked = data.default_offline;
@@ -602,36 +651,66 @@
       }
     }
 
+    function escAttr(str) {
+      return String(str ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    // nome interno do motor -> chave no config.yaml
+    const ENGINE_CONFIG_KEY = { ollama: "ollama", "9router": "nine_router", claude_code: "claude_code", antigravity: "antigravity" };
+
     function renderEngineCards(engines) {
       const container = document.getElementById("engines-cards-container");
       container.innerHTML = "";
 
-      const icons = {
-        ollama: "cpu",
-        "9router": "globe",
-        claude_code: "terminal",
-        antigravity: "rocket"
-      };
-
       for (const [name, info] of Object.entries(engines)) {
-        const statusColor = info.healthy ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-rose-400 bg-rose-500/10 border-rose-500/20";
-        const statusText = info.healthy ? "ONLINE" : "OFFLINE";
-        const modelCount = info.available_models ? `${info.available_models.length} modelos` : "0 modelos";
+        const on = info.enabled !== false;
+        const statusColor = !on ? "text-zinc-400 bg-zinc-500/10 border-zinc-500/20"
+          : info.healthy ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" : "text-rose-400 bg-rose-500/10 border-rose-500/20";
+        const statusText = !on ? "DESLIGADO" : info.healthy ? "ONLINE" : "OFFLINE";
+        const models = [...(info.available_models || [])];
+        if (info.default_model && !models.includes(info.default_model)) models.unshift(info.default_model);
+        const options = models.map(m => `<option value="${escAttr(m)}" ${m === info.default_model ? "selected" : ""}>${escapeHtml(m)}</option>`).join("");
 
         const card = document.createElement("div");
-        card.className = "bg-zinc-900/60 border border-zinc-800 rounded-2xl p-4 shadow-xl space-y-3";
+        card.className = "bg-zinc-900/60 border border-zinc-800 rounded-2xl p-4 shadow-xl space-y-3" + (on ? "" : " opacity-70");
         card.innerHTML = `
-          <div class="flex items-center justify-between">
-            <span class="text-sm font-bold text-white uppercase tracking-wider">${name}</span>
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-sm font-bold text-white uppercase tracking-wider">${escapeHtml(name)}</span>
             <span class="px-2 py-0.5 rounded-full text-xs font-bold border ${statusColor}">${statusText}</span>
           </div>
-          <div class="text-xs text-zinc-400 font-mono">${modelCount}</div>
-          <div class="text-[11px] text-zinc-500 truncate">${info.error_message || (info.available_models ? info.available_models.slice(0, 2).join(', ') : '')}</div>
+          <label class="flex items-center justify-between text-xs text-zinc-300 cursor-pointer">
+            <span>Ligado</span>
+            <input type="checkbox" ${on ? "checked" : ""} onchange="toggleEngine('${escAttr(name)}', this.checked)" class="w-5 h-5 accent-brand-600 cursor-pointer">
+          </label>
+          <div>
+            <label class="block text-[11px] font-semibold text-zinc-400 mb-1">Modelo padrão</label>
+            <select onchange="setEngineModel('${escAttr(name)}', this.value)" ${models.length ? "" : "disabled"} class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-xs text-zinc-100 focus:outline-none focus:border-brand-500">
+              ${options || '<option value="">(nenhum modelo listado)</option>'}
+            </select>
+          </div>
+          <div class="text-[11px] text-zinc-500 truncate">${escapeHtml(info.error_message || (models.length + " modelo(s)"))}</div>
         `;
         container.appendChild(card);
       }
       lucide.createIcons();
     }
+
+    async function saveEngineConfig(name, patch) {
+      const key = ENGINE_CONFIG_KEY[name] || name;
+      const res = await fetch("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ general: {}, engines: { [key]: patch } })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert("Não foi possível salvar: " + ((err.detail && err.detail.message) || res.status));
+      }
+      await loadHealth();
+    }
+
+    function toggleEngine(name, enabled) { return saveEngineConfig(name, { enabled }); }
+    function setEngineModel(name, model) { return saveEngineConfig(name, { default_model: model }); }
 
     function onAgentSelectChange() {
       updateModelDropdown();
@@ -1148,6 +1227,164 @@
         statusEl.innerText = "Erro!";
         resultsContainer.innerHTML = `<div class="text-xs text-rose-400 p-3">Erro na execução: ${e}</div>`;
       }
+    }
+
+    // ==================== PLANO MULTIAGENTE ====================
+    let currentPlan = null;
+    let orchestrationInfo = null;
+
+    function fillSelect(el, items, selected, emptyLabel) {
+      el.innerHTML = "";
+      if (emptyLabel !== undefined) el.insertAdjacentHTML("beforeend", `<option value="">${escapeHtml(emptyLabel)}</option>`);
+      items.forEach(v => el.insertAdjacentHTML("beforeend", `<option value="${escAttr(v)}" ${v === selected ? "selected" : ""}>${escapeHtml(v)}</option>`));
+    }
+
+    async function loadOrchestration() {
+      try {
+        const res = await fetch("/api/orchestration");
+        orchestrationInfo = await res.json();
+        const engines = orchestrationInfo.active_engines;
+        const sel = document.getElementById("planner-engine");
+        fillSelect(sel, engines, orchestrationInfo.planner.engine);
+        onPlannerEngineChange(orchestrationInfo.planner.model);
+        document.getElementById("plan-offline-banner").classList.toggle("hidden", !orchestrationInfo.offline);
+      } catch (e) {
+        console.error("Falha ao carregar o planejador:", e);
+      }
+    }
+
+    function onPlannerEngineChange(preferredModel) {
+      const engine = document.getElementById("planner-engine").value;
+      const info = (globalHealth || {})[engine] || {};
+      const models = [...(info.available_models || [])];
+      const chosen = typeof preferredModel === "string" ? preferredModel : "";
+      if (chosen && !models.includes(chosen)) models.unshift(chosen);
+      fillSelect(document.getElementById("planner-model"), models, chosen, "Padrão do motor");
+    }
+
+    async function savePlanner() {
+      const engine = document.getElementById("planner-engine").value;
+      const model = document.getElementById("planner-model").value;
+      const res = await fetch("/api/orchestration/planner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ engine, model })
+      });
+      const data = await res.json().catch(() => ({}));
+      setPlanStatus(res.ok ? "Planejador salvo." : ((data.detail && data.detail.message) || "Erro ao salvar."));
+    }
+
+    function setPlanStatus(text) { document.getElementById("plan-status").innerText = text; }
+
+    async function generatePlan() {
+      const goal = document.getElementById("plan-goal").value.trim();
+      if (goal.length < 3) { alert("Descreva o objetivo."); return; }
+      const btn = document.getElementById("btn-gen-plan");
+      btn.disabled = true;
+      document.getElementById("btn-run-plan").disabled = true;
+      document.getElementById("plan-results").innerHTML = "";
+      setPlanStatus("O planejador está pensando...");
+      try {
+        const res = await fetch("/api/orchestration/plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ goal })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setPlanStatus("");
+          alert((data.detail && data.detail.message) || "Não foi possível gerar o plano.");
+          return;
+        }
+        currentPlan = data;
+        renderPlan();
+        const p = data.planner;
+        setPlanStatus(`Plano de ${p.engine}${p.model ? " / " + p.model : ""}: ${data.steps.length} passo(s). Revise e execute.`);
+        document.getElementById("btn-run-plan").disabled = data.steps.length === 0;
+      } catch (e) {
+        setPlanStatus("");
+        alert("Erro ao gerar o plano: " + e);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function renderPlan() {
+      const warn = document.getElementById("plan-warnings");
+      warn.innerHTML = (currentPlan.warnings || []).map(w =>
+        `<div class="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">${escapeHtml(w)}</div>`).join("");
+      const box = document.getElementById("plan-steps");
+      box.innerHTML = "";
+      currentPlan.steps.forEach((st, i) => {
+        const row = document.createElement("div");
+        row.className = "bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-2";
+        const engineOpts = ['<option value="">Automático (Hera escolhe)</option>']
+          .concat(currentPlan.executors.map(e => `<option value="${escAttr(e)}" ${e === st.engine ? "selected" : ""}>${escapeHtml(e)}</option>`)).join("");
+        row.innerHTML = `
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-bold text-white">${i + 1}. ${escapeHtml(st.title)}</span>
+            <div class="flex items-center gap-2">
+              <select onchange="currentPlan.steps[${i}].engine = this.value" class="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100">${engineOpts}</select>
+              <button onclick="removePlanStep(${i})" class="text-xs text-rose-400 hover:text-rose-300">remover</button>
+            </div>
+          </div>
+          <textarea rows="3" oninput="currentPlan.steps[${i}].instruction = this.value" class="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-2 text-xs text-zinc-200 font-mono resize-y">${escapeHtml(st.instruction)}</textarea>
+          <div class="text-[11px] text-zinc-500">${st.depends_on.length ? "depende de: " + escapeHtml(st.depends_on.join(", ")) : "sem dependências"}</div>
+        `;
+        box.appendChild(row);
+      });
+    }
+
+    function removePlanStep(i) {
+      const gone = currentPlan.steps[i].id;
+      currentPlan.steps.splice(i, 1);
+      currentPlan.steps.forEach(s => { s.depends_on = s.depends_on.filter(d => d !== gone); });
+      renderPlan();
+      document.getElementById("btn-run-plan").disabled = currentPlan.steps.length === 0;
+    }
+
+    async function executePlan() {
+      if (!currentPlan || !currentPlan.steps.length) return;
+      document.getElementById("btn-run-plan").disabled = true;
+      setPlanStatus("Executando o plano...");
+      document.getElementById("plan-results").innerHTML = "";
+      try {
+        const res = await fetch("/api/orchestration/execute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ goal: document.getElementById("plan-goal").value, steps: currentPlan.steps })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setPlanStatus("");
+          alert((data.detail && data.detail.message) || "O plano foi recusado.");
+          document.getElementById("btn-run-plan").disabled = false;
+          return;
+        }
+        setPlanStatus(`Plano ${data.run_id} em execução (acompanhe no Task Studio).`);
+      } catch (e) {
+        setPlanStatus("");
+        document.getElementById("btn-run-plan").disabled = false;
+        alert("Erro ao executar o plano: " + e);
+      }
+    }
+
+    function showPlanResults(data) {
+      const box = document.getElementById("plan-results");
+      document.getElementById("btn-run-plan").disabled = false;
+      setPlanStatus(data.error ? "O plano falhou: " + data.error : "Plano concluído.");
+      box.innerHTML = (data.steps || []).map(r => {
+        const ok = r.status === "SUCCEEDED";
+        const badge = ok ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-rose-500/10 text-rose-400 border-rose-500/20";
+        return `<div class="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-white">${escapeHtml(r.title)}</span>
+            <span class="flex items-center gap-2 text-[11px] text-zinc-400 font-mono">${escapeHtml(r.engine)} ${escapeHtml(r.model)}
+              <span class="px-2 py-0.5 rounded-full border font-bold ${badge}">${escapeHtml(r.status)}</span></span>
+          </div>
+          <pre class="text-xs text-zinc-300 whitespace-pre-wrap font-mono max-h-48 overflow-y-auto">${escapeHtml(r.output_text || r.summary)}</pre>
+        </div>`;
+      }).join("");
     }
   </script>
 </body>
