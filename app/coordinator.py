@@ -2,6 +2,7 @@ import time
 from typing import List, Optional, Callable
 from models.task import AgentTask, AgentResult, TaskStatus
 from app.state_store import StateStore
+from app.privacy_guard import PrivacyGuard
 
 class Coordinator:
     """Coordenador central com emissão de feedback em tempo real para o chat."""
@@ -52,6 +53,9 @@ class Coordinator:
         else:
             self.store.update_task_status(task_id, TaskStatus.FAILED)
             err = result.error_message or "Falha em critérios de validação."
+            # o motivo da falha fica no historico (antes so aparecia na tela e se perdia)
+            self.store.record_event(task_id, "TASK_FAILED", PrivacyGuard.sanitize_content(err)[:500],
+                                    {"summary": PrivacyGuard.sanitize_content(result.summary or "")[:300]})
             self.notify("❌", "FALHA", f"Tarefa `{task_id}` falhou: {err}")
 
     def cancel_task(self, task_id: str, reason: str = "Cancelado pelo usuário"):

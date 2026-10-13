@@ -1773,16 +1773,25 @@
     function showPlanResults(data) {
       const box = document.getElementById("plan-results");
       document.getElementById("btn-run-plan").disabled = false;
-      setPlanStatus(data.error ? "O plano falhou: " + data.error : "Plano concluído.");
-      box.innerHTML = (data.steps || []).map(r => {
+      const steps = data.steps || [];
+      const failed = steps.filter(r => r.status === "FAILED").length;
+      const cancelled = steps.filter(r => r.status === "CANCELLED").length;
+      const done = steps.filter(r => r.status === "SUCCEEDED").length;
+      let msg = "Plano concluído: todos os " + steps.length + " passos deram certo.";
+      if (data.error) msg = "O plano falhou: " + data.error;
+      else if (failed || cancelled) msg = `Plano terminou com problemas: ${done} de ${steps.length} passo(s) deram certo` + (failed ? `, ${failed} falhou(aram)` : "") + (cancelled ? `, ${cancelled} cancelado(s) por depender de um que falhou` : "") + ".";
+      setPlanStatus(msg);
+      document.getElementById("plan-status").className = "text-xs font-mono " + (data.error || failed ? "text-rose-400" : cancelled ? "text-amber-300" : "text-emerald-400");
+      box.innerHTML = steps.map(r => {
         const ok = r.status === "SUCCEEDED";
-        const badge = ok ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-rose-500/10 text-rose-400 border-rose-500/20";
-        return `<div class="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-2">
+        const badge = ok ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : r.status === "CANCELLED" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-rose-500/10 text-rose-400 border-rose-500/20";
+        return `<div class="bg-zinc-950 border ${ok ? "border-zinc-800" : "border-rose-500/30"} rounded-xl p-3 space-y-2">
           <div class="flex items-center justify-between">
             <span class="text-xs font-bold text-white">${escapeHtml(r.title)}</span>
             <span class="flex items-center gap-2 text-[11px] text-zinc-400 font-mono">${escapeHtml(r.engine)} ${escapeHtml(r.model)}
               <span class="px-2 py-0.5 rounded-full border font-bold ${badge}">${escapeHtml(r.status)}</span></span>
           </div>
+          ${r.error ? `<div class="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-lg p-2 font-mono break-words">Motivo: ${escapeHtml(r.error)}</div>` : ""}
           <pre class="text-xs text-zinc-300 whitespace-pre-wrap font-mono max-h-48 overflow-y-auto">${escapeHtml(r.output_text || r.summary)}</pre>
         </div>`;
       }).join("");

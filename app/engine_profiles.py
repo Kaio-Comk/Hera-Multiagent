@@ -64,6 +64,23 @@ def classify_model(engine: str, model: str) -> str:
     return EQUILIBRADO
 
 
+def filter_ollama_models(models: List[str], sizes: Dict[str, int], vram_mb: Optional[int],
+                         fraction: float = 0.7) -> tuple:
+    """Separa os modelos do Ollama que CABEM na GPU dos que nao cabem (tamanho em disco > 70% da VRAM total).
+    Um modelo grande demais derruba o carregamento ("unable to allocate") e o passo do plano falha."""
+    if not vram_mb:
+        return list(models), []
+    limit = int(vram_mb * 1024 * 1024 * fraction)
+    fits, skipped = [], []
+    for model in models:
+        size = sizes.get(model)
+        if size and size > limit:
+            skipped.append(f"{model} ({size / 1e9:.1f} GB; nesta GPU de {vram_mb / 1024:.0f} GB so cabem ate {limit / 1e9:.1f} GB)")
+        else:
+            fits.append(model)
+    return fits, skipped
+
+
 def describe_models(engine: str, models: Iterable[str]) -> List[Dict[str, str]]:
     return [{"id": m, "strength": classify_model(engine, m)} for m in models]
 
@@ -76,7 +93,7 @@ def build_catalog(engines: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
         models = [m for m in dict.fromkeys(info.get("models") or []) if m and m != "default"][:30]
         catalog.append({"engine": name, "label": profile["label"], "files": profile["files"], "local": profile["local"],
                         "cost": profile["cost"], "about": profile["about"], "default": info.get("default") or "",
-                        "models": describe_models(name, models)})
+                        "notes": list(info.get("notes") or []), "models": describe_models(name, models)})
     return catalog
 
 
@@ -88,7 +105,8 @@ def catalog_text(catalog: List[Dict[str, Any]]) -> str:
         blocks.append(
             f"- MOTOR \"{item['engine']}\" ({item['label']}): {item['about']}\n"
             f"    acesso a arquivos/terminal: {'SIM' if item['files'] else 'NAO'} | roda local: {'SIM' if item['local'] else 'NAO'} | custo: {item['cost']}\n"
-            f"    modelos: {models}")
+            f"    modelos: {models}"
+            + ("".join(f"\n    ATENCAO: nao use {n}" for n in item.get("notes") or [])))
     return "\n".join(blocks)
 
 

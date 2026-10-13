@@ -33,7 +33,7 @@ from app.validator import TaskValidator
 from app.auto_fix import AutoFixEngine
 from app.dag_scheduler import TaskDAG, DAGScheduler
 from app import orchestration
-from app.engine_profiles import build_catalog
+from app.engine_profiles import build_catalog, filter_ollama_models
 from app.runtime_state import resolve_db_path, merge_legacy_db, setup_file_logging
 from app.privacy_guard import PrivacyGuard
 from app.services_control import SERVICES, ServiceManager, port_open
@@ -522,6 +522,36 @@ def _active_executors(requested: Optional[List[str]] = None) -> List[str]:
     return active
 
 
+_GPU_CACHE: Dict[str, Any] = {"at": 0.0, "mb": None}
+
+
+def _gpu_vram_mb() -> Optional[int]:
+    """VRAM total da GPU NVIDIA (MB), com cache de 60 s. None se nao houver GPU/nvidia-smi."""
+    if time.monotonic() - _GPU_CACHE["at"] < 60:
+        return _GPU_CACHE["mb"]
+    mb = None
+    try:
+        proc = subprocess.run(["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],  # nosec B603 B607
+                              capture_output=True, text=True, timeout=3.0)
+        if proc.returncode == 0 and proc.stdout.strip():
+            mb = int(float(proc.stdout.strip().splitlines()[0]))
+    except Exception:       # noqa: BLE001
+        pass
+    _GPU_CACHE.update(at=time.monotonic(), mb=mb)
+    return mb
+
+
+async def _ollama_sizes() -> Dict[str, int]:
+    """Tamanho (bytes) de cada modelo instalado no Ollama, via /api/tags."""
+    base = getattr(adapters.get("ollama"), "base_url", "http://localhost:11434")
+    try:
+        async with httpx.AsyncClient(timeout=3.0, trust_env=False) as client:
+            data = (await client.get(f"{str(base).rstrip('/')}/api/tags")).json()
+        return {m["name"]: int(m.get("size") or 0) for m in data.get("models", []) if isinstance(m, dict) and m.get("name")}
+    except Exception:       # noqa: BLE001
+        return {}
+
+
 async def _engine_catalog(executors: List[str]):
     """Catalogo dos motores que estao NO AR agora (com os modelos que cada um lista). Devolve (catalogo, fora_do_ar)."""
     async def probe(name: str):
@@ -540,7 +570,10 @@ async def _engine_catalog(executors: List[str]):
         elif name == "hera_router" and not getattr(adapters[name], "has_cloud", lambda: True)():
             continue                    # roteador sem nenhum provedor de nuvem ligado: nao ha o que oferecer ao planejador
         else:
-            up[name] = {"models": list(health.available_models or []),
+            models, notes = list(health.available_models or []), []
+            if name == "ollama" and models:            # nao oferece ao planejador o que nao cabe na GPU desta maquina
+                models, notes = filter_ollama_models(models, await _ollama_sizes(), await asyncio.to_thread(_gpu_vram_mb))
+            up[name] = {"models": models, "notes": notes,
                         "default": router.default_models.get(name) or getattr(adapters[name], "default_model", "")}
     return build_catalog(up), down
 
@@ -594,6 +627,9 @@ async def make_plan(req: PlanRequest):
     warnings: List[str] = []
     if down:
         warnings.append(f"Motores ligados mas fora do ar agora (ficaram fora do plano): {', '.join(down)}.")
+    for entry in catalog:
+        for note in entry.get("notes") or []:
+            warnings.append(f"{entry['engine']}: modelo deixado de fora do plano por nao caber na GPU: {note}")
     if forced:
         warnings.append(f"O planejador escolhido ({planner_engine}) nao pode ver este pedido: {reason}")
     try:
@@ -641,10 +677,12 @@ async def execute_plan(req: PlanExecuteRequest, background_tasks: BackgroundTask
                                "model": tsk.assigned_model or "",
                                "status": res.status.value if res else "CANCELLED",
                                "summary": (res.summary if res else "")[:500],
+                               "error": PrivacyGuard.sanitize_content(res.error_message)[:500] if res and res.error_message else "",
                                "output_text": (res.output_text if res else "")[:20000]})
             for row in report:
-                task_log.info("plano %s passo %s ('%s') motor=%s modelo=%s status=%s", run_id, row["id"], row["title"],
-                              row["engine"], row["model"], row["status"])
+                task_log.log(logging.INFO if row["status"] == "SUCCEEDED" else logging.WARNING,
+                             "plano %s passo %s ('%s') motor=%s modelo=%s status=%s%s", run_id, row["id"], row["title"],
+                             row["engine"], row["model"], row["status"], f" erro={row['error']}" if row["error"] else "")
             await ws_manager.broadcast({"type": "orchestration_finished", "run_id": run_id, "steps": report})
         except Exception as exc:        # noqa: BLE001
             task_log.exception("Plano %s falhou", run_id)

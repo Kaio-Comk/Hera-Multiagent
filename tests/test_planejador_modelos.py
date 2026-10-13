@@ -194,3 +194,79 @@ async def test_api_executar_envia_o_modelo_escolhido_para_cada_motor(api):
         await asyncio.sleep(0.1)
     assert [t.assigned_model for t in planner.received] == ["haiku", "sonnet"]           # o inventado virou o padrao do motor
     assert local.received[0].assigned_model == "qwen3.5:4b"
+
+
+# --------------------------------------------------------------------------- modelos que nao cabem na GPU / falhas visiveis
+from app.engine_profiles import filter_ollama_models  # noqa: E402
+from models.agent import RunHandle  # noqa: E402
+from models.task import AgentResult, TaskStatus  # noqa: E402
+
+
+def test_filtra_modelos_do_ollama_que_nao_cabem_na_gpu():
+    sizes = {"qwen3.5:4b": 3_324_173_934, "qwen2.5-coder:1.5b": 986_000_000, "sem-tamanho": 0}
+    fits, skipped = filter_ollama_models(list(sizes), sizes, 4096)               # GPU de 4 GB: cabem ate ~3,0 GB
+    assert fits == ["qwen2.5-coder:1.5b", "sem-tamanho"] and len(skipped) == 1 and "qwen3.5:4b" in skipped[0] and "4 GB" in skipped[0]
+    assert filter_ollama_models(list(sizes), sizes, None) == (list(sizes), [])  # sem GPU conhecida: nao filtra nada
+    assert filter_ollama_models(list(sizes), sizes, 24576)[1] == []             # GPU grande: tudo cabe
+
+
+def test_catalogo_avisa_o_planejador_do_que_nao_usar():
+    cat = build_catalog({"ollama": {"models": ["qwen2.5-coder:1.5b"], "notes": ["qwen3.5:4b (3.3 GB)"], "default": ""}})
+    assert "ATENCAO: nao use qwen3.5:4b (3.3 GB)" in catalog_text(cat)
+
+
+@pytest.mark.asyncio
+async def test_plano_nao_oferece_modelo_que_nao_cabe_na_gpu(api, monkeypatch):
+    planner, local, _ = api
+    local.models = ["qwen3.5:4b", "qwen2.5-coder:1.5b"]
+    async def sizes():
+        return {"qwen3.5:4b": 3_324_173_934, "qwen2.5-coder:1.5b": 986_000_000}
+    monkeypatch.setattr(server, "_ollama_sizes", sizes)
+    monkeypatch.setattr(server, "_gpu_vram_mb", lambda: 4096)
+    planner.output = steps({"engine": "ollama", "model": "qwen3.5:4b", "title": "Resumir"})
+    async with client() as c:
+        data = (await c.post("/api/orchestration/plan", json={"goal": "resumir o projeto"})).json()
+    cat = {x["engine"]: x for x in data["catalog"]}
+    assert [m["id"] for m in cat["ollama"]["models"]] == ["qwen2.5-coder:1.5b"]
+    assert any("nao caber na GPU" in w and "qwen3.5:4b" in w for w in data["warnings"])
+    assert data["steps"][0]["model"] == ""                                       # o planejador escolheu o pesado: descartado
+    assert "ATENCAO: nao use qwen3.5:4b" in planner.received[0].instruction
+
+
+class FailingEngine(Engine):
+    async def collect(self, handle):
+        return AgentResult(task_id=handle.task_id, status=TaskStatus.FAILED, summary="Exceção no motor",
+                           error_message="unable to allocate CUDA_Host buffer; chave sk-" + "abcdef0123456789" * 2)
+
+
+@pytest.mark.asyncio
+async def test_passo_que_falha_mostra_o_motivo_e_fica_no_log_sem_segredo(api, monkeypatch):
+    import logging
+    planner, local, _ = api
+    broken = FailingEngine("ollama", ["qwen2.5-coder:1.5b"])
+    fakes = {"claude_code": planner, "ollama": broken}
+    monkeypatch.setattr(server, "adapters", fakes)
+    monkeypatch.setattr(server.router, "adapters", fakes)
+    events = []
+    monkeypatch.setattr(server.ws_manager, "broadcast", lambda payload: _record(events, payload))
+    body = {"goal": "x", "steps": [{"id": "s1", "title": "Resumir", "instruction": "resume", "engine": "ollama", "model": "qwen2.5-coder:1.5b"}]}
+    async with client() as c:
+        assert (await c.post("/api/orchestration/execute", json=body)).status_code == 200
+    for _ in range(80):
+        if any(e.get("type") == "orchestration_finished" for e in events):
+            break
+        await asyncio.sleep(0.1)
+    done = next(e for e in events if e.get("type") == "orchestration_finished")
+    step = done["steps"][0]
+    assert step["status"] == "FAILED" and "CUDA_Host" in step["error"] and "abcdef0123456789" not in step["error"]
+    for handler in logging.getLogger("hera").handlers:
+        handler.flush()
+    log = server.LOG_FILE.read_text(encoding="utf-8")
+    assert "status=FAILED" in log and "CUDA_Host" in log and "abcdef0123456789" not in log
+    with server.store._get_connection() as db:
+        row = db.execute("SELECT message FROM events WHERE event_type='TASK_FAILED' AND task_id LIKE 'run-%' ORDER BY id DESC LIMIT 1").fetchone()
+    assert row is not None and "CUDA_Host" in row[0] and "abcdef0123456789" not in row[0]
+
+
+async def _record(events, payload):
+    events.append(payload)
