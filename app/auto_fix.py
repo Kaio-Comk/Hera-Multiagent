@@ -4,6 +4,7 @@ from models.task import AgentTask, AgentResult, TaskStatus
 from app.coordinator import Coordinator
 from app.router import TaskRouter
 from app.validator import TaskValidator, ValidationResult
+from adapters import progress
 
 class AutoFixEngine:
     """Motor de execução com validação objetiva e loop de auto-correção."""
@@ -13,8 +14,10 @@ class AutoFixEngine:
         router: TaskRouter,
         coordinator: Coordinator,
         validator: Optional[TaskValidator] = None,
-        on_feedback: Optional[Callable[[str], None]] = None
+        on_feedback: Optional[Callable[[str], None]] = None,
+        console=None,
     ):
+        self.console = console            # ConsoleBus opcional: a tarefa "fala" em tempo real
         self.router = router
         self.coordinator = coordinator
         self.validator = validator or TaskValidator()
@@ -50,9 +53,25 @@ class AutoFixEngine:
                 reason=reason
             )
 
-            # 2. Execução via adaptador
-            handle = await adapter.submit(task)
-            result = await adapter.collect(handle)
+            # 2. Execução via adaptador (com o console ao vivo ligado para esta tentativa)
+            token = None
+            started = asyncio.get_event_loop().time()
+            if self.console is not None:
+                ctx = {"title": task.title, "engine": adapter.name, "model": model_name}
+                label = f"tentativa {task.retry_count + 1}" if task.retry_count else ""
+                self.console.emit("step_start", (reason or "") + (f" ({label})" if label else ""), run=task.id, step=task.id, **ctx)
+                token = progress.bind(self.console.sink_for(task.id, task.id, **ctx))
+            try:
+                handle = await adapter.submit(task)
+                result = await adapter.collect(handle)
+            finally:
+                if token is not None:
+                    progress.unbind(token)
+            if self.console is not None:
+                self.console.emit("step_end", result.summary or "", run=task.id, step=task.id, title=task.title,
+                                  engine=adapter.name, model=model_name, status=result.status.value,
+                                  seconds=round(asyncio.get_event_loop().time() - started, 1), error=result.error_message or "",
+                                  **{k: v for k, v in (result.metadata or {}).items() if v is not None})
 
             # 3. Validação objetiva
             criteria_count = len(task.acceptance_criteria) + len(task.validation_commands)

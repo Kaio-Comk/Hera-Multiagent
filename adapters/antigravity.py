@@ -1,5 +1,7 @@
 import os
 from adapters.model_args import clean_model, model_args
+from adapters.cli_stream import AntigravityStream, run_streaming
+from adapters.progress import STATUS, say
 from app.locations import find_agy_binary
 import shutil
 import time
@@ -116,7 +118,7 @@ Instrução:
 
         models, real = await self._discover_models()
         # o modelo escolhido agora vale; com a lista real do CLI, so passa o que ele conhece (senao usa o padrao dele)
-        cmd = [self.binary_path, *model_args(task.assigned_model, models if real else None), "-p", prompt, "--output-format", "text"]
+        cmd = [self.binary_path, *model_args(task.assigned_model, models if real else None), "-p", prompt, "--output-format", "stream-json"]
 
         # Validação estrita de workspace
         if task.workspace and not os.path.isdir(task.workspace):
@@ -131,38 +133,35 @@ Instrução:
         cwd = task.workspace if task.workspace else None
 
         try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                cwd=cwd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            self._active_processes[task.id] = proc
-            handle.process_id = proc.pid
+            parser = AntigravityStream()
+            say(STATUS, f"Executando no Antigravity (modelo {task.assigned_model or 'padrao'})...")
 
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            def remember(proc):
+                self._active_processes[task.id] = proc
+                handle.process_id = proc.pid
+
+            code, raw_out, stderr_str = await run_streaming(cmd, cwd, timeout, parser, on_proc=remember)
             elapsed = time.time() - start_time
+            output = parser.text() if (parser.final is not None or parser.ok is not None) else raw_out.strip()
 
-            stdout_str = stdout.decode("utf-8", errors="replace").strip()
-            stderr_str = stderr.decode("utf-8", errors="replace").strip()
-
-            if proc.returncode == 0:
+            if code == 0 and parser.ok is not False:
                 return AgentResult(
                     task_id=task.id,
                     status=TaskStatus.SUCCEEDED,
                     summary=f"Antigravity concluiu a tarefa com sucesso em {elapsed:.2f}s",
-                    output_text=stdout_str,
-                    execution_time_seconds=round(elapsed, 2)
+                    output_text=output,
+                    execution_time_seconds=round(elapsed, 2),
+                    metadata=dict(parser.meta)
                 )
-            else:
-                return AgentResult(
-                    task_id=task.id,
-                    status=TaskStatus.FAILED,
-                    summary=f"Antigravity finalizou com código {proc.returncode}",
-                    output_text=stdout_str,
-                    error_message=stderr_str,
-                    execution_time_seconds=round(elapsed, 2)
-                )
+            return AgentResult(
+                task_id=task.id,
+                status=TaskStatus.FAILED,
+                summary=f"Antigravity finalizou com código {code}",
+                output_text=output,
+                error_message=stderr_str or parser.error or output[:500] or "O Antigravity terminou com erro.",
+                execution_time_seconds=round(elapsed, 2),
+                metadata=dict(parser.meta)
+            )
 
         except asyncio.TimeoutError:
             elapsed = time.time() - start_time

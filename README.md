@@ -66,6 +66,14 @@
 
 ---
 
+## 🖥️ Live console (the Hera "talks" while it works)
+
+A docked **Console do Hera** (bottom of every tab) narrates a plan or task in real time: each step starting (engine / model / why), what the agent says, the tools it calls (`Bash: ls -la`, file reads...) and their results, "still working (4min 05s)" heartbeats, and each step ending with duration, tokens and cost, or the reason it failed. It uses the CLIs' native `stream-json` output (Claude Code, Antigravity) and streaming for Ollama.
+
+- Filters (speech / tools / system), copy, clear, auto-scroll; it survives page reloads.
+- Every run is saved to `data/runs/<id>.jsonl` (last 40) so you can reopen it from the console's run picker, even after restarting Hera. Texts go through the secret filter first.
+- `data/logs/hera.log` keeps only summaries (no conversation content).
+
 ## 🧱 UI without CDNs
 
 The panel loads everything from the server itself (`/static`: compiled Tailwind CSS, Lucide, marked, DOMPurify and the Inter/JetBrains Mono fonts), so it works offline and ships with a strict Content-Security-Policy. Static files are public read-only; every API route still needs the token. After changing Tailwind classes in `web/index.html`, regenerate with `python tools/build_ui.py` (needs Node.js).

@@ -1,3 +1,4 @@
+import json
 import time
 import asyncio
 from typing import Dict, Any, Optional, List
@@ -6,6 +7,7 @@ import httpx
 from models.task import AgentTask, AgentResult, TaskStatus
 from models.agent import HealthStatus, AgentCapabilities, RunHandle
 from adapters.base import AgentAdapter
+from adapters.progress import STATUS, TEXT, say
 
 class OllamaAdapter:
     """Adaptador para o motor Ollama local (GPU/CPU).
@@ -94,7 +96,7 @@ Por favor, execute e forneça uma resposta direta, técnica e precisa."""
         payload = {
             "model": model_name,
             "prompt": prompt,
-            "stream": False,
+            "stream": True,
             "options": {
                 "temperature": 0.2
             }
@@ -102,44 +104,64 @@ Por favor, execute e forneça uma resposta direta, técnica e precisa."""
 
         try:
             timeout_cfg = httpx.Timeout(task.timeout_seconds or self.timeout)
+            say(STATUS, f"Executando no Ollama ({model_name})...")
             async with httpx.AsyncClient(timeout=timeout_cfg) as client:
-                response = await client.post(
-                    f"{self.base_url}/api/generate",
-                    json=payload
-                )
+                # stream: o texto chega aos poucos e o console ao vivo mostra enquanto o modelo escreve
+                async with client.stream("POST", f"{self.base_url}/api/generate", json=payload) as response:
+                    if response.status_code != 200:
+                        body = (await response.aread()).decode("utf-8", errors="replace")
+                        return AgentResult(
+                            task_id=task.id,
+                            status=TaskStatus.FAILED,
+                            summary=f"Erro HTTP {response.status_code} do Ollama",
+                            error_message=body,
+                            execution_time_seconds=round(time.time() - start_time, 2)
+                        )
+                    parts: List[str] = []
+                    pending = ""
+                    last_flush = time.monotonic()
+                    final: Dict[str, Any] = {}
+                    async for line in response.aiter_lines():
+                        if not line.strip():
+                            continue
+                        data = json.loads(line)
+                        if data.get("error"):
+                            raise RuntimeError(str(data["error"]))
+                        piece = data.get("response", "")
+                        if piece:
+                            parts.append(piece)
+                            pending += piece
+                            if "\n" in pending or len(pending) >= 240 or time.monotonic() - last_flush >= 0.6:
+                                say(TEXT, pending)
+                                pending, last_flush = "", time.monotonic()
+                        if data.get("done"):
+                            final = data
+                    if pending:
+                        say(TEXT, pending)
 
                 elapsed = time.time() - start_time
+                response_text = "".join(parts).strip()
 
-                if response.status_code == 200:
-                    data = response.json()
-                    response_text = data.get("response", "").strip()
+                # Estatísticas de telemetria da GPU/CPU
+                eval_count = final.get("eval_count", 0)
+                eval_duration = final.get("eval_duration", 0)
+                tps = 0.0
+                if eval_duration > 0 and eval_count > 0:
+                    tps = eval_count / (eval_duration / 1e9)
 
-                    # Estatísticas de telemetria da GPU/CPU
-                    eval_count = data.get("eval_count", 0)
-                    eval_duration = data.get("eval_duration", 0)
-                    tps = 0.0
-                    if eval_duration > 0 and eval_count > 0:
-                        tps = eval_count / (eval_duration / 1e9)
+                summary = f"Concluído via Ollama ({model_name}) em {elapsed:.2f}s"
+                if tps > 0:
+                    summary += f" (~{tps:.1f} tokens/s)"
 
-                    summary = f"Concluído via Ollama ({model_name}) em {elapsed:.2f}s"
-                    if tps > 0:
-                        summary += f" (~{tps:.1f} tokens/s)"
-
-                    return AgentResult(
-                        task_id=task.id,
-                        status=TaskStatus.SUCCEEDED,
-                        summary=summary,
-                        output_text=response_text,
-                        execution_time_seconds=round(elapsed, 2)
-                    )
-                else:
-                    return AgentResult(
-                        task_id=task.id,
-                        status=TaskStatus.FAILED,
-                        summary=f"Erro HTTP {response.status_code} do Ollama",
-                        error_message=response.text,
-                        execution_time_seconds=round(elapsed, 2)
-                    )
+                return AgentResult(
+                    task_id=task.id,
+                    status=TaskStatus.SUCCEEDED,
+                    summary=summary,
+                    output_text=response_text,
+                    execution_time_seconds=round(elapsed, 2),
+                    metadata={"output_tokens": eval_count or None, "input_tokens": final.get("prompt_eval_count"),
+                              "tokens_per_second": round(tps, 1) or None}
+                )
 
         except asyncio.CancelledError:
             elapsed = time.time() - start_time

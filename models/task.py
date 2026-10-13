@@ -43,3 +43,4 @@ class AgentResult(BaseModel):
     execution_time_seconds: float = 0.0
     error_message: Optional[str] = None
     validation_evidence: Dict[str, bool] = Field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict)       # custo, tokens, duracao (quando o motor informa)

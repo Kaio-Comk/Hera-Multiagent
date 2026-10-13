@@ -28,12 +28,35 @@ def test_model_args_so_aceita_o_que_o_cli_lista():
     assert model_args("default") == [] and model_args(None) == []
 
 
+class Reader:
+    """Imita o StreamReader do asyncio (readline/read) sobre bytes fixos."""
+
+    def __init__(self, data: bytes):
+        self._lines = data.splitlines(keepends=True)
+        self._i = 0
+
+    async def readline(self):
+        if self._i < len(self._lines):
+            self._i += 1
+            return self._lines[self._i - 1]
+        return b""
+
+    async def read(self, n=-1):
+        data = b"".join(self._lines[self._i:])
+        self._i = len(self._lines)
+        return data
+
+
 class FakeProc:
     def __init__(self, out=b"OK", code=0):
         self._out, self.returncode, self.pid = out, code, 1234
+        self.stdout, self.stderr = Reader(out), Reader(b"")
 
     async def communicate(self):
         return self._out, b""
+
+    async def wait(self):
+        return self.returncode
 
 
 def capture_exec(monkeypatch, outputs=None):
