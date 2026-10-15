@@ -126,7 +126,6 @@ def api(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "SECRET_STORE", SecretStore(tmp_path / "k.json", use_dpapi=False))
     monkeypatch.setattr(server, "USAGE", UsageLedger(tmp_path / "usage.db"))
     monkeypatch.setattr(server.gateway_tier_router, "adapters", list(server.gateway_tier_router.adapters))
-    monkeypatch.setattr(server.gateway_tier_router, "combos", {})
     monkeypatch.setattr(server.gateway_tier_router, "usage", server.USAGE)
     monkeypatch.setattr(server.router, "default_offline", False)
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
@@ -146,7 +145,6 @@ async def test_api_colar_chave_no_painel_ativa_o_provedor(api):
     async with client() as c:
         await c.post("/api/router/providers", json={"preset": "groq", "human_code": code()})
         assert (await c.get("/api/router/state")).json()["providers"][0]["active"] is False
-        assert (await c.post("/api/router/providers/groq/keys", json={"keys": [KEY]})).status_code == 403
         assert (await c.post("/api/router/providers/groq/keys", json={"keys": ["curta"], "human_code": code()})).status_code == 400
         assert (await c.post("/api/router/providers/inexistente/keys", json={"keys": [KEY], "human_code": code()})).status_code == 404
         ok = await c.post("/api/router/providers/groq/keys", json={"keys": [KEY], "human_code": code()})

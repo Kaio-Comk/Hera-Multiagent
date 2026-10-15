@@ -1,7 +1,7 @@
 import os
 import pytest
 from models.task import AgentTask, AgentResult, TaskStatus
-from app.obsidian import ObsidianVaultWriter
+from app.vault.obsidian import ObsidianVaultWriter
 
 def test_obsidian_writer_creates_note(tmp_path):
     vault_dir = str(tmp_path / "Vault")

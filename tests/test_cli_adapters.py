@@ -59,3 +59,33 @@ async def test_antigravity_live_health():
     health = await adapter.health_check()
     assert health.healthy is True
     assert health.version  # nao fixa a versao do CLI (mudava a cada atualizacao)
+
+
+@pytest.mark.asyncio
+async def test_agente_em_silencio_alem_do_limite_e_encerrado_antes_do_prazo_total():
+    import sys
+    import time
+    from adapters.cli_stream import IdleTimeout, run_streaming
+
+    class Mudo:
+        def feed(self, line):
+            pass
+
+    started = time.monotonic()
+    with pytest.raises(IdleTimeout):
+        await run_streaming([sys.executable, "-c", "import time; time.sleep(30)"], None, 60, Mudo(), idle_limit=1.0)
+    assert time.monotonic() - started < 20          # nao esperou os 30 s do processo nem os 60 s do prazo
+
+
+@pytest.mark.asyncio
+async def test_agente_que_fala_dentro_do_limite_nao_e_cortado():
+    import sys
+    from adapters.cli_stream import run_streaming
+
+    class Mudo:
+        def feed(self, line):
+            pass
+
+    code, out, _ = await run_streaming([sys.executable, "-c", "import time\nfor i in range(3):\n print(i, flush=True); time.sleep(0.5)"],
+                                       None, 30, Mudo(), idle_limit=3.0)
+    assert code == 0 and "2" in out

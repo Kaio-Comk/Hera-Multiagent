@@ -1,4 +1,4 @@
-Arquivos de terceiros incluidos em web/static (gerados por tools/build_ui.py a partir do npm):
+Arquivos de terceiros incluidos em web/static (gerados por tools/ui/build_ui.py a partir do npm):
 
 - Tailwind CSS 3.4.17 (CSS compilado)        MIT        https://github.com/tailwindlabs/tailwindcss
 - Lucide 0.468.0 (icones)                    ISC        https://github.com/lucide-icons/lucide

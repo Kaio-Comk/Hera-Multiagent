@@ -2,8 +2,8 @@
 
 Por que existem: o token mestre do Hera dá acesso a TUDO (config, tarefas, aprovações). Uma ferramenta que só precisa
 de modelos recebe uma chave própria que:
-  * só funciona em `/v1/chat/completions` e `/v1/models` (nunca nas rotas de gestão);
-  * pode ser limitada a certos modelos/combos, a N requisições por minuto e a N tokens por dia;
+  * só funciona em `/v1/chat/completions`, `/v1/messages`, `/v1/responses` e `/v1/models` (nunca nas rotas de gestão);
+  * pode ser limitada a certos modelos, a N requisições por minuto e a N tokens por dia;
   * pode ser desligada ou apagada sozinha, sem trocar o token mestre;
   * é mostrada UMA vez na criação; o Hera guarda só o hash (SHA-256 com sal) e um prefixo para você reconhecê-la.
 """
@@ -25,7 +25,16 @@ from typing import Any, Deque, Dict, List, Optional
 
 KEY_PREFIX = "hk-"
 MAX_KEYS = 50
-CLIENT_PATHS = frozenset({"/v1/chat/completions", "/v1/models"})
+CLIENT_PATHS = frozenset({"/v1/chat/completions", "/v1/messages", "/v1/responses", "/v1/embeddings",
+                          "/v1/images/generations", "/v1/audio/speech", "/v1/audio/transcriptions", "/v1/search", "/v1/videos",
+                          "/v1/models"})
+VIDEO_PREFIX = "/v1/videos/"                       # status e arquivo: o id faz parte do caminho
+
+
+def is_client_path(path: str) -> bool:
+    """Rotas de MODELO que uma chave de cliente pode usar (nunca as de gestão)."""
+    return path in CLIENT_PATHS or (path.startswith(VIDEO_PREFIX) and path.count("/") <= 4)
+
 
 
 @dataclass

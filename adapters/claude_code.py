@@ -2,8 +2,9 @@ import os
 import shutil
 import time
 import asyncio
+from adapters import images as images_mod
 from adapters.model_args import model_args
-from adapters.cli_stream import ClaudeStream, run_streaming
+from adapters.cli_stream import ClaudeStream, run_streaming, _kill_tree
 from adapters.progress import STATUS, say
 from typing import Dict, Any, Optional, List
 
@@ -16,6 +17,8 @@ from adapters.base import AgentAdapter
 CLAUDE_MODELS = ["sonnet", "opus", "haiku", "fable", "claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5",
                  "claude-haiku-5-5", "claude-opus-4-1", "claude-sonnet-4-5", "claude-haiku-4-5"]
 
+PERMISSION_MODES = ("auto", "acceptEdits", "plan", "default")      # nunca "bypassPermissions"
+
 
 class ClaudeCodeAdapter:
     """Adaptador para Claude Code CLI no Windows.
@@ -24,8 +27,10 @@ class ClaudeCodeAdapter:
     Ideal para planejamento de tarefas, refatorações complexas e resolução de problemas técnicos.
     """
 
-    def __init__(self, binary_path: Optional[str] = None, timeout: float = 300.0):
+    def __init__(self, binary_path: Optional[str] = None, timeout: float = 300.0, permission_mode: str = ""):
         self.binary_path = binary_path or self._discover_binary()
+        # sem isso o `claude -p` nega toda escrita (nao ha quem aprove); `acceptEdits` libera so edicoes de arquivo na pasta de trabalho
+        self.permission_mode = permission_mode if permission_mode in PERMISSION_MODES else ""
         self.timeout = timeout
         self._active_processes: Dict[str, asyncio.subprocess.Process] = {}
         self._active_tasks: Dict[str, asyncio.Task] = {}
@@ -79,7 +84,7 @@ class ClaudeCodeAdapter:
             supports_terminal=True,
             supports_streaming=False,
             supports_json_schema=True,
-            supports_vision=False,
+            supports_vision=True,
             is_local_offline=False
         )
 
@@ -90,7 +95,7 @@ Instrução:
 """
         if task.acceptance_criteria:
             prompt += "\nCritérios de Aceite:\n" + "\n".join(f"- {c}" for c in task.acceptance_criteria)
-        return prompt
+        return prompt + images_mod.prompt_note(task.images)
 
     async def _execute_cli(self, task: AgentTask, handle: RunHandle) -> AgentResult:
         start_time = handle.start_time
@@ -98,7 +103,14 @@ Instrução:
         timeout = task.timeout_seconds or self.timeout
 
         # stream-json: o CLI conta o que faz (texto, ferramentas) e o console ao vivo mostra em tempo real
-        cmd = [self.binary_path, *model_args(task.assigned_model), "-p", prompt, "--output-format", "stream-json", "--verbose"]
+        cmd = [self.binary_path, *model_args(task.assigned_model)]
+        if self.permission_mode:
+            cmd += ["--permission-mode", self.permission_mode]
+        extra = list(dict.fromkeys([d for d in task.extra_dirs if os.path.isdir(d)] + images_mod.image_dirs(task.images)))
+        if extra:
+            cmd += ["--add-dir", *extra]
+        # `--add-dir` aceita varias pastas; a flag seguinte (`--output-format`) encerra a lista, o prompt nunca vira pasta
+        cmd += ["--output-format", "stream-json", "--verbose", "-p", prompt]
 
         # Validação estrita de workspace
         if task.workspace and not os.path.isdir(task.workspace):
@@ -143,31 +155,23 @@ Instrução:
                 metadata=dict(parser.meta)
             )
 
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as exc:
             elapsed = time.time() - start_time
+            idle = type(exc).__name__ == "IdleTimeout"
             if task.id in self._active_processes:
-                p = self._active_processes[task.id]
-                try:
-                    if os.name == 'nt' and p.pid:
-                        subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
-                    else:
-                        p.kill()
-                except Exception:
-                    pass
+                _kill_tree(self._active_processes[task.id])
             return AgentResult(
                 task_id=task.id,
                 status=TaskStatus.FAILED,
-                summary=f"Timeout atingido ({timeout}s) no Claude Code",
-                error_message=f"Execução excedeu limite de {timeout} segundos",
+                summary=(f"Claude Code parado: {exc} (comando provavelmente travado)" if idle else f"Timeout atingido ({timeout}s) no Claude Code"),
+                error_message=(f"Sem saída do agente: {exc}. Um comando ficou preso (ex.: varredura recursiva de pasta enorme); o agente foi encerrado." if idle
+                               else f"Execução excedeu limite de {timeout} segundos"),
                 execution_time_seconds=round(elapsed, 2)
             )
         except asyncio.CancelledError:
             elapsed = time.time() - start_time
             if task.id in self._active_processes:
-                try:
-                    self._active_processes[task.id].kill()
-                except Exception:
-                    pass
+                _kill_tree(self._active_processes[task.id])
             return AgentResult(
                 task_id=task.id,
                 status=TaskStatus.CANCELLED,
@@ -217,10 +221,7 @@ Instrução:
         """Encerra o processo do Claude Code e a tarefa assíncrona."""
         proc = self._active_processes.get(handle.task_id)
         if proc:
-            try:
-                proc.kill()
-            except Exception:
-                pass
+            _kill_tree(proc)
         exec_task = self._active_tasks.get(handle.task_id)
         if exec_task and not exec_task.done():
             exec_task.cancel()

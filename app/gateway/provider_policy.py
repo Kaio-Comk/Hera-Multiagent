@@ -23,6 +23,18 @@ APPROVED_CLOUD_DOMAINS: Set[str] = {
     "generativelanguage.googleapis.com"
 }
 
+def prefer_ipv4_loopback(url: str) -> str:
+    """`localhost` -> `127.0.0.1`. No Windows, `localhost` tenta o IPv6 (::1) antes do IPv4 e, com o servico parado,
+    cada tentativa demora segundos (a checagem de saude do Ollama levava ~5 s para dizer "parado"). O Ollama escuta em
+    127.0.0.1 por padrao; so loopback e afetado."""
+    from urllib.parse import urlsplit, urlunsplit
+    parts = urlsplit(url or "")
+    if (parts.hostname or "").lower() != "localhost":
+        return url
+    netloc = "127.0.0.1" + (f":{parts.port}" if parts.port else "")
+    return urlunsplit(parts._replace(netloc=netloc))
+
+
 class SSRFSecurityError(ValueError):
     """Exceção levantada quando uma URL de provedor viola as políticas de SSRF."""
     pass
@@ -125,3 +137,32 @@ def validate_provider_url(url: str, is_local_profile: bool = False) -> str:
         raise SSRFSecurityError(f"Porta {port} não permitida para provedor de nuvem. Permitidas: {ALLOWED_WEB_PORTS}")
 
     return clean_url.rstrip("/")
+
+
+# ── cabeçalhos extras por provedor (ex.: `HTTP-Referer`, `X-Title`, versão da API) ─────────────────────────────
+_HEADER_NAME = __import__("re").compile(r"^[A-Za-z][A-Za-z0-9-]{0,59}$")
+# O Hera controla autenticação e enquadramento da requisição: o usuário não pode sobrescrever estes.
+FORBIDDEN_HEADERS = frozenset({"authorization", "proxy-authorization", "host", "content-length", "content-type",
+                               "transfer-encoding", "connection", "cookie", "set-cookie", "upgrade", "te", "trailer",
+                               "x-forwarded-for", "x-forwarded-host", "forwarded"})
+MAX_EXTRA_HEADERS = 10
+
+
+def sanitize_extra_headers(raw: Any) -> Dict[str, str]:
+    """Valida os cabeçalhos extras de um provedor. Levanta ValueError com o motivo; devolve {nome: valor} limpo."""
+    if raw in (None, {}):
+        return {}
+    if not isinstance(raw, dict) or len(raw) > MAX_EXTRA_HEADERS:
+        raise ValueError(f"'headers' precisa ser um mapa com até {MAX_EXTRA_HEADERS} cabeçalhos.")
+    out: Dict[str, str] = {}
+    for name, value in raw.items():
+        name = str(name).strip()
+        if not _HEADER_NAME.match(name):
+            raise ValueError(f"Nome de cabeçalho inválido: {name!r}.")
+        if name.lower() in FORBIDDEN_HEADERS:
+            raise ValueError(f"O cabeçalho {name!r} é controlado pelo Hera e não pode ser definido.")
+        value = str(value).strip()
+        if not value or len(value) > 500 or any(ord(c) < 32 or ord(c) == 127 for c in value):
+            raise ValueError(f"Valor inválido para {name!r} (1 a 500 caracteres, sem quebra de linha).")
+        out[name] = value
+    return out

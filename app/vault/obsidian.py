@@ -5,7 +5,7 @@ import datetime
 from typing import List, Optional
 from models.task import AgentTask, AgentResult
 
-from app.vault_memory import ObsidianMemoryManager
+from app.vault.memory import ObsidianMemoryManager
 
 class ObsidianVaultWriter:
     """Módulo de persistência durável no Obsidian Vault.

@@ -16,7 +16,8 @@ PROVIDER_PRESETS: List[Dict[str, Any]] = [
     {"id": "openrouter", "label": "OpenRouter", "tier": "cloud_cheap", "base_url": "https://openrouter.ai/api/v1",
      "key_env": "OPENROUTER_API_KEY", "default_model": "deepseek/deepseek-chat-v3.1:free",
      "models": ["deepseek/deepseek-chat-v3.1:free"],
-     "signup": "https://openrouter.ai/keys", "note": "Um endereço para centenas de modelos; há modelos ':free'."},
+     "signup": "https://openrouter.ai/keys", "login": "key_login",
+     "note": "Um endereço para centenas de modelos; há modelos ':free'. Dá para entrar com a sua conta em um clique."},
     {"id": "deepseek", "label": "DeepSeek", "tier": "cloud_cheap", "base_url": "https://api.deepseek.com/v1",
      "key_env": "DEEPSEEK_API_KEY", "default_model": "deepseek-chat", "models": ["deepseek-chat", "deepseek-reasoner"],
      "signup": "https://platform.deepseek.com/api_keys", "note": "Barato; bom para código."},
@@ -88,7 +89,30 @@ PROVIDER_PRESETS: List[Dict[str, Any]] = [
     {"id": "lambda", "label": "Lambda Inference", "tier": "cloud_cheap", "base_url": "https://api.lambda.ai/v1",
      "key_env": "LAMBDA_API_KEY", "default_model": "llama3.3-70b-instruct-fp8", "models": ["llama3.3-70b-instruct-fp8"],
      "signup": "https://cloud.lambda.ai/api-keys", "note": ""},
+    # `params`: partes do endereço que só você sabe. O painel pergunta e o servidor troca `{chave}` no `base_url` ao criar.
+    {"id": "cloudflare-ai", "label": "Cloudflare Workers AI", "tier": "cloud_free",
+     "base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1", "key_env": "CLOUDFLARE_API_KEY",
+     "default_model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+     "models": ["@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/meta/llama-3.1-8b-instruct-fp8-fast", "@cf/meta/llama-3.2-3b-instruct",
+                "@cf/mistralai/mistral-small-3.1-24b-instruct", "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b", "@cf/moonshotai/kimi-k2.6"],
+     "params": [{"key": "account_id", "label": "ID da conta Cloudflare (32 caracteres, no painel do Cloudflare)"}],
+     "signup": "https://dash.cloudflare.com/profile/api-tokens",
+     "note": "Camada gratuita. Precisa do token de API e do ID da conta (nao testado ao vivo)."},
 ]
+
+
+BASE_PRESETS: List[Dict[str, Any]] = list(PROVIDER_PRESETS)     # só os escritos à mão acima (o gerador de catálogo usa)
+
+# Provedores extras (compatíveis com a API da OpenAI) trazidos do registro de provedores do 9router (dados, MIT).
+# Ver app/gateway/presets_extra.py: endereços e modelos ainda NÃO testados ao vivo. Gerado por tools/sync_9router_catalog.py.
+from app.gateway.presets_extra import EXTRA_PRESETS, MODEL_OVERLAY  # noqa: E402
+
+_known_ids = {p["id"] for p in PROVIDER_PRESETS}
+PROVIDER_PRESETS += [p for p in EXTRA_PRESETS if p["id"] not in _known_ids]
+for _p in PROVIDER_PRESETS:                                     # modelos mais novos dos provedores já conhecidos
+    _upd = MODEL_OVERLAY.get(_p["id"])
+    if _upd:
+        _p["default_model"], _p["models"] = _upd["default_model"], list(_upd["models"])
 
 
 def get_preset(preset_id: str) -> Dict[str, Any]:

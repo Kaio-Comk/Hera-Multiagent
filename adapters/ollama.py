@@ -1,11 +1,13 @@
+from app.gateway.provider_policy import prefer_ipv4_loopback
 import json
 import time
 import asyncio
-from typing import Dict, Any, Optional, List
+from typing import Awaitable, Callable, Dict, Any, Optional, List
 import httpx
 
 from models.task import AgentTask, AgentResult, TaskStatus
 from models.agent import HealthStatus, AgentCapabilities, RunHandle
+from adapters import images as images_mod
 from adapters.base import AgentAdapter
 from adapters.progress import STATUS, TEXT, say
 
@@ -17,11 +19,13 @@ class OllamaAdapter:
     """
 
     def __init__(self, base_url: str = "http://localhost:11434", default_model: str = "qwen2.5-coder:1.5b", timeout: float = 120.0):
-        self.base_url = base_url.rstrip("/")
+        self.base_url = prefer_ipv4_loopback(base_url).rstrip("/")
         self.default_model = default_model
         self.timeout = timeout
         self._active_runs: Dict[str, asyncio.Task] = {}
         self._results: Dict[str, AgentResult] = {}
+        # Trava opcional: `await fit_check(modelo)` devolve o motivo da recusa (modelo grande demais para a GPU) ou None.
+        self.fit_check: Optional[Callable[[str], Awaitable[Optional[str]]]] = None
 
     @property
     def name(self) -> str:
@@ -37,6 +41,8 @@ class OllamaAdapter:
                     ver_resp = await client.get(f"{self.base_url}/api/version")
                     if ver_resp.status_code == 200:
                         version = ver_resp.json().get("version", version)
+                except httpx.TransportError:
+                    raise          # daemon parado: nao adianta tentar a lista de modelos (cada tentativa leva ~2 s no Windows)
                 except Exception:
                     pass
 
@@ -87,12 +93,39 @@ Instrução:
 Por favor, execute e forneça uma resposta direta, técnica e precisa."""
         return prompt
 
+    async def _sees_images(self, model_name: str) -> bool:
+        """O modelo aceita imagem? Pergunta ao Ollama (`/api/show` -> capabilities) e, sem resposta, usa o nome do modelo."""
+        try:
+            async with httpx.AsyncClient(timeout=5.0, trust_env=False) as client:
+                resp = await client.post(f"{self.base_url}/api/show", json={"model": model_name})
+            caps = resp.json().get("capabilities") if resp.status_code == 200 else None
+            if isinstance(caps, list):
+                return "vision" in caps
+        except (httpx.HTTPError, ValueError):
+            pass
+        return images_mod.looks_like_vision_model(model_name)
+
     async def _execute_generate(self, task: AgentTask, handle: RunHandle) -> AgentResult:
         """Executa a requisição HTTP POST para o endpoint /api/generate do Ollama."""
         model_name = task.assigned_model or self.default_model
         prompt = self._build_prompt(task)
         start_time = handle.start_time
 
+        if self.fit_check is not None:
+            try:
+                refusal = await self.fit_check(model_name)
+            except Exception:       # noqa: BLE001 - a trava nunca pode impedir a execucao por defeito proprio
+                refusal = None
+            if refusal:
+                return AgentResult(task_id=task.id, status=TaskStatus.FAILED, summary="Modelo do Ollama nao cabe na GPU",
+                                   error_message=refusal, execution_time_seconds=0.0)
+
+        images_b64: List[str] = []
+        if images_mod.usable_images(task.images):
+            if await self._sees_images(model_name):
+                images_b64 = images_mod.encode_base64(task.images)
+            else:
+                prompt += images_mod.not_supported_note(f"ollama/{model_name}", task.images)
         payload = {
             "model": model_name,
             "prompt": prompt,
@@ -102,6 +135,8 @@ Por favor, execute e forneça uma resposta direta, técnica e precisa."""
             }
         }
 
+        if images_b64:
+            payload["images"] = images_b64
         try:
             timeout_cfg = httpx.Timeout(task.timeout_seconds or self.timeout)
             say(STATUS, f"Executando no Ollama ({model_name})...")
@@ -110,10 +145,13 @@ Por favor, execute e forneça uma resposta direta, técnica e precisa."""
                 async with client.stream("POST", f"{self.base_url}/api/generate", json=payload) as response:
                     if response.status_code != 200:
                         body = (await response.aread()).decode("utf-8", errors="replace")
+                        low = body.lower()
+                        oom = "unable to allocate" in low or "out of memory" in low
                         return AgentResult(
                             task_id=task.id,
                             status=TaskStatus.FAILED,
-                            summary=f"Erro HTTP {response.status_code} do Ollama",
+                            summary="Modelo do Ollama sem memoria para carregar (GPU/RAM): use um modelo menor" if oom
+                            else f"Erro HTTP {response.status_code} do Ollama",
                             error_message=body,
                             execution_time_seconds=round(time.time() - start_time, 2)
                         )

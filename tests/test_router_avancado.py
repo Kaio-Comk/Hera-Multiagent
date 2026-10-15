@@ -1,7 +1,6 @@
-"""Roteador avancado: estrategias de combo, disjuntor e limites, apelidos, custo, registro, chaves de acesso de
+"""Roteador avancado: disjuntor e limites, apelidos, custo, registro, chaves de acesso de
 cliente, ajustes, exportar/importar."""
 import json
-import random
 import re
 import sqlite3
 import time
@@ -33,72 +32,8 @@ CLIENT = httpx.AsyncClient()
 
 
 def trio(**errors):
-    return [Fake("a", models=("ma",), error=errors.get("a")), Fake("b", models=("mb",), error=errors.get("b")),
-            Fake("c", models=("mc",), error=errors.get("c"))]
-
-
-def combo_router(strategy, adapters=None, weights=None):
-    r = TierRouter(adapters=adapters or trio())
-    r.combos = {"mix": [{"provider": n, "model": f"m{n}", **({"weight": weights[n]} if weights else {})} for n in "abc"]}
-    r.combo_strategies = {"mix": strategy}
-    return r
-
-
-# --------------------------------------------------------------------------- estrategias de combo
-@pytest.mark.asyncio
-async def test_prioridade_e_sempre_o_primeiro():
-    r = combo_router("priority")
-    for _ in range(3):
-        assert (await r.route_and_execute(req("mix"), CLIENT)).choices[0].message.content == "de a"
-
-
-@pytest.mark.asyncio
-async def test_round_robin_reveza_o_primeiro_passo():
-    r = combo_router("round_robin")
-    got = [(await r.route_and_execute(req("mix"), CLIENT)).choices[0].message.content for _ in range(4)]
-    assert got == ["de a", "de b", "de c", "de a"]
-
-
-@pytest.mark.asyncio
-async def test_round_robin_ainda_tem_fallback():
-    r = combo_router("round_robin", trio(a=GatewayProviderError("x", status_code=500, retryable=True)))
-    r._rr["mix"] = 0
-    assert (await r.route_and_execute(req("mix"), CLIENT)).choices[0].message.content == "de b"   # a falhou -> b
-
-
-@pytest.mark.asyncio
-async def test_mais_rapido_escolhe_pela_latencia_do_historico(tmp_path):
-    ledger = UsageLedger(tmp_path / "u.db")
-    for provider, ms in (("a", 900), ("b", 120), ("c", 400)):
-        for _ in range(3):
-            ledger.record(provider, "m", True, 200, 1, 1, ms)
-    r = combo_router("fastest")
-    r.usage = ledger
-    assert (await r.route_and_execute(req("mix"), CLIENT)).choices[0].message.content == "de b"
-
-
-@pytest.mark.asyncio
-async def test_menos_usado_hoje(tmp_path):
-    ledger = UsageLedger(tmp_path / "u.db")
-    for provider, n in (("a", 5), ("b", 2), ("c", 0)):
-        for _ in range(n):
-            ledger.record(provider, "m", True, 200, 1, 1, 10)
-    r = combo_router("least_used")
-    r.usage = ledger
-    assert (await r.route_and_execute(req("mix"), CLIENT)).choices[0].message.content == "de c"
-
-
-@pytest.mark.asyncio
-async def test_ponderado_respeita_o_peso(monkeypatch):
-    r = combo_router("weighted", weights={"a": 1, "b": 5, "c": 1})
-    seen = {}
-
-    def fake_choices(population, weights):
-        seen["weights"] = list(weights)
-        return [1]                                                     # sorteou o indice 1 (b)
-    monkeypatch.setattr(random, "choices", fake_choices)
-    assert (await r.route_and_execute(req("mix"), CLIENT)).choices[0].message.content == "de b"
-    assert seen["weights"] == [1, 5, 1]
+    """Tres provedores que atendem o MESMO modelo `m` (o fallback e entre provedores, nao entre combos)."""
+    return [Fake(n, models=("m", f"m{n}"), error=errors.get(n)) for n in "abc"]
 
 
 # --------------------------------------------------------------------------- disjuntor e limites
@@ -165,10 +100,10 @@ async def test_limite_diario_de_tokens_usa_o_historico(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_limite_estourado_num_passo_de_combo_cai_para_o_proximo():
-    r = combo_router("priority")
+async def test_limite_estourado_num_provedor_cai_para_o_proximo():
+    r = TierRouter(adapters=trio())
     r.guard.set_limits({"a": {"rpm": 1, "daily_requests": None, "daily_tokens": None}})
-    got = [(await r.route_and_execute(req("mix"), CLIENT)).choices[0].message.content for _ in range(2)]
+    got = [(await r.route_and_execute(req("m"), CLIENT)).choices[0].message.content for _ in range(2)]
     assert got == ["de a", "de b"]
 
 
@@ -182,10 +117,10 @@ async def test_prioridade_dentro_da_camada():
 
 # --------------------------------------------------------------------------- apelidos e custo
 @pytest.mark.asyncio
-async def test_apelido_aponta_para_combo_ou_provedor_barra_modelo():
-    r = combo_router("priority")
-    r.aliases = {"rapido": "mix", "direto": "b/mb"}
-    assert (await r.route_and_execute(req("rapido"), CLIENT)).choices[0].message.content == "de a"
+async def test_apelido_aponta_para_modelo_ou_provedor_barra_modelo():
+    r = TierRouter(adapters=trio())
+    r.aliases = {"rapido": "mc", "direto": "b/mb"}
+    assert (await r.route_and_execute(req("rapido"), CLIENT)).choices[0].message.content == "de c"
     assert (await r.route_and_execute(req("direto"), CLIENT)).choices[0].message.content == "de b"
 
 
@@ -205,14 +140,13 @@ def test_custo_estimado(tmp_path):
 async def test_registro_guarda_cliente_pedido_cadeia_e_custo_sem_segredo(tmp_path):
     ledger = UsageLedger(tmp_path / "u.db")
     secret = "sk-" + "abcdef0123456789" * 2
-    a = Fake("a", models=("ma",), error=GatewayProviderError(f"401 chave {secret} recusada", status_code=502, retryable=True))
-    b = Fake("b", tier="cloud_free", models=("mb",))
+    a = Fake("a", models=("m",), error=GatewayProviderError(f"401 chave {secret} recusada", status_code=502, retryable=True))
+    b = Fake("b", tier="cloud_free", models=("m",))
     r = TierRouter(adapters=[a, b])
-    r.combos = {"mix": [{"provider": "a", "model": "ma"}, {"provider": "b", "model": "mb"}]}
     r.usage = ledger
     token = CLIENT_NAME.set("cursor")
     try:
-        await r.route_and_execute(req("mix"), CLIENT)
+        await r.route_and_execute(req("m"), CLIENT)
     finally:
         CLIENT_NAME.reset(token)
     rows = ledger.logs(10)
@@ -276,7 +210,6 @@ def api(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "SECRET_STORE", SecretStore(tmp_path / "s.json", use_dpapi=False))
     monkeypatch.setattr(server, "USAGE", UsageLedger(tmp_path / "usage.db"))
     monkeypatch.setattr(server.gateway_tier_router, "adapters", [Fake("groq", models=("llama",))])
-    monkeypatch.setattr(server.gateway_tier_router, "combos", {})
     monkeypatch.setattr(server.gateway_tier_router, "usage", server.USAGE)
     monkeypatch.setattr(server.gateway_tier_router, "aliases", {})
     monkeypatch.setattr(server.gateway_tier_router, "tier_order", list(server.gateway_tier_router.tier_order))
@@ -415,30 +348,12 @@ async def test_api_limites_do_provedor_e_reset_do_disjuntor(api):
 
 
 @pytest.mark.asyncio
-async def test_api_combo_com_estrategia_e_peso(api):
-    async with master() as c:
-        await c.post("/api/router/providers", json={"preset": "groq", "human_code": code()})
-        body = {"combos": {"misto": {"strategy": "weighted", "steps": [{"provider": "groq", "model": "m1", "weight": 3},
-                                                                       {"provider": "ollama", "model": "q"}]},
-                           "antigo": [{"provider": "ollama", "model": "q"}]}}
-        assert (await c.put("/api/router/combos", json=body)).status_code == 200
-        state = (await c.get("/api/router/state")).json()["combos"]
-        assert state["misto"]["strategy"] == "weighted" and state["misto"]["steps"][0]["weight"] == 3
-        assert state["antigo"]["strategy"] == "priority"
-        assert server.gateway_tier_router.combo_strategies["misto"] == "weighted"
-        bad = {"combos": {"x1": {"strategy": "aleatorio", "steps": [{"provider": "ollama", "model": "q"}]}}}
-        assert (await c.put("/api/router/combos", json=bad)).status_code == 422
-
-
-@pytest.mark.asyncio
 async def test_api_exportar_e_importar_chegam_desligados_e_sem_chaves(api):
     async with master() as c:
         await c.post("/api/router/providers", json={"preset": "groq", "human_code": code()})
         await c.post("/api/router/providers/groq/keys", json={"keys": ["gsk_" + "Z9y8X7w6V5u4T3s2R1q0" * 2], "human_code": code()})
-        await c.put("/api/router/combos", json={"combos": {"misto": {"strategy": "fastest", "steps": [{"provider": "groq", "model": "m"}]}}})
         exported = (await c.get("/api/router/export")).json()
-        assert "Z9y8X7w6V5u4T3s2R1q0" not in json.dumps(exported) and exported["combos"]["misto"]["strategy"] == "fastest"
-        await c.put("/api/router/combos", json={"combos": {}})
+        assert "Z9y8X7w6V5u4T3s2R1q0" not in json.dumps(exported) and "combos" not in exported
         await c.delete("/api/router/providers/groq")
         assert (await c.post("/api/router/import", json={"data": exported})).status_code == 403
         done = await c.post("/api/router/import", json={"data": exported, "human_code": code()})

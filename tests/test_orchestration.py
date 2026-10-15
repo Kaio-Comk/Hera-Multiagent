@@ -50,7 +50,7 @@ def test_parse_plan_aceita_json_com_cerca_e_texto_em_volta():
     steps, warnings = orchestration.parse_plan(text, ["worker"], 8)
     assert [s["id"] for s in steps] == ["s1", "s2"]
     assert steps[1]["depends_on"] == ["s1"]
-    assert warnings == []
+    assert [w for w in warnings if "criterio de aceite" not in w] == []   # o aviso de criterio e esperado: o JSON do teste nao traz
 
 
 def test_parse_plan_motor_desligado_vira_automatico_com_aviso():
@@ -234,7 +234,10 @@ async def test_api_executar_plano_distribui_aos_motores(api):
         if len(worker.received) == 2:
             break
         await asyncio.sleep(0.1)
-    assert [t.instruction for t in worker.received] == ["Levante os requisitos", "Escreva o codigo"]
+    first, second = [t.instruction for t in worker.received]
+    assert first.startswith("Levante os requisitos") and second.startswith("Escreva o codigo")
+    assert "BLOQUEADO:" in first and "[RESULTADOS DOS PASSOS ANTERIORES]" not in first
+    assert "[RESULTADOS DOS PASSOS ANTERIORES]" in second          # s2 depende de s1 e recebe a saida dele
 
 
 @pytest.mark.asyncio

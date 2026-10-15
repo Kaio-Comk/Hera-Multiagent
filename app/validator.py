@@ -1,8 +1,10 @@
 import os
 import sys
 import shlex
+import shutil
 import asyncio
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 from pydantic import BaseModel, Field
@@ -25,10 +27,13 @@ class TaskValidator:
     SAFE_ENV_VARS = {
         "PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC",
         "TEMP", "TMP", "USERPROFILE", "LOCALAPPDATA", "APPDATA",
-        "PYTHONPATH", "LANG", "LC_ALL"
+        "PYTHONPATH", "LANG", "LC_ALL",
+        # Nome do usuario e pastas do perfil: sem USERNAME o pytest cai em `pytest-of-unknown` (pasta compartilhada que
+        # outro processo pode ter criado com permissao diferente => PermissionError em todo `tmp_path`). Nao sao segredos.
+        "USERNAME", "USERDOMAIN", "HOMEDRIVE", "HOMEPATH", "PROGRAMDATA", "PROGRAMFILES", "SYSTEMDRIVE",
     }
 
-    def __init__(self, command_timeout: float = 60.0, policy_engine: Optional[PolicyEngine] = None):
+    def __init__(self, command_timeout: float = 300.0, policy_engine: Optional[PolicyEngine] = None):
         self.command_timeout = command_timeout
         self.policy_engine = policy_engine or PolicyEngine()
 
@@ -42,6 +47,16 @@ class TaskValidator:
         current_pp = clean.get("PYTHONPATH", "")
         clean["PYTHONPATH"] = f"{working_dir}{os.pathsep}{current_pp}" if current_pp else working_dir
         return clean
+
+    @staticmethod
+    def _project_python(working_dir: str) -> Optional[str]:
+        """Python do ambiente virtual DO PROJETO (`.venv`), se existir: o projeto validado tem as proprias dependencias
+        (aiogram, telethon...) que o Python do Hera nao tem."""
+        for rel in (".venv/Scripts/python.exe", ".venv/bin/python"):
+            candidate = os.path.join(working_dir, *rel.split("/"))
+            if os.path.isfile(candidate):
+                return candidate
+        return None
 
     async def _terminate_process_tree(self, proc: asyncio.subprocess.Process):
         """Encerra com segurança a árvore completa de processos no Windows."""
@@ -79,34 +94,41 @@ class TaskValidator:
         if not argv:
             return (-400, "", "Comando vazio")
 
-        # Se for o binário python, garantir uso do interpretador ativo
+        # Se for o binário python: o .venv do projeto (se houver) ou o interpretador ativo do Hera
         if os.path.basename(argv[0]).lower() in ("python", "python.exe"):
-            argv[0] = sys.executable
+            argv[0] = self._project_python(working_dir) or sys.executable
 
         env = self._build_clean_env(working_dir)
+        # Pasta temporaria PROPRIA deste comando (criada por este processo, apagada no fim): nao herda diretorios de
+        # outros usuarios/processos (ex.: `pytest-of-<user>` com permissao diferente) nem deixa lixo.
+        tmp_root = tempfile.mkdtemp(prefix="hera-val-")
+        env["TEMP"] = env["TMP"] = tmp_root
 
         # 3. Execução estruturada com shell=False
         try:
-            proc = await asyncio.create_subprocess_exec(
-                *argv,
-                cwd=working_dir,
-                env=env,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-        except Exception as e:
-            return (-500, "", f"Falha ao iniciar processo de validação: {e}")
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *argv,
+                    cwd=working_dir,
+                    env=env,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+            except Exception as e:
+                return (-500, "", f"Falha ao iniciar processo de validação: {e}")
 
-        try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self.command_timeout)
-            return (
-                proc.returncode if proc.returncode is not None else -1,
-                stdout.decode("utf-8", errors="replace").strip(),
-                stderr.decode("utf-8", errors="replace").strip()
-            )
-        except asyncio.TimeoutError:
-            await self._terminate_process_tree(proc)
-            return (-1, "", f"Comando excedeu o timeout de segurança de {self.command_timeout}s")
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self.command_timeout)
+                return (
+                    proc.returncode if proc.returncode is not None else -1,
+                    stdout.decode("utf-8", errors="replace").strip(),
+                    stderr.decode("utf-8", errors="replace").strip()
+                )
+            except asyncio.TimeoutError:
+                await self._terminate_process_tree(proc)
+                return (-1, "", f"Comando excedeu o timeout de segurança de {self.command_timeout}s")
+        finally:
+            shutil.rmtree(tmp_root, ignore_errors=True)
 
     async def validate(self, task: AgentTask, result: AgentResult, workspace: Optional[str] = None) -> ValidationResult:
         """Executa todas as validações declaradas para a tarefa."""

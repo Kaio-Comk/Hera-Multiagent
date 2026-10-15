@@ -3,7 +3,7 @@
 A UI nao usa mais CDN: tudo sai do proprio servidor. Os arquivos gerados ficam no repositorio, entao so e preciso rodar
 este script quando mudar uma classe do Tailwind em web/index.html ou para atualizar uma biblioteca:
 
-    python tools/build_ui.py          (precisa de Node.js/npm; baixa as versoes fixas abaixo numa pasta temporaria)
+    python tools/ui/build_ui.py          (precisa de Node.js/npm; baixa as versoes fixas abaixo numa pasta temporaria)
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 STATIC = ROOT / "web" / "static"
 PACKAGES = ["tailwindcss@3.4.17", "lucide@0.468.0", "marked@12.0.2", "dompurify@3.1.6",
             "@fontsource/inter@5.1.0", "@fontsource/jetbrains-mono@5.1.0"]

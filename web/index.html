@@ -3,219 +3,131 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>👑 HERA Multiagent — Mission Control</title>
-  <!-- Tudo local (web/static, gerado por tools/build_ui.py): a UI nao busca nada na internet -->
+  <title>Hera · Orquestração local de IAs</title>
+  <meta name="theme-color" content="#0a0f15">
+  <meta name="description" content="Hera: orquestre IAs locais e na nuvem, revise cada mudança e guarde o aprendizado no Obsidian. Tudo na sua máquina.">
+  <link rel="icon" type="image/svg+xml" href="/static/brand/favicon.svg">
+  <!-- Tudo local (web/static, gerado por tools/ui/build_ui.py): a UI nao busca nada na internet -->
+  <link rel="stylesheet" href="/static/hera-ui.css">
   <link rel="stylesheet" href="/static/tailwind.css">
   <link rel="stylesheet" href="/static/fonts.css">
   <script src="/static/vendor/lucide.min.js"></script>
   <!-- Markdown + sanitizador (o conteudo das notas NUNCA entra na pagina sem passar pelo DOMPurify) -->
   <script src="/static/vendor/marked.min.js"></script>
   <script src="/static/vendor/purify.min.js"></script>
-  <style>
-    body { font-family: 'Inter', system-ui, sans-serif; background-color: #1a1a1a;
-           background-image: linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
-           background-size: 32px 32px; }
-    .font-mono { font-family: 'JetBrains Mono', monospace; }
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: #1a1a1a; }
-    ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: #4a4a4a; }
-    .card { background: #262626; border: 1px solid #333; border-radius: 14px; }
-    .switch { position: relative; display: inline-block; width: 40px; height: 22px; flex: none; }
-    .switch input { opacity: 0; width: 0; height: 0; }
-    .switch span { position: absolute; inset: 0; background: #4a4a4a; border-radius: 999px; cursor: pointer; transition: .2s; }
-    .switch span:before { content: ""; position: absolute; height: 16px; width: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
-    .switch input:checked + span { background: #e56a4a; }
-    .switch input:checked + span:before { transform: translateX(18px); }
-    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-    .md-preview { font-size: 14px; line-height: 1.7; color: #e5e5e5; word-wrap: break-word; }
-    .md-preview h1 { font-size: 1.7em; font-weight: 800; margin: 1.1em 0 .5em; color: #fff; }
-    .md-preview h2 { font-size: 1.4em; font-weight: 700; margin: 1.1em 0 .4em; color: #fff; border-bottom: 1px solid #333; padding-bottom: .2em; }
-    .md-preview h3 { font-size: 1.15em; font-weight: 700; margin: 1em 0 .3em; color: #fff; }
-    .md-preview h4, .md-preview h5, .md-preview h6 { font-weight: 700; margin: 1em 0 .3em; color: #ddd; }
-    .md-preview p { margin: .6em 0; }
-    .md-preview ul { list-style: disc; padding-left: 1.5em; margin: .5em 0; }
-    .md-preview ol { list-style: decimal; padding-left: 1.5em; margin: .5em 0; }
-    .md-preview li > input[type=checkbox] { margin-right: .4em; accent-color: #e56a4a; }
-    .md-preview a { color: #ee8466; text-decoration: underline; cursor: pointer; }
-    .md-preview a.wl-missing { color: #f87171; }
-    .md-preview code { background: #1f1f1f; border: 1px solid #333; border-radius: 4px; padding: .1em .35em; font-family: 'JetBrains Mono', monospace; font-size: .88em; }
-    .md-preview pre { background: #161616; border: 1px solid #333; border-radius: 8px; padding: 12px; overflow-x: auto; margin: .8em 0; }
-    .md-preview pre code { background: none; border: 0; padding: 0; }
-    .md-preview blockquote { border-left: 3px solid #e56a4a; background: rgba(229,106,74,.07); margin: .8em 0; padding: .4em 1em; border-radius: 0 8px 8px 0; color: #d4d4d4; }
-    .md-preview blockquote.callout { border-left-color: #3b82f6; background: rgba(59,130,246,.08); }
-    .md-preview blockquote.callout-warning, .md-preview blockquote.callout-caution { border-left-color: #f59e0b; background: rgba(245,158,11,.08); }
-    .md-preview blockquote.callout-danger, .md-preview blockquote.callout-bug, .md-preview blockquote.callout-failure { border-left-color: #ef4444; background: rgba(239,68,68,.08); }
-    .md-preview blockquote.callout-tip, .md-preview blockquote.callout-success, .md-preview blockquote.callout-check { border-left-color: #10b981; background: rgba(16,185,129,.08); }
-    .md-preview blockquote.callout-abstract, .md-preview blockquote.callout-summary { border-left-color: #14b8a6; background: rgba(20,184,166,.08); }
-    .md-preview .callout-title { color: #fff; }
-    .md-preview table { border-collapse: collapse; margin: .8em 0; }
-    .md-preview th, .md-preview td { border: 1px solid #333; padding: 4px 10px; }
-    .md-preview th { background: #1f1f1f; }
-    .md-preview hr { border: 0; border-top: 1px solid #333; margin: 1.2em 0; }
-    .md-preview img { max-width: 100%; border-radius: 8px; }
-    .md-preview .ext-img { color: #9ca3af; font-size: 12px; border: 1px dashed #4a4a4a; border-radius: 6px; padding: 2px 8px; }
-    .vt-row { display: flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; color: #b8b8b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .vt-row:hover { background: #2f2f2f; color: #fff; }
-    .vt-row.active { background: rgba(229,106,74,.18); color: #fff; }
-  </style>
+  
 </head>
 
-<body class="text-zinc-100 min-h-screen flex antialiased selection:bg-brand-500 selection:text-white">
+<body class="min-h-screen flex antialiased">
+  <a href="#main" class="skip-link">Ir para o conteúdo</a>
+  <div class="scrim" onclick="toggleSidebar(false)"></div>
 
   <!-- Barra lateral -->
-  <aside class="w-60 shrink-0 sticky top-0 h-screen flex flex-col border-r border-zinc-800 bg-[#1e1e1ed9] backdrop-blur-md">
-    <div class="px-5 py-5 flex items-center gap-3">
-      <div class="w-10 h-10 rounded-xl bg-brand-500 flex items-center justify-center shadow-lg shadow-brand-500/20 text-xl">👑</div>
+  <aside id="sidebar" class="sidebar" aria-label="Navegação principal">
+    <div class="brand">
+      <img src="/static/brand/hera-mark.svg" alt="" width="38" height="38">
       <div>
-        <h1 class="text-base font-extrabold tracking-tight text-white leading-tight">HERA</h1>
-        <p class="text-[11px] text-zinc-500 leading-tight">Multiagent · v1.0.0</p>
+        <div class="brand-name">HERA</div>
+        <div class="brand-sub">Orquestração local de IAs</div>
       </div>
     </div>
-    <nav class="flex-1 overflow-y-auto px-3 pb-4 space-y-0.5">
-      <div class="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Trabalho</div>
-      <button onclick="switchTab('studio')" id="tab-btn-studio" class="tab-btn w-full px-3 py-2 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/70 flex items-center gap-3">
-        <i data-lucide="play" class="w-4 h-4"></i> Task Studio
-      </button>
-      <button onclick="switchTab('plan')" id="tab-btn-plan" class="tab-btn w-full px-3 py-2 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/70 flex items-center gap-3">
-        <i data-lucide="network" class="w-4 h-4"></i> Plano
-      </button>
-      <button onclick="switchTab('history')" id="tab-btn-history" class="tab-btn w-full px-3 py-2 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/70 flex items-center gap-3">
-        <i data-lucide="history" class="w-4 h-4"></i> Histórico
-      </button>
-      <button onclick="switchTab('hitl')" id="tab-btn-hitl" class="tab-btn w-full px-3 py-2 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/70 flex items-center gap-3">
-        <i data-lucide="git-pull-request" class="w-4 h-4"></i> Diff Review
-      </button>
-      <div class="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Motores</div>
-      <button onclick="switchTab('engines')" id="tab-btn-engines" class="tab-btn w-full px-3 py-2 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/70 flex items-center gap-3">
-        <i data-lucide="cpu" class="w-4 h-4"></i> Motores & IAs
-      </button>
-      <button onclick="switchTab('router')" id="tab-btn-router" class="tab-btn w-full px-3 py-2 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/70 flex items-center gap-3">
-        <i data-lucide="route" class="w-4 h-4"></i> Roteador
-      </button>
-      <button onclick="switchTab('arena')" id="tab-btn-arena" class="tab-btn w-full px-3 py-2 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/70 flex items-center gap-3">
-        <i data-lucide="swords" class="w-4 h-4"></i> Arena & MCP
-      </button>
-      <div class="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500">Sistema</div>
-      <button onclick="switchTab('hardware')" id="tab-btn-hardware" class="tab-btn w-full px-3 py-2 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/70 flex items-center gap-3">
-        <i data-lucide="activity" class="w-4 h-4"></i> Hardware
-      </button>
-      <button onclick="switchTab('vault')" id="tab-btn-vault" class="tab-btn w-full px-3 py-2 rounded-lg text-sm font-medium transition-all text-zinc-400 hover:text-white hover:bg-zinc-800/70 flex items-center gap-3">
-        <i data-lucide="book-open" class="w-4 h-4"></i> Obsidian
-      </button>
+    <nav class="nav-scroll" aria-label="Seções">
+      <button type="button" onclick="switchTab('home')" id="tab-btn-home" class="nav-item"><i data-lucide="layout-dashboard"></i><span>Início</span></button>
+      <div class="nav-label">Trabalho</div>
+      <button type="button" onclick="switchTab('plan')" id="tab-btn-plan" class="nav-item"><i data-lucide="network"></i><span>Plano</span></button>
+      <button type="button" onclick="switchTab('history')" id="tab-btn-history" class="nav-item"><i data-lucide="history"></i><span>Histórico</span></button>
+      <button type="button" onclick="switchTab('hitl')" id="tab-btn-hitl" class="nav-item"><i data-lucide="git-pull-request"></i><span>Revisão de diffs</span></button>
+      <div class="nav-label">Inteligência</div>
+      <button type="button" onclick="switchTab('engines')" id="tab-btn-engines" class="nav-item"><i data-lucide="cpu"></i><span>Motores &amp; IAs</span></button>
+      <button type="button" onclick="switchTab('router')" id="tab-btn-router" class="nav-item"><i data-lucide="route"></i><span>Roteador</span></button>
+      <button type="button" onclick="switchTab('arena')" id="tab-btn-arena" class="nav-item"><i data-lucide="swords"></i><span>Arena &amp; MCP</span></button>
+      <div class="nav-label">Conhecimento</div>
+      <button type="button" onclick="switchTab('vault')" id="tab-btn-vault" class="nav-item"><i data-lucide="book-open"></i><span>Obsidian</span></button>
+      <div class="nav-label">Sistema</div>
+      <button type="button" onclick="switchTab('hardware')" id="tab-btn-hardware" class="nav-item"><i data-lucide="activity"></i><span>Hardware</span></button>
     </nav>
-    <div class="p-4 border-t border-zinc-800">
-      <div id="ws-badge" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-        <span>Conectado</span>
-      </div>
+    <div class="side-foot">
+      <div id="ws-badge" class="chip chip-ok" role="status"><span class="pip live"></span><span>Conectado</span></div>
+      <div class="flex items-center justify-between text-[11px] text-zinc-500"><span>Hera v1.0.0</span><span>100% na sua máquina</span></div>
     </div>
   </aside>
 
   <div class="flex-1 min-w-0 flex flex-col">
 
+  <!-- Barra superior -->
+  <header class="topbar">
+    <button type="button" class="menu-btn" onclick="toggleSidebar(true)" aria-label="Abrir o menu" aria-controls="sidebar"><i data-lucide="menu" class="w-5 h-5"></i></button>
+    <div class="min-w-0 flex-1">
+      <div class="crumbs"><span>Hera</span><span aria-hidden="true">/</span><b id="tb-group">Hera</b></div>
+      <div class="flex items-baseline gap-3 flex-wrap"><h1 id="tb-title" class="page-title">Início</h1><span id="tb-sub" class="page-sub"></span></div>
+    </div>
+    <div class="hidden sm:flex items-center gap-2">
+      <span id="tb-offline" class="chip chip-warn hidden" title="Nenhum provedor de nuvem será usado"><i data-lucide="wifi-off" class="w-3.5 h-3.5"></i> 100% offline</span>
+      <span id="tb-engines" class="chip hidden" title="Motores ligados e respondendo"><span class="pip"></span><span id="tb-engines-text">motores…</span></span>
+      <button type="button" class="btn btn-primary hidden md:inline-flex" onclick="switchTab('plan'); chatNew()"><i data-lucide="plus" class="w-4 h-4"></i> Nova conversa</button>
+    </div>
+  </header>
+
   <!-- Container Principal -->
-  <main class="flex-1 p-6 max-w-7xl w-full mx-auto">
+  <main id="main" tabindex="-1" class="flex-1 p-4 sm:p-6 pb-20 max-w-7xl w-full mx-auto">
 
-    <!-- ==================== ABA 1: TASK STUDIO ==================== -->
-    <section id="tab-studio" class="tab-content block space-y-6">
-      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        <!-- Formulário de Envio (5 cols) -->
-        <div class="lg:col-span-5 space-y-4">
-          <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4 backdrop-blur-sm">
-            <h2 class="text-base font-bold text-white flex items-center gap-2">
-              <i data-lucide="sparkles" class="w-5 h-5 text-brand-400"></i> Nova Tarefa Soberana
-            </h2>
 
-            <div>
-              <label class="block text-xs font-semibold text-zinc-400 mb-1">Título da Tarefa (opcional)</label>
-              <input type="text" id="task-title" placeholder="Ex: Criar API de Autenticação JWT" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-brand-500">
-            </div>
 
-            <div>
-              <label class="block text-xs font-semibold text-zinc-400 mb-1">Instrução / Prompt Detalhado *</label>
-              <textarea id="task-instruction" rows="4" placeholder="Descreva exatamente o que o agente deve construir ou analisar..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3.5 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-brand-500"></textarea>
-            </div>
-
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <label class="block text-xs font-semibold text-zinc-400 mb-1">Tipo de Tarefa</label>
-                <select id="task-type" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-brand-500">
-                  <option value="coding">💻 Coding</option>
-                  <option value="research">🔍 Research</option>
-                  <option value="review">👀 Code Review</option>
-                  <option value="summary">📝 Summary</option>
-                  <option value="offline">🔒 Strict Offline</option>
-                </select>
-              </div>
-
-              <div>
-                <label class="block text-xs font-semibold text-zinc-400 mb-1">Motor de IA</label>
-                <select id="task-agent" onchange="onAgentSelectChange()" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-brand-500">
-                  <option value="">⚡ Automático (Hera Roteia)</option>
-                  <option value="ollama">🦙 Ollama (Local)</option>
-                  <option value="hera_router">🧭 Roteador Hera (embutido)</option>
-                  <option value="claude_code">⚙️ Claude Code CLI</option>
-                  <option value="antigravity">🚀 Antigravity CLI</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label class="block text-xs font-semibold text-zinc-400 mb-1">Modelo Selecionado</label>
-              <select id="task-model" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-brand-500">
-                <option value="">Padrão do Motor Selecionado</option>
-              </select>
-            </div>
-
-            <div>
-              <label class="block text-xs font-semibold text-zinc-400 mb-1">Critérios de Aceite (um por linha)</label>
-              <textarea id="task-criteria" rows="2" placeholder="Ex: Código compila com sucesso&#10;Função tem type hints" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-2.5 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-brand-500"></textarea>
-            </div>
-
-            <div class="flex items-center justify-between pt-2">
-              <label class="flex items-center gap-2 cursor-pointer text-xs text-zinc-300">
-                <input type="checkbox" id="save-obsidian" checked class="rounded bg-zinc-950 border-zinc-800 text-brand-600 focus:ring-0">
-                Salvar no Obsidian Vault
-              </label>
-
-              <button onclick="submitTask()" id="btn-run-task" class="px-5 py-2.5 bg-gradient-to-r from-brand-500 to-brand-700 hover:from-brand-500 hover:to-brand-700 text-white rounded-xl text-sm font-semibold shadow-lg shadow-brand-500/25 transition-all flex items-center gap-2">
-                <i data-lucide="play" class="w-4 h-4"></i> Executar Tarefa
-              </button>
-            </div>
+    <!-- ==================== INÍCIO ==================== -->
+    <section id="tab-home" class="tab-content hidden space-y-6">
+      <div class="hero p-6 lg:p-8">
+        <div class="relative z-10 max-w-2xl space-y-3">
+          <span class="chip chip-brand"><span class="pip live"></span> Local · seu PC · seus dados</span>
+          <h2 class="text-2xl lg:text-3xl font-extrabold tracking-tight text-white">Orquestre suas IAs. A Hera vigia cada passo.</h2>
+          <p class="text-sm lg:text-base text-zinc-300">Planeje, delegue a motores locais e da nuvem, revise cada mudança antes de entrar e guarde o que aprendeu no Obsidian. Nada sai da sua máquina sem a sua regra.</p>
+          <div class="flex flex-wrap gap-2 pt-1">
+            <button type="button" class="btn btn-primary" onclick="switchTab('plan'); chatNew()"><i data-lucide="message-square-plus" class="w-4 h-4"></i> Nova conversa</button>
+            <button type="button" class="btn btn-ghost" onclick="switchTab('plan')"><i data-lucide="network" class="w-4 h-4"></i> Abrir o Plano</button>
+            <button type="button" class="btn btn-ghost" onclick="goConnections()"><i data-lucide="plug" class="w-4 h-4"></i> Conectar uma ferramenta</button>
           </div>
         </div>
+      </div>
 
-        <!-- Terminal de Logs em Tempo Real & Resultados (7 cols) -->
-        <div class="lg:col-span-7 flex flex-col space-y-4">
-          <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl flex-1 flex flex-col backdrop-blur-sm">
-            <div class="flex items-center justify-between pb-3 border-b border-zinc-800">
-              <div class="flex items-center gap-2">
-                <div class="w-3 h-3 rounded-full bg-red-500/80"></div>
-                <div class="w-3 h-3 rounded-full bg-amber-500/80"></div>
-                <div class="w-3 h-3 rounded-full bg-emerald-500/80"></div>
-                <span class="text-xs font-mono text-zinc-400 ml-2">hera-orchestrator.log</span>
-              </div>
-              <button onclick="clearConsole()" class="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">Limpar Terminal</button>
-            </div>
+      <div class="grid grid-cols-2 xl:grid-cols-4 gap-4">
+        <div class="card kpi"><div class="k-label">Motores prontos</div><div id="hm-k-engines" class="k-value">–</div><div id="hm-k-engines-h" class="k-hint">verificando…</div></div>
+        <div class="card kpi"><div class="k-label">Chamadas (7 dias)</div><div id="hm-k-calls" class="k-value">–</div><div id="hm-k-calls-h" class="k-hint">pelo Roteador</div></div>
+        <div class="card kpi"><div class="k-label">Tokens (7 dias)</div><div id="hm-k-tokens" class="k-value">–</div><div id="hm-k-tokens-h" class="k-hint">entrada + saída</div></div>
+        <div class="card kpi"><div class="k-label">Custo estimado</div><div id="hm-k-cost" class="k-value">–</div><div class="k-hint">com os preços que você cadastrou</div></div>
+      </div>
 
-            <!-- Janela de Console -->
-            <div id="console-logs" class="font-mono text-xs text-zinc-300 space-y-1.5 overflow-y-auto max-h-[380px] min-h-[280px] p-3 mt-3 bg-zinc-950/80 rounded-xl border border-zinc-800/80">
-              <div class="text-zinc-500">[00:00:00] 👑 Hera Multiagent pronto para execução. Aguardando tarefas...</div>
-            </div>
-
-            <!-- Card de Saída do Agente -->
-            <div id="result-box" class="mt-4 p-4 bg-zinc-950 border border-zinc-800 rounded-xl hidden">
-              <div class="flex items-center justify-between mb-2">
-                <span id="result-status" class="px-2.5 py-0.5 rounded-full text-xs font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Sucesso</span>
-                <span id="result-id" class="text-xs text-zinc-500 font-mono"></span>
-              </div>
-              <div id="result-content" class="text-xs text-zinc-200 whitespace-pre-wrap font-mono max-h-60 overflow-y-auto p-2 bg-zinc-900/50 rounded-lg"></div>
-            </div>
+      <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div class="card p-5 xl:col-span-2">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="history" class="w-4 h-4 text-brand-400"></i> Tarefas recentes</h3>
+            <button type="button" class="text-xs text-brand-300 hover:text-white" onclick="switchTab('history')">Ver histórico</button>
           </div>
+          <div id="hm-tasks"><div class="empty">Carregando…</div></div>
         </div>
+        <div class="card p-5">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="cpu" class="w-4 h-4 text-brand-400"></i> Motores</h3>
+            <button type="button" class="text-xs text-brand-300 hover:text-white" onclick="switchTab('engines')">Gerenciar</button>
+          </div>
+          <div id="hm-engines"><div class="empty">Carregando…</div></div>
+        </div>
+      </div>
 
+      <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div class="card p-5 xl:col-span-2">
+          <h3 class="text-sm font-bold text-white flex items-center gap-2 mb-3"><i data-lucide="bar-chart-3" class="w-4 h-4 text-brand-400"></i> Uso do Roteador nos últimos 7 dias</h3>
+          <div id="hm-spark"><div class="empty">Sem uso ainda. Aponte uma ferramenta para o Roteador e ela aparece aqui.</div></div>
+        </div>
+        <div class="card p-5 space-y-2">
+          <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="plug-zap" class="w-4 h-4 text-brand-400"></i> Conectar ferramentas</h3>
+          <p class="text-xs text-zinc-400">Use o endereço do Hera nas suas ferramentas de IA.</p>
+          <div class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 flex items-center justify-between gap-2"><code id="hm-base" class="text-brand-300 font-mono text-xs truncate"></code><button type="button" class="text-xs text-zinc-400 hover:text-white" onclick="copyText('hm-base')">copiar</button></div>
+          <ul class="text-xs text-zinc-400 space-y-1.5 pt-1">
+            <li><span class="text-zinc-200 font-semibold">Claude Code</span> · <code class="font-mono text-brand-300">ANTHROPIC_BASE_URL</code></li>
+            <li><span class="text-zinc-200 font-semibold">Codex CLI</span> · <code class="font-mono text-brand-300">/v1/responses</code></li>
+            <li><span class="text-zinc-200 font-semibold">Cursor, Cline</span> · <code class="font-mono text-brand-300">/v1</code> (OpenAI)</li>
+          </ul>
+          <button type="button" class="btn btn-ghost w-full" onclick="goConnections()">Ver todas as rotas</button>
+        </div>
       </div>
     </section>
 
@@ -224,8 +136,6 @@
       
       <div class="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 class="text-xl font-bold text-white">Motores &amp; IAs</h2>
-          <p class="text-sm text-zinc-400">Ligue os serviços locais, escolha o modelo de cada motor e decida o que o Hera pode usar.</p>
         </div>
         <button onclick="refreshEngines()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-lg text-xs font-semibold flex items-center gap-2">
           <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Atualizar
@@ -240,7 +150,7 @@
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         <!-- Baixar Nova IA no Ollama -->
-        <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div class="card p-5 space-y-4">
           <div class="flex items-center justify-between">
             <h3 class="text-sm font-bold text-white flex items-center gap-2">
               <i data-lucide="download-cloud" class="w-5 h-5 text-brand-400"></i> Baixar Novo Modelo Local (Ollama)
@@ -253,7 +163,7 @@
           
           <div class="flex gap-2">
             <input type="text" id="pull-model-name" placeholder="Ex: deepseek-coder:1.3b" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-sm text-zinc-100 focus:outline-none focus:border-brand-500">
-            <button onclick="pullOllamaModel()" id="btn-pull" class="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-sm font-semibold transition-all flex items-center gap-2">
+            <button onclick="pullOllamaModel()" id="btn-pull" class="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-brand-ink rounded-xl text-sm font-semibold transition-all flex items-center gap-2">
               <i data-lucide="download" class="w-4 h-4"></i> Baixar
             </button>
           </div>
@@ -265,13 +175,13 @@
               <span id="pull-pct-text" class="font-mono text-brand-400 font-bold">0%</span>
             </div>
             <div class="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
-              <div id="pull-progress-bar" class="h-full bg-gradient-to-r from-brand-500 to-brand-700 w-0 transition-all duration-300"></div>
+              <div id="pull-progress-bar" class="h-full bg-brand-500 w-0 transition-all duration-300"></div>
             </div>
           </div>
         </div>
 
         <!-- Políticas Soberanas e Privacidade -->
-        <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div class="card p-5 space-y-4">
           <h3 class="text-sm font-bold text-white flex items-center gap-2">
             <i data-lucide="shield-check" class="w-5 h-5 text-emerald-400"></i> Políticas de Privacidade & Gate DLP
           </h3>
@@ -306,7 +216,7 @@
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
         
         <!-- Card GPU -->
-        <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-3">
+        <div class="card p-5 space-y-3">
           <div class="flex items-center justify-between">
             <h3 class="text-sm font-bold text-white flex items-center gap-2">
               <i data-lucide="zap" class="w-5 h-5 text-amber-400"></i> GPU Local
@@ -327,7 +237,7 @@
         </div>
 
         <!-- Card CPU -->
-        <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-3">
+        <div class="card p-5 space-y-3">
           <h3 class="text-sm font-bold text-white flex items-center gap-2">
             <i data-lucide="cpu" class="w-5 h-5 text-blue-400"></i> Processador (CPU)
           </h3>
@@ -336,7 +246,7 @@
         </div>
 
         <!-- Card RAM -->
-        <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-3">
+        <div class="card p-5 space-y-3">
           <h3 class="text-sm font-bold text-white flex items-center gap-2">
             <i data-lucide="hard-drive" class="w-5 h-5 text-purple-400"></i> Memória RAM
           </h3>
@@ -351,11 +261,10 @@
     <section id="tab-vault" class="tab-content hidden space-y-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 class="text-xl font-bold text-white">Obsidian</h2>
           <p id="ov-info" class="text-sm text-zinc-400">Carregando o cofre...</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-          <button onclick="ovNewNote('')" class="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-semibold">+ Nova nota</button>
+          <button onclick="ovNewNote('')" class="px-3 py-1.5 bg-brand-500 hover:bg-brand-400 text-brand-ink rounded-lg text-xs font-semibold">+ Nova nota</button>
           <button onclick="ovNewFolder()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold">+ Pasta</button>
           <button onclick="ovDaily()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold">Nota diária</button>
           <button onclick="ovGraph()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold">Mapa de notas</button>
@@ -392,7 +301,7 @@
                   <button id="ovm-split" onclick="ovMode('split')" class="px-2.5 py-1 bg-zinc-900 text-zinc-300">Dividir</button>
                   <button id="ovm-view" onclick="ovMode('view')" class="px-2.5 py-1 bg-zinc-900 text-zinc-300">Ler</button>
                 </div>
-                <button onclick="ovSave()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold">Salvar (Ctrl+S)</button>
+                <button onclick="ovSave()" class="px-3 py-1.5 bg-brand-500 hover:bg-brand-400 text-brand-ink rounded-lg text-xs font-semibold">Salvar (Ctrl+S)</button>
                 <div class="relative">
                   <button onclick="document.getElementById('ov-ai-menu').classList.toggle('hidden')" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold">✨ Hera</button>
                   <div id="ov-ai-menu" class="hidden absolute right-0 mt-1 z-20 w-56 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl p-1 text-xs">
@@ -417,7 +326,7 @@
                 <button onclick="document.getElementById('ov-ai-result').classList.add('hidden')" class="text-xs text-zinc-500">fechar</button></div>
               <pre id="ov-ai-text" class="text-xs text-zinc-200 whitespace-pre-wrap font-mono max-h-56 overflow-y-auto"></pre>
               <div class="flex gap-2">
-                <button onclick="ovAiInsert()" class="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-semibold">Inserir na nota</button>
+                <button onclick="ovAiInsert()" class="px-3 py-1.5 bg-brand-500 hover:bg-brand-400 text-brand-ink rounded-lg text-xs font-semibold">Inserir na nota</button>
                 <button onclick="ovAiCopy()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs">Copiar</button>
               </div>
             </div>
@@ -447,7 +356,7 @@
 
     <!-- ==================== ABA 5: HISTÓRICO (WAL) ==================== -->
     <section id="tab-history" class="tab-content hidden space-y-6">
-      <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
+      <div class="card p-5 space-y-4">
         <div class="flex items-center justify-between">
           <h3 class="text-sm font-bold text-white flex items-center gap-2">
             <i data-lucide="database" class="w-5 h-5 text-emerald-400"></i> Histórico Persistido no SQLite WAL
@@ -478,7 +387,7 @@
 
     <!-- ==================== ABA 6: DIFF REVIEW (HITL) ==================== -->
     <section id="tab-hitl" class="tab-content hidden space-y-6">
-      <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
+      <div class="card p-5 space-y-4">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <i data-lucide="shield-check" class="w-5 h-5 text-brand-400"></i>
@@ -516,7 +425,7 @@
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <!-- Multi-Model Arena (7 cols) -->
         <div class="lg:col-span-7 space-y-4">
-          <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
+          <div class="card p-5 space-y-4">
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
                 <i data-lucide="swords" class="w-5 h-5 text-amber-400"></i>
@@ -532,7 +441,7 @@
               </div>
 
               <div class="flex items-center justify-between">
-                <button onclick="runArenaBenchmark()" class="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-amber-500/20 flex items-center gap-2">
+                <button onclick="runArenaBenchmark()" class="px-4 py-2 bg-brand-500 hover:bg-brand-400 text-brand-ink rounded-xl text-xs font-bold transition-all shadow-lg shadow-brand-500/20 flex items-center gap-2">
                   <i data-lucide="play" class="w-4 h-4"></i> Iniciar Disputa na Arena
                 </button>
                 <span id="arena-status" class="text-xs text-zinc-400 font-mono"></span>
@@ -548,7 +457,7 @@
 
         <!-- MCP Tools & Servidores (5 cols) -->
         <div class="lg:col-span-5 space-y-4">
-          <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
+          <div class="card p-5 space-y-4">
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
                 <i data-lucide="blocks" class="w-5 h-5 text-brand-400"></i>
@@ -571,54 +480,70 @@
     </section>
 
 
-    <!-- ==================== ABA 8: PLANO MULTIAGENTE ==================== -->
-    <section id="tab-plan" class="tab-content hidden space-y-6">
-      <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
-        <div class="flex items-center gap-2">
-          <i data-lucide="brain" class="w-5 h-5 text-brand-400"></i>
-          <h3 class="text-sm font-bold text-white">Quem faz o plano</h3>
-        </div>
-        <p class="text-xs text-zinc-400">O planejador divide o objetivo em passos; os motores que estiverem <strong>ligados</strong> em "Motores &amp; IAs" executam cada passo.</p>
-        <div id="plan-offline-banner" class="hidden text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
-          O <strong>Modo 100% Offline</strong> está ligado: todos os passos serão executados pelo Ollama, qualquer que seja o motor escolhido. Desligue-o em "Motores &amp; IAs" para usar os outros.
-        </div>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-          <div>
-            <label class="block text-xs font-semibold text-zinc-400 mb-1">Motor planejador</label>
-            <select id="planner-engine" onchange="onPlannerEngineChange()" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-brand-500"></select>
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-zinc-400 mb-1">Modelo do planejador</label>
-            <select id="planner-model" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-brand-500"></select>
-          </div>
-          <button onclick="savePlanner()" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl text-sm font-semibold transition-all">Salvar planejador</button>
-        </div>
-      </div>
+    <!-- ==================== PLANO: CONVERSA COM HISTÓRICO, PROJETOS E IMAGENS ==================== -->
+    <section id="tab-plan" class="tab-content hidden">
+      <div class="chat-shell">
+        <aside class="card chat-side" aria-label="Conversas e projetos">
+          <button type="button" class="btn btn-primary w-full" onclick="chatNew()"><i data-lucide="message-square-plus" class="w-4 h-4"></i> Nova conversa</button>
+          <div id="chat-side-list" class="chat-side-list"></div>
+          <button type="button" class="btn btn-ghost w-full" onclick="chatNewProject()"><i data-lucide="folder-plus" class="w-4 h-4"></i> Novo projeto</button>
+        </aside>
 
-      <div class="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-xl space-y-4">
-        <label class="block text-xs font-semibold text-zinc-400">Objetivo</label>
-        <textarea id="plan-goal" rows="4" placeholder="Descreva o que você quer que o time de IAs faça..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-sm text-zinc-100 focus:outline-none focus:border-brand-500 resize-none"></textarea>
-        <div class="flex flex-wrap items-center gap-3">
-          <button onclick="generatePlan()" id="btn-gen-plan" class="px-5 py-2.5 bg-gradient-to-r from-brand-500 to-brand-700 text-white rounded-xl text-sm font-bold flex items-center gap-2">
-            <i data-lucide="sparkles" class="w-4 h-4"></i> Gerar plano
-          </button>
-          <button onclick="executePlan()" id="btn-run-plan" disabled class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold flex items-center gap-2">
-            <i data-lucide="play" class="w-4 h-4"></i> Executar plano
-          </button>
-          <span id="plan-status" class="text-xs text-zinc-400 font-mono"></span>
+        <div class="card chat-main">
+          <div class="chat-head">
+            <div class="min-w-0 flex-1">
+              <div id="chat-title" class="text-sm font-bold text-white truncate">Plano</div>
+              <div id="chat-sub" class="text-[11px] text-zinc-500 truncate"></div>
+            </div>
+            <div id="chat-conv-tools" class="hidden flex items-center gap-2">
+              <select id="chat-project-select" onchange="chatMoveTo(this.value)" title="Mover a conversa para um projeto" aria-label="Projeto da conversa" class="chat-field" style="width:auto;max-width:11rem"></select>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="chatRename()" title="Renomear" aria-label="Renomear a conversa"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="chatDelete()" title="Apagar a conversa" aria-label="Apagar a conversa"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="chatToggleSettings()" title="Quem faz o plano" aria-label="Escolher o planejador"><i data-lucide="brain" class="w-4 h-4"></i> Planejador</button>
+          </div>
+
+          <div id="chat-settings" class="chat-settings hidden">
+            <p class="text-xs text-zinc-400">O planejador divide o pedido em passos; os motores <strong>ligados</strong> em "Motores &amp; IAs" executam cada passo.</p>
+            <div id="plan-offline-banner" class="hidden text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
+              O <strong>Modo 100% Offline</strong> está ligado: todos os passos serão executados pelo Ollama, qualquer que seja o motor escolhido.
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+              <div>
+                <label for="planner-engine" class="block text-xs font-semibold text-zinc-400 mb-1">Motor planejador</label>
+                <select id="planner-engine" onchange="onPlannerEngineChange()" class="chat-field"></select>
+              </div>
+              <div>
+                <label for="planner-model" class="block text-xs font-semibold text-zinc-400 mb-1">Modelo do planejador</label>
+                <select id="planner-model" class="chat-field"></select>
+              </div>
+              <button type="button" onclick="savePlanner()" class="btn btn-ghost">Salvar planejador</button>
+            </div>
+            <span id="plan-status" class="text-xs text-zinc-400 font-mono"></span>
+          </div>
+
+          <div id="chat-thread" class="chat-thread" aria-live="polite"></div>
+
+          <div id="chat-composer" class="chat-composer">
+            <div id="chat-thumbs" class="chat-thumbs"></div>
+            <div class="chat-input">
+              <input type="file" id="chat-file" accept="image/png,image/jpeg,image/gif,image/webp" multiple class="hidden" onchange="chatPickFiles(this)">
+              <button type="button" class="btn btn-ghost" onclick="document.getElementById('chat-file').click()" title="Anexar imagem" aria-label="Anexar imagem"><i data-lucide="image-plus" class="w-4 h-4"></i></button>
+              <textarea id="chat-text" rows="1" maxlength="20000" aria-label="Mensagem" placeholder="Descreva o que você quer que o time de IAs faça…"></textarea>
+              <button type="button" id="chat-send" class="btn btn-primary" onclick="chatSend()"><i data-lucide="send" class="w-4 h-4"></i> Enviar</button>
+            </div>
+            <div id="chat-status" class="text-[11px] text-zinc-500" role="status"></div>
+            <div class="text-[11px] text-zinc-600">Enter envia · Shift+Enter quebra a linha · cole (Ctrl+V) ou arraste imagens aqui · até 6 imagens de 10 MB (PNG, JPEG, GIF, WebP)</div>
+          </div>
         </div>
-        <div id="plan-warnings" class="space-y-1"></div>
-        <div id="plan-steps" class="space-y-3"></div>
-        <div id="plan-results" class="space-y-3"></div>
       </div>
+      <div id="chat-lightbox" class="chat-lightbox hidden" role="dialog" aria-label="Imagem ampliada"><img alt="Imagem ampliada"></div>
     </section>
 
     <!-- ==================== ABA 9: ROTEADOR EMBUTIDO ==================== -->
     <section id="tab-router" class="tab-content hidden space-y-5">
       <div class="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 class="text-xl font-bold text-white">Roteador</h2>
-          <p class="text-sm text-zinc-400">Provedores de IA na nuvem com rodízio de chaves, camadas, combos e fallback automático. Tudo roda dentro do Hera.</p>
         </div>
         <button onclick="loadRouterState()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-lg text-xs font-semibold flex items-center gap-2">
           <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Atualizar
@@ -631,10 +556,11 @@
 
       <!-- sub-abas -->
       <div id="rt-subnav" class="flex flex-wrap gap-1 bg-zinc-900/70 border border-zinc-800 rounded-xl p-1 w-fit">
-        <button data-sub="overview" class="rt-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold">Visão geral</button>
         <button data-sub="providers" class="rt-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold">Provedores</button>
-        <button data-sub="combos" class="rt-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold">Combos &amp; apelidos</button>
+        <button data-sub="overview" class="rt-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold">Visão geral</button>
+        <button data-sub="apelidos" class="rt-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold">Apelidos</button>
         <button data-sub="clients" class="rt-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold">Chaves de acesso</button>
+        <button data-sub="connections" class="rt-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold">Conexões</button>
         <button data-sub="logs" class="rt-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold">Registro</button>
         <button data-sub="settings" class="rt-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold">Ajustes</button>
       </div>
@@ -662,53 +588,58 @@
         </div>
       </div>
 
-      <!-- ===== Provedores ===== -->
-      <div id="rt-providers" class="rt-panel hidden space-y-5">
-        <div class="card p-5 space-y-4">
-          <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="cloud" class="w-4 h-4 text-brand-400"></i> Seus provedores</h3>
-          <div id="router-providers" class="space-y-3"></div>
-        </div>
-        <div class="card p-5 space-y-3">
-          <div class="text-sm font-bold text-white">Adicionar provedor</div>
-          <div class="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
-            <div>
-              <label class="block text-xs text-zinc-400 mb-1">Catálogo (<span id="rt-preset-count">0</span> provedores prontos)</label>
-              <select id="router-preset" onchange="onRouterPresetChange()" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100"></select>
+      <!-- ===== Provedores (catálogo de IAs) ===== -->
+      <div id="rt-providers" class="rt-panel hidden space-y-6">
+        <div class="pv-toolbar">
+          <div>
+            <div id="pv-summary" class="pv-summary" role="status">Carregando…</div>
+            <div class="text-xs text-zinc-400 mt-0.5">Todas as IAs que o Hera sabe usar. As disponíveis vêm primeiro; nas outras é só conectar.</div>
+          </div>
+          <div class="pv-tools">
+            <div id="pv-filters" class="pv-seg" role="group" aria-label="Filtrar IAs">
+              <button type="button" data-pvf="all" aria-pressed="true">Todas</button>
+              <button type="button" data-pvf="ready" aria-pressed="false">Disponíveis</button>
+              <button type="button" data-pvf="todo" aria-pressed="false">Para conectar</button>
             </div>
-            <button onclick="addRouterProvider()" class="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-sm font-semibold">Adicionar e ligar</button>
+            <input id="pv-search" type="search" placeholder="Buscar IA…" aria-label="Buscar IA" autocomplete="off" class="pv-search">
           </div>
-          <div id="router-custom" class="hidden grid grid-cols-1 md:grid-cols-3 gap-3">
-            <input id="rc-name" placeholder="nome (ex.: meuprov)" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100">
-            <input id="rc-url" placeholder="https://api.exemplo.com/v1" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 font-mono">
-            <input id="rc-model" placeholder="modelo padrão" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 font-mono">
-          </div>
-          <input id="router-newkey" type="password" autocomplete="off" placeholder="Chave de API (opcional agora; dá para colar depois)" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 font-mono">
-          <div id="router-preset-info" class="text-xs text-zinc-400 space-y-1"></div>
         </div>
+
+        <section aria-labelledby="pv-h-acc">
+          <h3 id="pv-h-acc" class="pv-h">Entrar com a sua conta <span>assinatura ou login oficial, sem colar chave</span></h3>
+          <div id="pv-accounts" class="pv-grid"></div>
+        </section>
+
+        <section aria-labelledby="pv-h-key">
+          <h3 id="pv-h-key" class="pv-h">Chave de API <span>cole uma chave sua; ela fica no cofre, protegida pelo Windows</span></h3>
+          <div id="pv-keys" class="pv-grid"></div>
+        </section>
+
+        <section aria-labelledby="pv-h-custom">
+          <h3 id="pv-h-custom" class="pv-h">Outra API compatível com OpenAI <span>qualquer endereço HTTPS que fale o formato da OpenAI</span></h3>
+          <div class="pv-card">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <input id="rc-name" placeholder="nome (ex.: meuprov)" aria-label="Nome do provedor" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100">
+              <input id="rc-url" placeholder="https://api.exemplo.com/v1" aria-label="Endereço base" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 font-mono">
+              <input id="rc-model" placeholder="modelo padrão" aria-label="Modelo padrão" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 font-mono">
+              <input id="rc-key" type="password" autocomplete="off" placeholder="chave (opcional agora)" aria-label="Chave de API" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 font-mono">
+            </div>
+            <div class="pv-actions"><button type="button" class="btn btn-sm btn-primary" onclick="pvAddCustom()">Adicionar e ligar</button></div>
+          </div>
+        </section>
       </div>
 
-      <!-- ===== Combos e apelidos ===== -->
-      <div id="rt-combos" class="rt-panel hidden space-y-5">
-        <div class="card p-5 space-y-4">
-          <div class="flex items-center justify-between">
-            <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="git-branch" class="w-4 h-4 text-brand-400"></i> Combos (fallback entre modelos)</h3>
-            <div class="flex gap-2">
-              <button onclick="addRouterCombo()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold">+ Novo combo</button>
-              <button onclick="saveRouterCombos()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold">Salvar combos</button>
-            </div>
-          </div>
-          <p class="text-xs text-zinc-500">Cada passo é "provedor + modelo". A <strong>estratégia</strong> decide por onde começar: <em>Prioridade</em> (sempre o 1º), <em>Revezar</em> (round-robin), <em>Mais rápido</em> (menor latência recente), <em>Menos usado</em> (menos chamadas hoje) ou <em>Ponderado</em> (sorteio pelo peso). Se o escolhido falhar, o Hera passa ao próximo. Termine com um passo do Ollama para ter sempre um plano B local.</p>
-          <div id="router-combos" class="space-y-3"></div>
-          <div id="router-datalists"></div>
-        </div>
+      <!-- ===== Apelidos ===== -->
+      <div id="rt-apelidos" class="rt-panel hidden space-y-5">
         <div class="card p-5 space-y-3">
           <div class="flex items-center justify-between">
             <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="tag" class="w-4 h-4 text-brand-400"></i> Apelidos de modelo</h3>
-            <button onclick="saveAliases()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold">Salvar apelidos</button>
+            <button onclick="saveAliases()" class="px-3 py-1.5 bg-brand-500 hover:bg-brand-400 text-brand-ink rounded-lg text-xs font-semibold">Salvar apelidos</button>
           </div>
-          <p class="text-xs text-zinc-500">Um nome curto que aponta para um combo, para <code class="text-brand-300">provedor/modelo</code> ou para um modelo. Ex.: <code class="text-brand-300">codigo</code> → <code class="text-brand-300">deepseek/deepseek-chat</code>. Trocar o destino depois não exige mexer nas suas ferramentas.</p>
+          <p class="text-xs text-zinc-400">Um nome curto que aponta para <code class="text-brand-300">provedor/modelo</code> ou para um modelo. Ex.: <code class="text-brand-300">codigo</code> → <code class="text-brand-300">deepseek/deepseek-chat</code>. Trocar o destino depois não exige mexer nas suas ferramentas. Quem escolhe a IA de cada tarefa é o próprio modelo planejador; o apelido só dá um nome fácil.</p>
           <div id="rt-aliases" class="space-y-2"></div>
-          <button onclick="addAliasRow()" class="text-xs text-brand-400">+ apelido</button>
+          <datalist id="alias-targets"></datalist>
+          <button onclick="addAliasRow()" class="text-xs text-brand-300">+ apelido</button>
         </div>
       </div>
 
@@ -724,7 +655,7 @@
             </div>
             <div class="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-1">
               <div class="text-zinc-500">Modelos que você pode pedir</div>
-              <div class="text-zinc-300">um <strong>combo</strong>, um <strong>apelido</strong>, <code class="text-brand-300">provedor/modelo</code> ou <code class="text-brand-300">default</code></div>
+              <div class="text-zinc-300">um <strong>apelido</strong>, <code class="text-brand-300">provedor/modelo</code> ou <code class="text-brand-300">default</code></div>
             </div>
           </div>
           <details class="text-xs text-zinc-500"><summary class="cursor-pointer text-zinc-400">Usar o token mestre do Hera (acesso total, só para você)</summary>
@@ -741,13 +672,45 @@
               <input id="ck-tokens" type="number" min="1" placeholder="tokens/dia" class="w-1/2 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100">
             </div>
           </div>
-          <button onclick="createClientKey()" class="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-sm font-semibold">Criar chave</button>
+          <button onclick="createClientKey()" class="px-4 py-2 bg-brand-500 hover:bg-brand-400 text-brand-ink rounded-xl text-sm font-semibold">Criar chave</button>
           <div id="ck-new" class="hidden bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 text-xs space-y-1">
             <div class="text-emerald-300 font-semibold">Chave criada. Copie agora: ela não será mostrada de novo.</div>
             <div class="flex items-center justify-between gap-2"><code id="ck-new-key" class="font-mono text-emerald-200 break-all"></code><button onclick="copyText('ck-new-key')" class="text-emerald-300 shrink-0">copiar</button></div>
           </div>
         </div>
         <div class="card p-5 space-y-3"><h3 class="text-sm font-bold text-white">Chaves existentes</h3><div id="rt-clientlist" class="space-y-2"></div></div>
+      </div>
+
+      <!-- ===== Conexões: rotas, OAuth e busca ===== -->
+      <div id="rt-connections" class="rt-panel hidden space-y-5">
+        <div class="card p-5 space-y-3">
+          <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="plug" class="w-4 h-4 text-brand-400"></i> Rotas do Roteador</h3>
+          <p class="text-xs text-zinc-400">O mesmo Roteador fala vários formatos. Use o endereço que a sua ferramenta espera; todas passam pelo mesmo DLP, limites e fallback, e aceitam as chaves de acesso (aba ao lado).</p>
+          <div id="cn-endpoints" class="overflow-x-auto"></div>
+          <div class="text-xs text-zinc-500">Claude Code: <code class="text-brand-300 font-mono">ANTHROPIC_BASE_URL</code> = o endereço do Hera e <code class="text-brand-300 font-mono">ANTHROPIC_AUTH_TOKEN</code> = uma chave de acesso. Codex CLI e SDKs novos da OpenAI usam <code class="text-brand-300 font-mono">/v1/responses</code>.</div>
+        </div>
+        <div class="card p-5 space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="key-round" class="w-4 h-4 text-brand-400"></i> Login OAuth por provedor</h3>
+            <button onclick="loadOAuth()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold">Atualizar</button>
+          </div>
+          <p class="text-xs text-zinc-400">Para provedores em que você registrou o <strong>seu</strong> app OAuth (bloco <code class="text-brand-300 font-mono">oauth:</code> no <code class="text-brand-300 font-mono">config.yaml</code>). O Hera guarda o token no cofre local, renova sozinho e nunca o mostra aqui.</p>
+          <div id="cn-oauth" class="space-y-2"></div>
+          <div id="cn-oauth-device" class="hidden bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-xs space-y-1"></div>
+        </div>
+        <div class="card p-5 space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="search" class="w-4 h-4 text-brand-400"></i> Busca na web</h3>
+            <button onclick="loadSearchState()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold">Atualizar</button>
+          </div>
+          <p class="text-xs text-zinc-400">Brave, Tavily e Exa viram uma só rota (<code class="text-brand-300 font-mono">POST /v1/search</code>). Ligue-os no <code class="text-brand-300 font-mono">config.yaml</code> (<code class="text-brand-300 font-mono">search:</code>) com a chave numa variável de ambiente. A pergunta passa pelo DLP: segredo nela ou Modo 100% Offline barram a saída.</p>
+          <div id="cn-search" class="space-y-2"></div>
+          <div class="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
+            <input id="cn-search-q" placeholder="Pergunta de teste (ex.: últimas notícias sobre o Hera)" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100">
+            <button onclick="runSearchTest()" class="px-4 py-2 bg-brand-500 hover:bg-brand-400 text-brand-ink rounded-xl text-sm font-semibold">Testar busca</button>
+          </div>
+          <div id="cn-search-out" class="space-y-2 text-xs"></div>
+        </div>
       </div>
 
       <!-- ===== Registro ===== -->
@@ -772,7 +735,7 @@
         <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
           <div class="card p-5 space-y-3">
             <h3 class="text-sm font-bold text-white">Ordem das camadas</h3>
-            <p class="text-xs text-zinc-500">Sem combo, o Hera tenta primeiro a camada de cima. Dentro da camada, vale a prioridade do provedor.</p>
+            <p class="text-xs text-zinc-500">O Hera tenta primeiro a camada de cima e, se ela falhar, a próxima. Dentro da camada, vale a prioridade do provedor.</p>
             <div id="rt-tiers" class="space-y-1.5"></div>
           </div>
           <div class="card p-5 space-y-4">
@@ -790,7 +753,7 @@
         <div class="card p-5 space-y-3">
           <div class="flex items-center justify-between">
             <h3 class="text-sm font-bold text-white">Preços (para estimar o custo)</h3>
-            <button onclick="savePricing()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold">Salvar preços</button>
+            <button onclick="savePricing()" class="px-3 py-1.5 bg-brand-500 hover:bg-brand-400 text-brand-ink rounded-lg text-xs font-semibold">Salvar preços</button>
           </div>
           <p class="text-xs text-zinc-500">Dólares por 1 milhão de tokens, do jeito que o provedor cobra. Use <code class="text-brand-300">provedor</code> para valer em todos os modelos ou <code class="text-brand-300">provedor/modelo</code> para um específico. Sem preço, a chamada aparece como "sem preço" no painel.</p>
           <div id="rt-pricing" class="space-y-2"></div>
@@ -798,7 +761,7 @@
         </div>
         <div class="card p-5 space-y-3">
           <h3 class="text-sm font-bold text-white">Backup da configuração</h3>
-          <p class="text-xs text-zinc-500">Exporta provedores, combos, apelidos, preços e camadas <strong>sem as chaves</strong>. Ao importar, os provedores chegam desligados e é preciso o código de aprovação.</p>
+          <p class="text-xs text-zinc-500">Exporta provedores, apelidos, preços e camadas <strong>sem as chaves</strong>. Ao importar, os provedores chegam desligados e é preciso o código de aprovação.</p>
           <div class="flex flex-wrap gap-2">
             <button onclick="exportRouterConfig()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold">Exportar</button>
             <label class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold cursor-pointer">Importar...<input type="file" accept="application/json" class="hidden" onchange="importRouterConfig(this)"></label>
@@ -810,15 +773,15 @@
   </main>
 
   <!-- ==================== CONSOLE DO HERA (ao vivo) ==================== -->
-  <div id="hera-console" class="fixed bottom-0 right-0 left-60 z-40 border-t border-zinc-700 bg-[#141414]/95 backdrop-blur-md shadow-2xl">
+  <div id="hera-console" class="fixed bottom-0 right-0 z-40 backdrop-blur-md shadow-2xl">
     <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-2 border-b border-zinc-800 cursor-pointer select-none" onclick="hcToggle()">
       <div class="flex items-center gap-3 min-w-0">
         <span class="flex items-center gap-2 text-xs font-bold text-white"><i data-lucide="terminal" class="w-4 h-4 text-brand-400"></i> Console do Hera</span>
-        <span id="hc-dot" class="dot" style="background:#6b7280"></span>
+        <span id="hc-dot" class="dot" style="background:#71869d"></span>
         <span id="hc-status" class="text-[11px] text-zinc-400 truncate">ocioso</span>
         <span id="hc-progress" class="hidden w-28 h-1.5 bg-zinc-800 rounded"><span id="hc-progress-bar" class="block h-1.5 rounded bg-brand-500" style="width:0%"></span></span>
       </div>
-      <div class="flex flex-wrap items-center gap-2 text-[11px]" onclick="event.stopPropagation()">
+      <div class="hc-tools flex flex-wrap items-center gap-2 text-[11px]" onclick="event.stopPropagation()">
         <select id="hc-run" onchange="hcPickRun(this.value)" class="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-zinc-200 max-w-[220px]"><option value="live">Ao vivo</option></select>
         <label class="flex items-center gap-1 text-zinc-400"><input id="hc-f-text" type="checkbox" checked onchange="hcRefilter()" class="accent-brand-600"> falas</label>
         <label class="flex items-center gap-1 text-zinc-400"><input id="hc-f-tool" type="checkbox" checked onchange="hcRefilter()" class="accent-brand-600"> ferramentas</label>
@@ -842,7 +805,9 @@
     document.addEventListener("DOMContentLoaded", () => {
       lucide.createIcons();
       initWebSocket();
-      switchTab(document.getElementById('tab-' + location.hash.slice(1)) ? location.hash.slice(1) : 'studio');
+      const [hashTab, hashSub] = location.hash.slice(1).split("/");
+      switchTab(document.getElementById('tab-' + hashTab) ? hashTab : 'home');
+      if (hashTab === "router" && hashSub) rtSub(hashSub);
       hcInit();
       loadServices().then(loadHealth);
       setInterval(loadServices, 5000);
@@ -855,20 +820,42 @@
     });
 
     // Alternância de Abas
-    function switchTab(tabId) {
-      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-      document.querySelectorAll('.tab-btn').forEach(el => {
-        el.classList.remove('bg-brand-600', 'text-white', 'shadow-sm');
-        el.classList.add('text-zinc-400');
-      });
+    const TAB_META = {
+      home:     { title: "Início", sub: "Visão geral do seu Hera", group: "Visão geral" },
+      plan:     { title: "Plano", sub: "Converse, revise o plano e mande os motores executarem", group: "Trabalho" },
+      history:  { title: "Histórico", sub: "Tudo o que o Hera já executou", group: "Trabalho" },
+      hitl:     { title: "Revisão de diffs", sub: "Aprove ou recuse cada mudança antes do merge", group: "Trabalho" },
+      engines:  { title: "Motores & IAs", sub: "Ligue os serviços locais e escolha o modelo de cada motor", group: "Inteligência" },
+      router:   { title: "Roteador", sub: "Provedores na nuvem, chaves de acesso, limites e rotas compatíveis", group: "Inteligência" },
+      arena:    { title: "Arena & MCP", sub: "Compare modelos lado a lado e conecte ferramentas MCP", group: "Inteligência" },
+      vault:    { title: "Obsidian", sub: "O segundo cérebro do Hera", group: "Conhecimento" },
+      hardware: { title: "Hardware", sub: "GPU, memória e serviços locais em tempo real", group: "Sistema" },
+    };
 
-      const activeSection = document.getElementById(`tab-${tabId}`);
-      const activeBtn = document.getElementById(`tab-btn-${tabId}`);
-      if (activeSection && activeBtn) {
-        activeSection.classList.remove('hidden');
-        activeBtn.classList.add('bg-brand-600', 'text-white', 'shadow-sm');
-        activeBtn.classList.remove('text-zinc-400');
-      }
+    function toggleSidebar(open) {
+      document.body.classList.toggle("nav-open", !!open);
+      const menu = document.querySelector(".menu-btn");
+      if (menu) menu.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+    document.addEventListener("keydown", e => { if (e.key === "Escape") toggleSidebar(false); });
+
+    function switchTab(tabId) {
+      if (!document.getElementById(`tab-${tabId}`)) tabId = "home";
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.nav-item').forEach(el => el.removeAttribute('aria-current'));
+      document.getElementById(`tab-${tabId}`).classList.remove('hidden');
+      const btn = document.getElementById(`tab-btn-${tabId}`);
+      if (btn) btn.setAttribute('aria-current', 'page');
+      const meta = TAB_META[tabId] || { title: tabId, sub: "", group: "Hera" };
+      document.getElementById("tb-title").textContent = meta.title;
+      document.getElementById("tb-sub").textContent = meta.sub;
+      document.getElementById("tb-group").textContent = meta.group;
+      document.title = `${meta.title} · Hera`;
+      try { history.replaceState(null, "", "#" + tabId); } catch (e) { /* sem histórico: segue */ }
+      toggleSidebar(false);
+      window.scrollTo(0, 0);
+      if (tabId === "home") loadHome();
+      if (tabId === "plan") chatInit(); else clearTimeout(chat.timer);
       lucide.createIcons();
     }
 
@@ -893,8 +880,8 @@
 
       ws.onopen = () => {
         const badge = document.getElementById("ws-badge");
-        badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span><span>Conectado</span>`;
-        badge.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+        badge.innerHTML = `<span class="pip live"></span><span>Conectado</span>`;
+        badge.className = "chip chip-ok";
       };
 
       ws.onmessage = (event) => {
@@ -904,17 +891,15 @@
 
       ws.onclose = () => {
         const badge = document.getElementById("ws-badge");
-        badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-500"></span><span>Reconectando...</span>`;
-        badge.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20";
+        badge.innerHTML = `<span class="pip"></span><span>Reconectando...</span>`;
+        badge.className = "chip chip-bad";
         setTimeout(initWebSocket, 3000);
       };
     }
 
     // Processamento de Eventos WebSocket
     function handleWsEvent(data) {
-      if (data.type === "log") {
-        appendConsoleLog(data.timestamp, data.message, data.level);
-      } else if (data.type === "pull_progress") {
+      if (data.type === "pull_progress") {
         const cont = document.getElementById("pull-progress-container");
         cont.classList.remove("hidden");
         document.getElementById("pull-status-text").innerText = `${data.model}: ${data.status}`;
@@ -925,47 +910,14 @@
         document.getElementById("pull-progress-bar").style.width = `100%`;
         loadHealth(); // recarrega lista de modelos
       } else if (data.type === "task_finished") {
-        showTaskResult(data);
         loadTasksHistory();
-      } else if (data.type === "orchestration_finished") {
-        showPlanResults(data);
+      } else if (data.type === "orchestration_finished" || data.type === "chat_updated") {
         loadTasksHistory();
+        if (chat.id && (data.type === "orchestration_finished" || data.conversation_id === chat.id)) chatPoll(null);
       } else if (data.type === "console") {
         hcAdd(data);
         if (data.kind === "plan_end") hcLoadRuns();
       }
-    }
-
-    function appendConsoleLog(time, msg, level) {
-      const consoleEl = document.getElementById("console-logs");
-      const row = document.createElement("div");
-      let color = "text-zinc-300";
-      if (level === "error") color = "text-rose-400 font-bold";
-      if (level === "success") color = "text-emerald-400";
-      if (level === "warning") color = "text-amber-400";
-
-      row.className = `${color} leading-relaxed`;
-      row.innerHTML = `<span class="text-zinc-600">[${time}]</span> ${msg}`;
-      consoleEl.appendChild(row);
-      consoleEl.scrollTop = consoleEl.scrollHeight;
-    }
-
-    function clearConsole() {
-      document.getElementById("console-logs").innerHTML = "";
-    }
-
-    function showTaskResult(data) {
-      const box = document.getElementById("result-box");
-      box.classList.remove("hidden");
-      document.getElementById("result-id").innerText = data.task_id;
-      const statusBadge = document.getElementById("result-status");
-      statusBadge.innerText = data.status.toUpperCase();
-      if (data.status === "succeeded") {
-        statusBadge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
-      } else {
-        statusBadge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold uppercase bg-rose-500/10 text-rose-400 border border-rose-500/20";
-      }
-      document.getElementById("result-content").innerText = data.output_text || data.summary || "Tarefa concluída.";
     }
 
     // Carregar Saúde e Modelos
@@ -974,8 +926,8 @@
         const res = await fetch("/api/health");
         const data = await res.json();
         globalHealth = data.engines;
+        if (typeof hmChips === 'function') hmChips(data);
         renderEngineCards(data.engines);
-        updateModelDropdown();
         loadOrchestration();
         loadRouterState();
         
@@ -991,13 +943,18 @@
     }
 
     // nome interno do motor -> chave no config.yaml
-    const ENGINE_CONFIG_KEY = { ollama: "ollama", claude_code: "claude_code", antigravity: "antigravity" };
+    const ENGINE_CONFIG_KEY = { ollama: "ollama", claude_code: "claude_code", antigravity: "antigravity", codex: "codex", cursor: "cursor", qoder: "qoder", codebuddy: "codebuddy", kimi: "kimi" };
 
     const ENGINE_META = {
       ollama:      { icon: "cpu",      sub: "Modelos locais na sua GPU" },
       claude_code: { icon: "terminal", sub: "CLI do Claude Code, para tarefas de código" },
       antigravity: { icon: "rocket",   sub: "CLI Antigravity, com acesso ao workspace" },
-      hera_router: { icon: "route",    sub: "Roteador embutido: nuvem com fallback e combos" }
+      hera_router: { icon: "route",    sub: "Roteador embutido: nuvem com fallback entre provedores" },
+      codex:       { icon: "terminal", sub: "CLI oficial da OpenAI (codex exec). Login: codex login" },
+      cursor:      { icon: "terminal", sub: "CLI oficial do Cursor (agent -p). Login: agent login" },
+      qoder:       { icon: "terminal", sub: "CLI oficial do Qoder (qodercli -p). Login: qodercli login" },
+      codebuddy:   { icon: "terminal", sub: "CLI oficial do CodeBuddy (codebuddy -p). Login dentro do codebuddy" },
+      kimi:        { icon: "terminal", sub: "CLI oficial do Kimi Code (kimi -p). Login: kimi login" }
     };
     let globalServices = {};
     const servicesBusy = {};
@@ -1005,7 +962,7 @@
     function renderEngineCards(engines) {
       const container = document.getElementById("engines-cards-container");
       container.innerHTML = "";
-      const order = ["ollama", "hera_router", "claude_code", "antigravity"];
+      const order = ["ollama", "hera_router", "claude_code", "antigravity", "codex", "cursor", "qoder", "codebuddy", "kimi"];
       const names = [...order.filter(n => engines[n]), ...Object.keys(engines).filter(n => !order.includes(n))];
 
       for (const name of names) {
@@ -1013,7 +970,7 @@
         const meta = ENGINE_META[name] || { icon: "box", sub: "" };
         const sv = globalServices[name];
         const on = info.enabled !== false;
-        let pill = ["DESLIGADO", "#6b7280", "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"];
+        let pill = ["DESLIGADO", "#71869d", "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"];
         if (on && info.healthy) pill = ["ONLINE", "#10b981", "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"];
         else if (on) pill = ["OFFLINE", "#ef4444", "bg-rose-500/10 text-rose-400 border-rose-500/20"];
         const models = [...(info.available_models || [])];
@@ -1035,7 +992,7 @@
             state = `<span class="text-amber-400">Não instalado</span> <span class="text-zinc-500">· ${escapeHtml(sv.install_hint)}</span>`;
           } else {
             state = `<span class="text-rose-400">Parado</span>`;
-            action = `<button onclick="startService('${escAttr(name)}')" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-brand-500 hover:bg-brand-600 text-white">Iniciar ${escapeHtml(sv.label)}</button>`;
+            action = `<button onclick="startService('${escAttr(name)}')" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-brand-500 hover:bg-brand-400 text-brand-ink">Iniciar ${escapeHtml(sv.label)}</button>`;
           }
           const crash = (!sv.running && sv.exit_code !== undefined && sv.exit_code !== null)
             ? `<div class="text-[11px] text-rose-300 font-mono break-all">Fechou com código ${sv.exit_code}. ${escapeHtml(sv.last_log || "")}</div>` : "";
@@ -1140,64 +1097,6 @@
 
     function toggleEngine(name, enabled) { return saveEngineConfig(name, { enabled }); }
     function setEngineModel(name, model) { return saveEngineConfig(name, { default_model: model }); }
-
-    function onAgentSelectChange() {
-      updateModelDropdown();
-    }
-
-    function updateModelDropdown() {
-      const agent = document.getElementById("task-agent").value;
-      const modelSelect = document.getElementById("task-model");
-      modelSelect.innerHTML = '<option value="">Padrão do Motor Selecionado</option>';
-
-      if (agent && globalHealth[agent] && globalHealth[agent].available_models) {
-        globalHealth[agent].available_models.forEach(m => {
-          const opt = document.createElement("option");
-          opt.value = m;
-          opt.innerText = m;
-          modelSelect.appendChild(opt);
-        });
-      } else if (!agent && globalHealth["ollama"] && globalHealth["ollama"].available_models) {
-        // Sugerir modelos do Ollama se automático
-        globalHealth["ollama"].available_models.forEach(m => {
-          const opt = document.createElement("option");
-          opt.value = m;
-          opt.innerText = `Ollama: ${m}`;
-          modelSelect.appendChild(opt);
-        });
-      }
-    }
-
-    // Executar Tarefa
-    async function submitTask() {
-      const instruction = document.getElementById("task-instruction").value.trim();
-      if (!instruction) {
-        alert("Digite uma instrução para a tarefa!");
-        return;
-      }
-
-      const payload = {
-        title: document.getElementById("task-title").value.trim(),
-        instruction: instruction,
-        task_type: document.getElementById("task-type").value,
-        assigned_agent: document.getElementById("task-agent").value || null,
-        assigned_model: document.getElementById("task-model").value || null,
-        acceptance_criteria: document.getElementById("task-criteria").value.split("\n").filter(x => x.trim()),
-        save_to_obsidian: document.getElementById("save-obsidian").checked
-      };
-
-      try {
-        const res = await fetch("/api/tasks/run", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        appendConsoleLog(new Date().toLocaleTimeString(), `🚀 Tarefa enviada para a fila: ${data.title} (${data.task_id})`, "info");
-      } catch (e) {
-        alert("Erro ao disparar tarefa: " + e);
-      }
-    }
 
     // Baixar Modelo no Ollama
     async function pullOllamaModel() {
@@ -1411,7 +1310,7 @@
                 <button onclick="rejectHitlProposal('${p.id}')" class="px-3.5 py-1.5 bg-rose-950/60 hover:bg-rose-900 border border-rose-800/60 text-rose-300 rounded-xl text-xs font-medium transition-all flex items-center gap-1.5">
                   <i data-lucide="x" class="w-3.5 h-3.5"></i> Rejeitar & Limpar
                 </button>
-                <button onclick="approveHitlProposal('${p.id}', '${p.diff_hash}')" class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-emerald-600/20 flex items-center gap-1.5">
+                <button onclick="approveHitlProposal('${p.id}', '${p.diff_hash}')" class="px-4 py-1.5 bg-brand-500 hover:bg-brand-400 text-brand-ink rounded-xl text-xs font-bold transition-all shadow-lg shadow-emerald-600/20 flex items-center gap-1.5">
                   <i data-lucide="check-check" class="w-4 h-4"></i> Aprovar & Merge
                 </button>
               </div>
@@ -1625,7 +1524,6 @@
     }
 
     // ==================== PLANO MULTIAGENTE ====================
-    let currentPlan = null;
     let orchestrationInfo = null;
 
     function fillSelect(el, items, selected, emptyLabel) {
@@ -1671,169 +1569,602 @@
 
     function setPlanStatus(text) { document.getElementById("plan-status").innerText = text; }
 
-    async function generatePlan() {
-      const goal = document.getElementById("plan-goal").value.trim();
-      if (goal.length < 3) { alert("Descreva o objetivo."); return; }
-      const btn = document.getElementById("btn-gen-plan");
-      btn.disabled = true;
-      document.getElementById("btn-run-plan").disabled = true;
-      document.getElementById("plan-results").innerHTML = "";
-      setPlanStatus("O planejador está pensando...");
-      try {
-        const res = await fetch("/api/orchestration/plan", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ goal })
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          setPlanStatus("");
-          alert((data.detail && data.detail.message) || "Não foi possível gerar o plano.");
-          return;
-        }
-        currentPlan = data;
-        renderPlan();
-        const p = data.planner;
-        setPlanStatus(`Plano de ${p.engine}${p.model ? " / " + p.model : ""}: ${data.steps.length} passo(s). Revise e execute.`);
-        document.getElementById("btn-run-plan").disabled = data.steps.length === 0;
-      } catch (e) {
-        setPlanStatus("");
-        alert("Erro ao gerar o plano: " + e);
-      } finally {
-        btn.disabled = false;
+    // ==================== PLANO EM CONVERSA ====================
+    // Tudo que vem do servidor (títulos, textos, saídas dos motores) entra na tela só como texto (textContent), nunca como HTML.
+    const chat = { projects: [], convs: [], id: null, data: null, pending: [], edits: {}, thinking: null, busy: false, timer: null, collapsed: {}, lastSig: "" };
+    const chatBlobs = new Map();
+    const CHAT_STATUS = { proposed: ["Aguardando você", ""], running: ["Executando…", "warn"], done: ["Concluído", "ok"], problems: ["Terminou com problemas", "bad"] };
+    const RUN_BADGE = { SUCCEEDED: "ok", FAILED: "bad", CANCELLED: "warn" };
+
+    function chEl(tag, props, ...kids) {
+      const el = document.createElement(tag);
+      for (const [k, v] of Object.entries(props || {})) {
+        if (v === null || v === undefined || v === false) continue;
+        if (k === "class") el.className = v;
+        else if (k === "text") el.textContent = v;
+        else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+        else el.setAttribute(k, v === true ? "" : String(v));
       }
+      kids.flat().forEach(c => { if (c !== null && c !== undefined && c !== false) el.append(c.nodeType ? c : document.createTextNode(String(c))); });
+      return el;
+    }
+    const chIcon = (name, cls) => chEl("i", { "data-lucide": name, class: cls || "w-4 h-4" });
+    const chById = id => document.getElementById(id);
+
+    function chatStatus(text, bad) {
+      const el = chById("chat-status");
+      el.textContent = text || "";
+      el.className = "text-[11px] " + (bad ? "text-rose-400" : "text-zinc-500");
     }
 
-    const STRENGTH_STYLE = { leve: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", equilibrado: "bg-sky-500/10 text-sky-400 border-sky-500/20", forte: "bg-brand-500/10 text-brand-400 border-brand-500/20" };
-
-    function planCatalogEntry(engine) { return (currentPlan.catalog || []).find(c => c.engine === engine); }
-
-    function planModelStrength(engine, model) {
-      const c = planCatalogEntry(engine);
-      const m = c && c.models.find(x => x.id === model);
-      return m ? m.strength : "";
-    }
-
-    function planModelOptions(engine, selected) {
-      const c = planCatalogEntry(engine);
-      const models = c ? c.models : [];
-      return ['<option value="">Modelo padrão do motor</option>']
-        .concat(models.map(m => `<option value="${escAttr(m.id)}" ${m.id === selected ? "selected" : ""}>${escapeHtml(m.id)} · ${escapeHtml(m.strength)}</option>`)).join("");
-    }
-
-    function onPlanEngineChange(i, value) {
-      currentPlan.steps[i].engine = value;
-      currentPlan.steps[i].model = "";
-      renderPlan();
-    }
-
-    function renderPlan() {
-      const warn = document.getElementById("plan-warnings");
-      warn.innerHTML = (currentPlan.warnings || []).map(w =>
-        `<div class="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">${escapeHtml(w)}</div>`).join("");
-      const box = document.getElementById("plan-steps");
-      box.innerHTML = "";
-      const used = {};
-      currentPlan.steps.forEach(st => { const k = st.engine ? `${st.engine}${st.model ? " / " + st.model : ""}` : "automático"; used[k] = (used[k] || 0) + 1; });
-      const summary = document.createElement("div");
-      summary.className = "text-[11px] text-zinc-400";
-      summary.innerHTML = "Distribuição: " + Object.entries(used).map(([k, n]) => `<span class="px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-200 mr-1">${escapeHtml(k)} ×${n}</span>`).join("");
-      box.appendChild(summary);
-      currentPlan.steps.forEach((st, i) => {
-        const row = document.createElement("div");
-        row.className = "bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-2";
-        const engineOpts = ['<option value="">Automático (Hera escolhe)</option>']
-          .concat(currentPlan.executors.map(e => `<option value="${escAttr(e)}" ${e === st.engine ? "selected" : ""}>${escapeHtml(e)}</option>`)).join("");
-        const strength = planModelStrength(st.engine, st.model);
-        row.innerHTML = `
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <span class="text-xs font-bold text-white">${i + 1}. ${escapeHtml(st.title)}</span>
-            <div class="flex flex-wrap items-center gap-2">
-              <select onchange="onPlanEngineChange(${i}, this.value)" class="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100">${engineOpts}</select>
-              <select onchange="currentPlan.steps[${i}].model = this.value; renderPlan()" ${st.engine ? "" : "disabled"} class="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100 max-w-[300px]">${planModelOptions(st.engine, st.model)}</select>
-              ${strength ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold border ${STRENGTH_STYLE[strength] || ""}">${escapeHtml(strength)}</span>` : ""}
-              <button onclick="removePlanStep(${i})" class="text-xs text-rose-400 hover:text-rose-300">remover</button>
-            </div>
-          </div>
-          ${st.reason ? `<div class="text-[11px] text-zinc-400 italic">Por quê: ${escapeHtml(st.reason)}</div>` : ""}
-          <textarea rows="3" oninput="currentPlan.steps[${i}].instruction = this.value" class="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-2 text-xs text-zinc-200 font-mono resize-y">${escapeHtml(st.instruction)}</textarea>
-          <div class="text-[11px] text-zinc-500">${st.depends_on.length ? "depende de: " + escapeHtml(st.depends_on.join(", ")) : "sem dependências"}</div>
-        `;
-        box.appendChild(row);
+    function chatInit() {
+      chatLoadSide().then(() => {
+        const wanted = chat.id || lsGet("chat-id", "");
+        if (wanted && chat.convs.some(c => c.id === wanted)) return chatOpen(wanted, { keepPending: true });
+        if (!chat.id) chatRenderAll();
       });
     }
 
-    function removePlanStep(i) {
-      const gone = currentPlan.steps[i].id;
-      currentPlan.steps.splice(i, 1);
-      currentPlan.steps.forEach(s => { s.depends_on = s.depends_on.filter(d => d !== gone); });
-      renderPlan();
-      document.getElementById("btn-run-plan").disabled = currentPlan.steps.length === 0;
+    async function chatLoadSide() {
+      try {
+        const [p, c] = await Promise.all([routerCall("/api/chat/projects", "GET"), routerCall("/api/chat/conversations", "GET")]);
+        chat.projects = p.projects; chat.convs = c.conversations;
+        chatRenderSide();
+      } catch (e) { chatStatus("Não consegui carregar as conversas: " + e.message, true); }
     }
 
-    async function executePlan() {
-      if (!currentPlan || !currentPlan.steps.length) return;
-      document.getElementById("btn-run-plan").disabled = true;
-      setPlanStatus("Executando o plano...");
-      document.getElementById("plan-results").innerHTML = "";
+    async function chatOpen(id, opts) {
       try {
-        const res = await fetch("/api/orchestration/execute", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ goal: document.getElementById("plan-goal").value, steps: currentPlan.steps })
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          setPlanStatus("");
-          alert((data.detail && data.detail.message) || "O plano foi recusado.");
-          document.getElementById("btn-run-plan").disabled = false;
-          return;
-        }
-        setPlanStatus(`Plano ${data.run_id} em execução (acompanhe no Task Studio).`);
+        const data = await routerCall("/api/chat/conversations/" + encodeURIComponent(id), "GET");
+        chat.id = id; chat.data = data;
+        if (!(opts && opts.keepPending)) chat.pending = [];
+        lsSet("chat-id", id);
+        chatRenderAll();
+        chatSchedulePoll(300);
       } catch (e) {
-        setPlanStatus("");
-        document.getElementById("btn-run-plan").disabled = false;
-        alert("Erro ao executar o plano: " + e);
+        if (chat.id === id) { chat.id = null; chat.data = null; }
+        lsSet("chat-id", "");
+        chatRenderAll();
+        chatStatus(e.message, true);
       }
     }
 
-    function showPlanResults(data) {
-      const box = document.getElementById("plan-results");
-      document.getElementById("btn-run-plan").disabled = false;
-      const steps = data.steps || [];
-      const failed = steps.filter(r => r.status === "FAILED").length;
-      const cancelled = steps.filter(r => r.status === "CANCELLED").length;
-      const done = steps.filter(r => r.status === "SUCCEEDED").length;
-      let msg = "Plano concluído: todos os " + steps.length + " passos deram certo.";
-      if (data.error) msg = "O plano falhou: " + data.error;
-      else if (failed || cancelled) msg = `Plano terminou com problemas: ${done} de ${steps.length} passo(s) deram certo` + (failed ? `, ${failed} falhou(aram)` : "") + (cancelled ? `, ${cancelled} cancelado(s) por depender de um que falhou` : "") + ".";
-      setPlanStatus(msg);
-      document.getElementById("plan-status").className = "text-xs font-mono " + (data.error || failed ? "text-rose-400" : cancelled ? "text-amber-300" : "text-emerald-400");
-      box.innerHTML = steps.map(r => {
-        const ok = r.status === "SUCCEEDED";
-        const badge = ok ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : r.status === "CANCELLED" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-rose-500/10 text-rose-400 border-rose-500/20";
-        return `<div class="bg-zinc-950 border ${ok ? "border-zinc-800" : "border-rose-500/30"} rounded-xl p-3 space-y-2">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold text-white">${escapeHtml(r.title)}</span>
-            <span class="flex items-center gap-2 text-[11px] text-zinc-400 font-mono">${escapeHtml(r.engine)} ${escapeHtml(r.model)}
-              <span class="px-2 py-0.5 rounded-full border font-bold ${badge}">${escapeHtml(r.status)}</span></span>
-          </div>
-          ${r.error ? `<div class="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-lg p-2 font-mono break-words">Motivo: ${escapeHtml(r.error)}</div>` : ""}
-          <pre class="text-xs text-zinc-300 whitespace-pre-wrap font-mono max-h-48 overflow-y-auto">${escapeHtml(r.output_text || r.summary)}</pre>
-        </div>`;
-      }).join("");
+    async function chatNew(projectId) {
+      try {
+        const conv = await routerCall("/api/chat/conversations", "POST", { title: "", project_id: projectId || null });
+        await chatLoadSide();
+        await chatOpen(conv.id);
+        chById("chat-text").focus();
+      } catch (e) { chatStatus(e.message, true); }
     }
+
+    async function chatEnsureConv() {
+      if (chat.data) return chat.data.conversation;
+      const conv = await routerCall("/api/chat/conversations", "POST", { title: "", project_id: null });
+      await chatLoadSide();
+      await chatOpen(conv.id, { keepPending: true });
+      return conv;
+    }
+
+    async function chatNewProject() {
+      const name = prompt("Nome do projeto:");
+      if (!name || !name.trim()) return;
+      const folder = prompt("Pasta de trabalho do projeto (opcional; precisa estar em allowed_repo_roots do config.yaml). Deixe vazio para usar a pasta do Hera:", "");
+      try {
+        const p = await routerCall("/api/chat/projects", "POST", { name: name.trim(), folder: (folder || "").trim() });
+        await chatLoadSide();
+        await chatNew(p.id);
+      } catch (e) { alert(e.message); }
+    }
+
+    async function chatEditProject(p) {
+      const name = prompt("Nome do projeto:", p.name);
+      if (name === null) return;
+      const folder = prompt("Pasta de trabalho (vazio = pasta do Hera):", p.folder || "");
+      if (folder === null) return;
+      try {
+        await routerCall("/api/chat/projects/" + encodeURIComponent(p.id), "PATCH", { name: name.trim() || p.name, folder: folder.trim() });
+        await chatLoadSide();
+        if (chat.id) await chatOpen(chat.id, { keepPending: true });
+      } catch (e) { alert(e.message); }
+    }
+
+    async function chatDeleteProject(p) {
+      if (!confirm(`Apagar o projeto "${p.name}"? As conversas dele continuam, só ficam sem projeto.`)) return;
+      try {
+        await routerCall("/api/chat/projects/" + encodeURIComponent(p.id), "DELETE");
+        await chatLoadSide();
+        if (chat.id) await chatOpen(chat.id, { keepPending: true });
+      } catch (e) { alert(e.message); }
+    }
+
+    async function chatRename() {
+      if (!chat.data) return;
+      const title = prompt("Novo título da conversa:", chat.data.conversation.title);
+      if (!title || !title.trim()) return;
+      try {
+        await routerCall("/api/chat/conversations/" + encodeURIComponent(chat.id), "PATCH", { title: title.trim() });
+        await chatLoadSide();
+        await chatOpen(chat.id, { keepPending: true });
+      } catch (e) { alert(e.message); }
+    }
+
+    async function chatMoveTo(value) {
+      if (!chat.data) return;
+      try {
+        await routerCall("/api/chat/conversations/" + encodeURIComponent(chat.id), "PATCH", value ? { project_id: value } : { clear_project: true });
+        await chatLoadSide();
+        await chatOpen(chat.id, { keepPending: true });
+      } catch (e) { alert(e.message); }
+    }
+
+    async function chatDelete() {
+      if (!chat.data || !confirm(`Apagar a conversa "${chat.data.conversation.title}" e as imagens dela? Não dá para desfazer.`)) return;
+      try {
+        await routerCall("/api/chat/conversations/" + encodeURIComponent(chat.id), "DELETE");
+        chat.id = null; chat.data = null; chat.pending = []; lsSet("chat-id", "");
+        await chatLoadSide();
+        chatRenderAll();
+      } catch (e) { alert(e.message); }
+    }
+
+    function chatToggleSettings() { chById("chat-settings").classList.toggle("hidden"); }
+
+    // ---------- barra lateral
+    function chatRenderSide() {
+      const box = chById("chat-side-list");
+      box.replaceChildren();
+      const group = (project, convs) => {
+        const key = project ? project.id : "_none";
+        const open = !chat.collapsed[key];
+        const head = chEl("div", { class: "chat-group-h", role: "button", tabindex: 0, "aria-expanded": open ? "true" : "false",
+          title: project && project.folder ? "Pasta: " + project.folder : "", onclick: () => { chat.collapsed[key] = open; chatRenderSide(); },
+          onkeydown: e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); chat.collapsed[key] = open; chatRenderSide(); } } },
+          chIcon(open ? "chevron-down" : "chevron-right", "w-3.5 h-3.5"),
+          chIcon(project ? "folder" : "messages-square", "w-3.5 h-3.5"),
+          chEl("span", { class: "grow", text: project ? project.name : "Conversas" }),
+          chEl("span", { text: String(convs.length) }));
+        if (project) {
+          const stop = fn => e => { e.stopPropagation(); fn(); };
+          head.append(
+            chEl("button", { type: "button", class: "tool", title: "Nova conversa neste projeto", "aria-label": "Nova conversa neste projeto", onclick: stop(() => chatNew(project.id)) }, chIcon("plus", "w-3.5 h-3.5")),
+            chEl("button", { type: "button", class: "tool", title: "Editar projeto", "aria-label": "Editar projeto", onclick: stop(() => chatEditProject(project)) }, chIcon("pencil", "w-3.5 h-3.5")),
+            chEl("button", { type: "button", class: "tool", title: "Apagar projeto", "aria-label": "Apagar projeto", onclick: stop(() => chatDeleteProject(project)) }, chIcon("trash-2", "w-3.5 h-3.5")));
+        }
+        box.append(head);
+        if (open) convs.forEach(c => box.append(chEl("button", { type: "button", class: "chat-conv", title: c.title, "aria-current": c.id === chat.id ? "true" : "false",
+          text: c.title, onclick: () => chatOpen(c.id) })));
+      };
+      chat.projects.forEach(p => group(p, chat.convs.filter(c => c.project_id === p.id)));
+      group(null, chat.convs.filter(c => !c.project_id));
+      lucide.createIcons();
+    }
+
+    // ---------- cabeçalho, fio e caixa de envio
+    function chatRenderAll() {
+      chatRenderSide();
+      const tools = chById("chat-conv-tools");
+      tools.classList.toggle("hidden", !chat.data);
+      if (chat.data) {
+        const conv = chat.data.conversation, proj = chat.data.project;
+        chById("chat-title").textContent = conv.title;
+        chById("chat-sub").textContent = proj ? `Projeto ${proj.name}${proj.folder ? " · " + proj.folder : " · pasta do Hera"}` : "Sem projeto · pasta do Hera";
+        const sel = chById("chat-project-select");
+        sel.replaceChildren(chEl("option", { value: "", text: "Sem projeto" }), ...chat.projects.map(p => chEl("option", { value: p.id, text: p.name })));
+        sel.value = conv.project_id || "";
+      } else {
+        chById("chat-title").textContent = "Plano";
+        chById("chat-sub").textContent = "Converse, revise o plano e mande executar";
+      }
+      chatRenderThread();
+      chatRenderThumbs();
+      lucide.createIcons();
+    }
+
+    function chatRenderThread(keepScroll) {
+      const thread = chById("chat-thread");
+      const before = thread.scrollTop;
+      thread.replaceChildren();
+      const messages = chat.data ? chat.data.messages : [];
+      if (!messages.length && !chat.thinking) {
+        thread.append(chEl("div", { class: "chat-empty" },
+          chIcon("sparkles", "w-6 h-6 text-brand-400 mx-auto"),
+          chEl("b", { class: "text-white", text: "Diga o que você quer fazer" }),
+          chEl("span", { text: "O planejador divide o pedido em passos, você revisa (e edita, se quiser) e manda executar. Cada conversa guarda o histórico, e o planejador lembra do que já foi feito." }),
+          chEl("span", { text: "Anexe imagens com o clipe, colando (Ctrl+V) ou arrastando para cá. Agrupe conversas em projetos na barra ao lado." })));
+      }
+      messages.forEach(m => { const el = chatMessageEl(m); if (el) thread.append(el); });
+      if (chat.thinking) {
+        thread.append(chatUserEl(chat.thinking.text, chat.thinking.atts));
+        thread.append(chEl("div", { class: "msg msg-ai" }, chEl("div", { class: "msg-card" },
+          chEl("div", { class: "text-xs text-zinc-400 flex items-center gap-2" }, chEl("span", { class: "chat-dots" }, chEl("span"), chEl("span"), chEl("span")), "O planejador está pensando…"))));
+      }
+      thread.scrollTop = keepScroll ? before : thread.scrollHeight;
+    }
+
+    function chatImgEl(att, cls) {
+      const img = chEl("img", { class: cls, alt: att.filename || "imagem", title: att.filename || "" });
+      const show = u => { img.src = u; };
+      if (att.local) show(att.local);
+      else if (chatBlobs.has(att.id)) show(chatBlobs.get(att.id));
+      else fetch(att.url).then(r => r.ok ? r.blob() : Promise.reject(new Error("falhou")))
+        .then(b => { const u = URL.createObjectURL(b); chatBlobs.set(att.id, u); show(u); })
+        .catch(() => { img.alt = "imagem indisponível"; });
+      img.addEventListener("click", () => { if (img.src) chatZoom(img.src); });
+      return img;
+    }
+
+    function chatZoom(src) {
+      const box = chById("chat-lightbox");
+      box.querySelector("img").src = src;
+      box.classList.remove("hidden");
+    }
+
+    function chatUserEl(text, atts) {
+      const wrap = chEl("div", { class: "msg msg-user" });
+      if (atts && atts.length) wrap.append(chEl("div", { class: "msg-imgs" }, atts.map(a => chatImgEl(a, "msg-img"))));
+      if (text) wrap.append(chEl("div", { class: "msg-bubble", text }));
+      return wrap;
+    }
+
+    function chatMessageEl(m) {
+      if (m.role === "user") return chatUserEl(m.text, m.attachments);
+      if (m.kind === "error") return chEl("div", { class: "msg msg-ai" }, chEl("div", { class: "msg-card is-error", role: "alert", text: m.text }));
+      if (m.kind === "plan") return chatPlanEl(m);
+      if (m.kind === "run") return chatRunEl(m);
+      return chEl("div", { class: "msg msg-ai" }, chEl("div", { class: "msg-card", text: m.text }));
+    }
+
+    function chatBadge(label, tone) { return chEl("span", { class: "chat-badge " + (tone || ""), text: label }); }
+
+    // ---------- plano (cartão editável até o usuário mandar executar)
+    function chatEngineModels(engine) { return ((globalHealth || {})[engine] || {}).available_models || []; }
+
+    function chatPlanEl(m) {
+      const d = m.data || {};
+      const status = d.status || "proposed";
+      const editable = status === "proposed";
+      if (!chat.edits[m.id]) chat.edits[m.id] = JSON.parse(JSON.stringify(d.steps || []));
+      const steps = editable ? chat.edits[m.id] : (d.steps || []);
+      const [label, tone] = CHAT_STATUS[status] || [status, ""];
+      const card = chEl("div", { class: "msg-card", "data-mid": m.id });
+      const p = d.planner || {};
+      card.append(chEl("div", { class: "flex flex-wrap items-center gap-2" },
+        chIcon("network", "w-4 h-4 text-brand-400"),
+        chEl("b", { class: "text-sm text-white", text: `Plano com ${steps.length} passo(s)` }),
+        chEl("span", { class: "text-[11px] text-zinc-500", text: p.engine ? `por ${p.engine}${p.model ? " / " + p.model : ""}` : "" }),
+        chEl("span", { class: "grow" }), chatBadge(label, tone)));
+      (d.warnings || []).forEach(w => card.append(chEl("div", { class: "text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2", text: w })));
+      if (!editable) {
+        // plano aprovado: o cartão "some" (fica só uma linha dobrada) e a tela mostra a conversa do que está acontecendo
+        const folded = chEl("details", { class: "msg-card plan-folded", "data-mid": m.id },
+          chEl("summary", { class: "flex flex-wrap items-center gap-2 cursor-pointer" },
+            chIcon("circle-check", "w-4 h-4 text-emerald-400"),
+            chEl("b", { class: "text-xs text-white", text: `Plano aprovado · ${steps.length} passo(s)` }),
+            chEl("span", { class: "text-[11px] text-zinc-500", text: "toque para ver os passos" })),
+          ...steps.map((st, i) => chatStepEl(m, d, steps, st, i, false)));
+        const wrap = chEl("div", { class: "msg msg-ai" }, folded);
+        if (status === "running") {
+          wrap.append(chEl("div", { class: "msg-card chat-feed-card" },
+            chEl("div", { class: "chat-feed", id: "live-" + (d.run_id || m.id) }, chEl("div", { class: "feed-info", text: "Iniciando…" })),
+            chEl("button", { type: "button", class: "btn btn-ghost btn-sm", onclick: () => chatCancel(d.run_id) }, chIcon("square"), "Parar plano")));
+        }
+        return wrap;
+      }
+      steps.forEach((st, i) => card.append(chatStepEl(m, d, steps, st, i, editable)));
+      if (editable) {
+        const dir = chEl("input", { type: "text", maxlength: "500", class: "chat-field", id: "dir-" + m.id,
+          placeholder: "Pasta de trabalho (vazio = a do projeto, ou a pasta do Hera)" });
+        if ((d.project_dirs || []).length) dir.value = d.project_dirs[0];
+        card.append(chEl("div", { class: "flex flex-wrap items-center gap-2" }, dir,
+          chEl("button", { type: "button", class: "btn btn-primary", id: "run-" + m.id, onclick: () => chatExecute(m) }, chIcon("play"), "Executar plano")));
+      } else if (status === "running") {
+        card.append(chEl("div", { class: "chat-live", id: "live-" + (d.run_id || m.id), text: "Iniciando…" }),
+          chEl("button", { type: "button", class: "btn btn-ghost btn-sm", onclick: () => chatCancel(d.run_id) }, chIcon("square"), "Parar plano"));
+      }
+      return chEl("div", { class: "msg msg-ai" }, card);
+    }
+
+    function chatRerenderPlan(m) {
+      const old = document.querySelector(`[data-mid="${m.id}"]`);          // m.id é gerado pelo servidor (m_ + hexadecimal)
+      if (old && old.parentElement) old.parentElement.replaceWith(chatPlanEl(m));
+      lucide.createIcons();
+    }
+
+    function chatStepEl(m, d, steps, st, i, editable) {
+      const head = chEl("div", { class: "flex flex-wrap items-center gap-2" },
+        chEl("b", { class: "text-xs text-white", text: `${i + 1}. ${st.title || "Passo"}` }), chEl("span", { class: "grow" }));
+      if (editable) {
+        const eng = chEl("select", { "aria-label": "Motor do passo", onchange: ev => { st.engine = ev.target.value; st.model = ""; chatRerenderPlan(m); } },
+          chEl("option", { value: "", text: "Automático" }), ...(d.executors || []).map(e => chEl("option", { value: e, text: e })));
+        eng.value = st.engine || "";
+        const models = chatEngineModels(st.engine);
+        const mod = chEl("select", { "aria-label": "Modelo do passo", disabled: !st.engine, onchange: ev => { st.model = ev.target.value; } },
+          chEl("option", { value: "", text: "Modelo padrão" }), ...models.map(x => chEl("option", { value: x, text: x })));
+        if (st.model && !models.includes(st.model)) mod.append(chEl("option", { value: st.model, text: st.model }));
+        mod.value = st.model || "";
+        head.append(eng, mod, chEl("button", { type: "button", class: "text-xs text-rose-400 hover:text-rose-300", onclick: () => {
+          const gone = st.id; steps.splice(i, 1); steps.forEach(s => { s.depends_on = (s.depends_on || []).filter(x => x !== gone); }); chatRerenderPlan(m); }, text: "remover" }));
+      } else {
+        head.append(chEl("span", { class: "text-[11px] text-zinc-400 font-mono", text: `${st.engine || "automático"}${st.model ? " / " + st.model : ""}` }));
+      }
+      const body = editable
+        ? chEl("textarea", { rows: "3", "aria-label": "Instrução do passo", oninput: ev => { st.instruction = ev.target.value; }, text: st.instruction || "" })
+        : chEl("div", { class: "text-xs text-zinc-400 whitespace-pre-wrap", text: (st.instruction || "").slice(0, 400) });
+      if (editable) body.value = st.instruction || "";
+      const dep = (st.depends_on || []).length ? "depende de: " + st.depends_on.join(", ") : "";
+      return chEl("div", { class: "chat-step" }, head, st.reason ? chEl("div", { class: "text-[11px] text-zinc-400 italic", text: "Por quê: " + st.reason }) : null, body,
+        dep ? chEl("div", { class: "text-[11px] text-zinc-500", text: dep }) : null);
+    }
+
+    async function chatExecute(m) {
+      const steps = chat.edits[m.id];
+      if (!steps || !steps.length) { chatStatus("O plano ficou sem passos.", true); return; }
+      const btn = chById("run-" + m.id);
+      if (btn) btn.disabled = true;
+      try {
+        const dir = (chById("dir-" + m.id) || {}).value || "";
+        await routerCall(`/api/chat/conversations/${encodeURIComponent(chat.id)}/messages/${encodeURIComponent(m.id)}/execute`, "POST",
+          { steps, project_dir: dir.trim() || null });
+        delete chat.edits[m.id];
+        chatStatus("");
+        await chatOpen(chat.id, { keepPending: true });
+      } catch (e) {
+        if (btn) btn.disabled = false;
+        chatStatus(e.message, true);
+      }
+    }
+
+    async function chatCancel(runId) {
+      if (!runId || !confirm("Parar este plano? Os agentes em andamento serão encerrados e os passos seguintes não rodam.")) return;
+      try { await routerCall("/api/orchestration/runs/" + encodeURIComponent(runId) + "/cancel", "POST"); chatStatus("Parando o plano…"); }
+      catch (e) { chatStatus(e.message, true); }
+    }
+
+    // ---------- conversa ao vivo do plano (eventos do console contados como mensagens de chat)
+    function chatDigest(text) {
+      const lines = String(text || "").split(/\r?\n/).map(l => l.trim()).filter(l => l && !/^(#|---|\|)/.test(l));
+      const joined = lines.slice(0, 2).join(" ").replace(/[*`_]/g, "");
+      return joined.length > 260 ? joined.slice(0, 257) + "…" : joined;
+    }
+
+    function chatFeedEl(events, running) {
+      const box = chEl("div", { class: "chat-feed-list" });
+      const steps = new Map();
+      const stepOf = (id, ev) => {
+        if (!steps.has(id)) steps.set(id, { id, title: (ev && ev.title) || "", engine: (ev && ev.engine) || "", model: (ev && ev.model) || "", items: [], tools: 0 });
+        return steps.get(id);
+      };
+      const top = [];
+      let lastHeartbeat = "", lastKind = "";
+      for (const ev of events) {
+        const k = ev.kind;
+        if (k === "heartbeat") { lastHeartbeat = ev.text || ""; continue; }
+        lastKind = k;
+        lastHeartbeat = "";
+        if (!ev.step) { if (k === "info" || k === "error") top.push({ k, text: ev.text }); continue; }
+        const st = stepOf(ev.step, ev);
+        if (k === "step_start") { st.title = ev.title || st.title; st.engine = ev.engine || st.engine; st.model = ev.model || st.model; }
+        else if (k === "text" && ev.text) st.items.push({ k: "say", text: ev.text.length > 600 ? ev.text.slice(0, 597) + "…" : ev.text });
+        else if (k === "tool") { st.tools += 1; st.items.push({ k: "tool", text: (ev.text || "").slice(0, 140) }); }
+        else if (k === "step_end") st.items.push({ k: /succeed/i.test(String(ev.status || "")) ? "ok" : "bad", text: ev.text || "", error: ev.error || "" });
+        else if (k === "error") st.items.push({ k: "bad", text: ev.text || "" });
+        else if (k === "info") st.items.push({ k: "info", text: ev.text || "" });
+      }
+      top.forEach(t => box.append(chEl("div", { class: t.k === "error" ? "feed-bad" : "feed-info", text: t.text })));
+      steps.forEach(st => {
+        const sub = [st.engine, st.model].filter(Boolean).join(" / ");
+        const card = chEl("div", { class: "feed-step" }, chEl("div", { class: "feed-head" },
+          chEl("b", { text: `${st.id.replace(/^s/, "Passo ")}${st.title ? " · " + st.title : ""}` }),
+          sub ? chEl("span", { class: "feed-sub", text: sub }) : null));
+        const tools = st.items.filter(i => i.k === "tool");
+        const hidden = new Set(tools.slice(0, Math.max(0, tools.length - 3)));
+        if (hidden.size) card.append(chEl("div", { class: "feed-tool", text: `… ${hidden.size} ação(ões) anterior(es)` }));
+        st.items.forEach(i => {
+          if (hidden.has(i)) return;
+          if (i.k === "say") card.append(chEl("div", { class: "feed-say", text: i.text }));
+          else if (i.k === "tool") card.append(chEl("div", { class: "feed-tool", text: "› " + i.text }));
+          else if (i.k === "ok") card.append(chEl("div", { class: "feed-ok", text: "✓ " + (i.text || "Passo concluído") }));
+          else if (i.k === "bad") card.append(chEl("div", { class: "feed-bad", text: "✗ " + (i.text || "Falhou") + (i.error ? " — " + i.error : "") }));
+          else card.append(chEl("div", { class: "feed-info", text: i.text }));
+        });
+        box.append(card);
+      });
+      if (!steps.size && !top.length) box.append(chEl("div", { class: "feed-info", text: "Iniciando…" }));
+      if (running) box.append(chEl("div", { class: "feed-typing" }, chEl("span", { class: "chat-dots" }, chEl("span"), chEl("span"), chEl("span")),
+        lastHeartbeat || (lastKind === "step_end" ? "Passando para o próximo passo…" : "Trabalhando…")));
+      return box;
+    }
+
+    // ---------- resultado da execução: resumo para o usuário
+    function chatRunEl(m) {
+      const d = m.data || {};
+      const report = d.report || [];
+      const [label, tone] = CHAT_STATUS[d.status] || ["Resultado", ""];
+      const ok = report.filter(r => r.status === "SUCCEEDED").length;
+      const card = chEl("div", { class: "msg-card" }, chEl("div", { class: "flex flex-wrap items-center gap-2" },
+        chIcon(d.status === "done" ? "circle-check" : "triangle-alert", "w-4 h-4 " + (d.status === "done" ? "text-emerald-400" : "text-amber-400")),
+        chEl("b", { class: "text-sm text-white", text: "Resumo: " + (m.text || "Execução terminada") }), chEl("span", { class: "grow" }), chatBadge(label, tone)));
+      if (d.final) {
+        const copyBtn = chEl("button", { class: "btn btn-ghost text-xs", type: "button", text: "Copiar" });
+        copyBtn.addEventListener("click", async () => {
+          try { await navigator.clipboard.writeText(d.final); copyBtn.textContent = "Copiado ✓"; }
+          catch (e) { copyBtn.textContent = "Não consegui copiar"; }
+          setTimeout(() => { copyBtn.textContent = "Copiar"; }, 1800);
+        });
+        card.append(chEl("div", { class: "rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 my-2" },
+          chEl("div", { class: "flex items-center gap-2 mb-1" },
+            chEl("b", { class: "text-xs text-emerald-300", text: "Resumo final do planejador" }), chEl("span", { class: "grow" }), copyBtn),
+          chEl("div", { class: "text-sm text-zinc-100", style: "white-space:pre-wrap;word-break:break-word", text: d.final })));
+      }
+      if (report.length) {
+        card.append(chEl("ul", { class: "run-summary" }, report.map(r => {
+          const good = r.status === "SUCCEEDED";
+          const line = good ? chatDigest(r.output_text || r.summary) : (r.error || r.summary || r.status);
+          return chEl("li", { class: good ? "is-ok" : "is-bad" },
+            chEl("span", { class: "run-mark", text: good ? "✓" : "✗" }),
+            chEl("div", {}, chEl("b", { class: "text-xs text-white", text: r.title || r.id }),
+              chEl("span", { class: "text-[11px] text-zinc-500 font-mono", text: ` ${r.engine || ""} ${r.model || ""}`.trimEnd() }),
+              line ? chEl("div", { class: "text-xs " + (good ? "text-zinc-300" : "text-rose-300"), text: line }) : null));
+        })));
+      }
+      if (d.error && !report.length) card.append(chEl("div", { class: "text-xs text-rose-300", text: d.error }));
+      const planMsg = chat.data && chat.data.messages.find(x => x.id === d.plan_message_id);
+      const runId = planMsg && (planMsg.data || {}).run_id;
+      if (runId) {
+        const conv = chEl("details", { class: "chat-step" }, chEl("summary", { class: "text-xs text-zinc-300 cursor-pointer", text: "Ver a conversa do plano" }));
+        const body = chEl("div", { class: "chat-feed" });
+        conv.append(body);
+        conv.addEventListener("toggle", async () => {
+          if (!conv.open || body.dataset.loaded) return;
+          body.dataset.loaded = "1";
+          try {
+            const ev = await routerCall("/api/console?limit=800&run=" + encodeURIComponent(runId), "GET");
+            body.replaceChildren(chatFeedEl(ev.events || [], false));
+          } catch (e) { body.textContent = "Não consegui carregar o registro desta execução."; }
+        });
+        card.append(conv);
+      }
+      if (report.length) {
+        const full = chEl("details", { class: "chat-step" }, chEl("summary", { class: "text-xs text-zinc-300 cursor-pointer", text: "Ver a saída completa de cada passo" }));
+        report.forEach(r => {
+          const det = chEl("details", { class: "chat-step", open: r.status !== "SUCCEEDED" && report.length === 1 },
+            chEl("summary", { class: "flex flex-wrap items-center gap-2 cursor-pointer" },
+              chEl("b", { class: "text-xs text-white", text: r.title || r.id }), chEl("span", { class: "grow" }),
+              chatBadge(r.status, RUN_BADGE[r.status] || "")));
+          if (r.error) det.append(chEl("div", { class: "text-xs text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-lg p-2 font-mono break-words", text: "Motivo: " + r.error }));
+          det.append(chEl("pre", { class: "chat-out", text: r.output_text || r.summary || "(sem saída)" }));
+          full.append(det);
+        });
+        card.append(full);
+      }
+      return chEl("div", { class: "msg msg-ai" }, card);
+    }
+
+    // ---------- acompanhamento enquanto um plano roda
+    function chatSchedulePoll(delay) {
+      clearTimeout(chat.timer);
+      chat.timer = null;
+      const running = chat.data && chat.data.messages.find(m => m.kind === "plan" && (m.data || {}).status === "running");
+      if (!running || chById("tab-plan").classList.contains("hidden")) return;
+      chat.timer = setTimeout(() => chatPoll(running.data.run_id), delay || 2000);
+    }
+
+    async function chatPoll(runId) {
+      const id = chat.id;
+      if (!id) return;
+      try {
+        const live = chById("live-" + runId);
+        if (live && runId) {
+          const ev = await routerCall("/api/console?limit=800&run=" + encodeURIComponent(runId), "GET");
+          const thread = chById("chat-thread");
+          const atEnd = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 80;
+          live.replaceChildren(chatFeedEl(ev.events || [], true));
+          if (atEnd) thread.scrollTop = thread.scrollHeight;
+        }
+        const data = await routerCall("/api/chat/conversations/" + encodeURIComponent(id), "GET");
+        if (chat.id !== id) return;
+        const sig = data.messages.map(m => m.id + ":" + ((m.data || {}).status || "")).join("|");
+        const cur = chat.data.messages.map(m => m.id + ":" + ((m.data || {}).status || "")).join("|");
+        if (sig !== cur) { chat.data = data; chatRenderThread(); lucide.createIcons(); loadTasksHistory(); }
+      } catch (e) { /* servidor ocupado: tenta de novo no próximo ciclo */ }
+      chatSchedulePoll();
+    }
+
+    // ---------- envio de mensagem e de imagens
+    async function chatSend() {
+      if (chat.busy) return;
+      const ta = chById("chat-text");
+      const text = ta.value.trim();
+      if (text.length < 3 && !chat.pending.length) { chatStatus("Escreva o que você quer fazer (ou anexe uma imagem).", true); return; }
+      if (chat.pending.some(p => p.uploading)) { chatStatus("Aguarde as imagens terminarem de subir.", true); return; }
+      chat.busy = true;
+      chById("chat-send").disabled = true;
+      chatStatus("");
+      const saved = { text, pending: chat.pending.slice() };
+      try {
+        const conv = await chatEnsureConv();
+        chat.thinking = { text, atts: saved.pending };
+        ta.value = ""; chatAutosize();
+        chat.pending = [];
+        chatRenderThread(); chatRenderThumbs();
+        await routerCall(`/api/chat/conversations/${encodeURIComponent(conv.id)}/messages`, "POST", { text, attachment_ids: saved.pending.map(p => p.id) });
+      } catch (e) {
+        ta.value = saved.text; chatAutosize();
+        chat.pending = saved.pending;
+        chatStatus(e.message, true);
+      } finally {
+        chat.thinking = null; chat.busy = false;
+        chById("chat-send").disabled = false;
+        if (chat.id) { await chatOpen(chat.id, { keepPending: true }); chatLoadSide(); }
+      }
+    }
+
+    async function chatAddFiles(files) {
+      const list = [...files].filter(f => /^image\/(png|jpeg|gif|webp)$/.test(f.type));
+      if (!list.length) { chatStatus("Só imagens PNG, JPEG, GIF ou WebP.", true); return; }
+      let conv;
+      try { conv = await chatEnsureConv(); } catch (e) { chatStatus(e.message, true); return; }
+      for (const f of list) {
+        if (chat.pending.length >= 6) { chatStatus("No máximo 6 imagens por mensagem.", true); break; }
+        if (f.size > 10 * 1024 * 1024) { chatStatus(`"${f.name}" passa de 10 MB.`, true); continue; }
+        const item = { id: null, filename: f.name || "imagem", local: URL.createObjectURL(f), uploading: true };
+        chat.pending.push(item); chatRenderThumbs();
+        try {
+          const res = await fetch(`/api/chat/conversations/${encodeURIComponent(conv.id)}/attachments`, { method: "POST",
+            headers: { "Content-Type": "application/octet-stream", "X-Filename": encodeURIComponent(f.name || "imagem") }, body: f });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error((data.detail && data.detail.message) || "Não consegui enviar a imagem.");
+          item.id = data.id; item.uploading = false; chatBlobs.set(data.id, item.local);
+        } catch (e) {
+          chat.pending = chat.pending.filter(p => p !== item);
+          chatStatus(e.message, true);
+        }
+        chatRenderThumbs();
+      }
+    }
+
+    function chatPickFiles(input) { chatAddFiles(input.files); input.value = ""; }
+
+    function chatRenderThumbs() {
+      const box = chById("chat-thumbs");
+      box.replaceChildren(...chat.pending.map(p => chEl("div", { class: "chat-thumb" + (p.uploading ? " loading" : "") },
+        chEl("img", { src: p.local, alt: p.filename }),
+        chEl("button", { type: "button", title: "Remover imagem", "aria-label": "Remover imagem", text: "×", onclick: async () => {
+          chat.pending = chat.pending.filter(x => x !== p); chatRenderThumbs();
+          if (p.id) { try { await routerCall("/api/chat/attachments/" + encodeURIComponent(p.id), "DELETE"); } catch (e) { /* já saiu da lista */ } }
+        } }))));
+    }
+
+    function chatAutosize() {
+      const ta = chById("chat-text");
+      ta.style.height = "auto";
+      ta.style.height = Math.min(ta.scrollHeight, 160) + "px";
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const ta = chById("chat-text"), comp = chById("chat-composer"), lb = chById("chat-lightbox");
+      ta.addEventListener("input", chatAutosize);
+      ta.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); chatSend(); } });
+      ta.addEventListener("paste", e => {
+        const files = [...(e.clipboardData ? e.clipboardData.files : [])].filter(f => f.type.startsWith("image/"));
+        if (files.length) { e.preventDefault(); chatAddFiles(files); }
+      });
+      ["dragenter", "dragover"].forEach(t => comp.addEventListener(t, e => { e.preventDefault(); comp.classList.add("drag"); }));
+      ["dragleave", "drop"].forEach(t => comp.addEventListener(t, e => { e.preventDefault(); comp.classList.remove("drag"); }));
+      comp.addEventListener("drop", e => { if (e.dataTransfer && e.dataTransfer.files.length) chatAddFiles(e.dataTransfer.files); });
+      lb.addEventListener("click", () => lb.classList.add("hidden"));
+      document.addEventListener("keydown", e => { if (e.key === "Escape") lb.classList.add("hidden"); });
+    });
 
     // ==================== ROTEADOR EMBUTIDO ====================
     let routerState = null;
-    let routerCombosDraft = {};
     let rtAliasDraft = [];
     let rtPriceDraft = [];
     let rtTierDraft = [];
     let rtUsage = null;
     let rtLiveTimer = null;
     const CUSTOM_PRESET = "__custom__";
-    const STRATEGY_LABELS = { priority: "Prioridade", round_robin: "Revezar", fastest: "Mais rápido", least_used: "Menos usado", weighted: "Ponderado" };
     const TIER_LABELS = { cloud_premium: "Nuvem premium", cloud_cheap: "Nuvem barata", cloud_free: "Nuvem grátis", local: "Local (Ollama)" };
 
     function fmt(n) { return (n ?? 0).toLocaleString("pt-BR"); }
@@ -1853,39 +2184,40 @@
       return prompt(`Digite o código de aprovação humana para ${what}\n(aparece no console do servidor ou em: hera approval-code)`);
     }
 
+    // Provedores/contas de nuvem NAO pedem mais o codigo de aprovacao (decisao do dono, 14/10/2026).
+    // O servidor ignora o campo; devolvemos um valor qualquer so para os fluxos que checam "if (!code) return".
+    function askProviderCode(what) { return "-"; }
+
     // ---------- navegação interna
     function rtSub(name) {
       lsSet("rt-sub", name);
+      try { history.replaceState(null, "", "#router/" + name); } catch (e) { /* segue */ }
       document.querySelectorAll(".rt-panel").forEach(p => p.classList.add("hidden"));
       const panel = document.getElementById("rt-" + name);
       if (panel) panel.classList.remove("hidden");
       document.querySelectorAll(".rt-tab").forEach(b => {
-        b.className = "rt-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold " + (b.dataset.sub === name ? "bg-brand-500 text-white" : "text-zinc-400 hover:text-white hover:bg-zinc-800");
+        b.className = "rt-tab px-3.5 py-1.5 rounded-lg text-xs font-semibold " + (b.dataset.sub === name ? "bg-brand-500 text-brand-ink" : "text-zinc-400 hover:text-white hover:bg-zinc-800");
       });
       if (name === "logs") loadRouterLogs();
+      if (name === "providers" && typeof pvLoadAccounts === "function") { pvLoadAccounts(); if (!routerState) loadRouterState(); loadHealth().then(() => pvRender()); }
       if (name === "clients") loadClients();
-      if (name !== "logs") rtLiveStop();
+      if (name === "connections") loadConnections();
+      if (name !== "logs" && name !== "connections") rtLiveStop();
+      if (name !== "connections") oauthPollStop();
+      if (name !== "providers" && typeof pvStopWatch === "function") pvStopWatch();
     }
     document.addEventListener("click", e => { const b = e.target.closest(".rt-tab"); if (b) rtSub(b.dataset.sub); });
 
     async function loadRouterState() {
       try {
         routerState = await (await fetch("/api/router/state")).json();
-        routerCombosDraft = JSON.parse(JSON.stringify(routerState.combos || {}));
         rtAliasDraft = Object.entries(routerState.aliases || {});
         rtPriceDraft = Object.entries(routerState.pricing || {}).map(([k, v]) => [k, v.in, v.out]);
         rtTierDraft = [...routerState.tier_order];
         document.getElementById("router-offline-banner").classList.toggle("hidden", !routerState.offline);
-        const sel = document.getElementById("router-preset");
-        const keep = sel.value;
-        sel.innerHTML = routerState.presets.map(p => `<option value="${escAttr(p.id)}">${escapeHtml(p.label)} (${escapeHtml(p.tier.replace("cloud_", ""))})</option>`).join("")
-          + `<option value="${CUSTOM_PRESET}">Personalizado (qualquer API compatível com OpenAI)</option>`;
-        if (keep) sel.value = keep;
-        document.getElementById("rt-preset-count").innerText = routerState.presets.length;
-        onRouterPresetChange();
-        renderRouterProviders();
-        renderRouterCombos();
+        pvRender();
         renderAliases();
+        renderAliasTargets();
         renderPricing();
         renderTiers();
         document.getElementById("rt-rtk").checked = !!routerState.rtk.enabled;
@@ -1893,7 +2225,7 @@
         document.getElementById("rt-breaker").value = routerState.breaker_threshold;
         renderConnect();
         loadRouterUsage();
-        rtSub(lsGet("rt-sub", "overview"));
+        rtSub(({ combos: "apelidos" })[lsGet("rt-sub", "providers")] || lsGet("rt-sub", "providers"));
       } catch (e) {
         console.error("Falha ao carregar o roteador:", e);
       }
@@ -1930,7 +2262,7 @@
       const stats = {};
       ((rtUsage && rtUsage.by_provider) || []).forEach(r => { const s = stats[r.provider] || (stats[r.provider] = { n: 0, ok: 0, lat: 0, latN: 0 }); s.n += r.requests; s.ok += r.ok; if (r.avg_latency_ms) { s.lat += r.avg_latency_ms * r.requests; s.latN += r.requests; } });
       const cards = routerState.providers.map(p => {
-        const st = !p.enabled ? ["DESLIGADO", "#6b7280"] : p.health.state === "paused" ? [`EM PAUSA ${p.health.resume_in_s}s`, "#f59e0b"] : p.active ? ["ATIVO", "#10b981"] : ["SEM CHAVE", "#f59e0b"];
+        const st = !p.enabled ? ["DESLIGADO", "#71869d"] : p.health.state === "paused" ? [`EM PAUSA ${p.health.resume_in_s}s`, "#f59e0b"] : p.active ? ["ATIVO", "#10b981"] : ["SEM CHAVE", "#f59e0b"];
         const s = stats[p.name];
         const rate = s && s.n ? Math.round(100 * s.ok / s.n) + "% ok" : "sem uso";
         const lat = s && s.latN ? Math.round(s.lat / s.latN) + " ms" : "-";
@@ -1943,85 +2275,6 @@
         </div>`;
       });
       document.getElementById("rt-health").innerHTML = cards.join("") || '<div class="text-xs text-zinc-500">Nenhum provedor de nuvem ainda: adicione um em "Provedores". O Ollama local é usado sempre.</div>';
-    }
-
-    // ---------- provedores
-    function onRouterPresetChange() {
-      const id = document.getElementById("router-preset").value;
-      const custom = id === CUSTOM_PRESET;
-      document.getElementById("router-custom").classList.toggle("hidden", !custom);
-      const p = (routerState.presets || []).find(x => x.id === id);
-      document.getElementById("router-preset-info").innerHTML = custom
-        ? "<div>Use o endereço base da API (termina em <code>/v1</code>, só HTTPS). A chave fica no cofre do Hera, protegida pelo Windows.</div>"
-        : (p ? `<div>${escapeHtml(p.note || "")}</div>
-        <div>Crie a chave em <a class="text-brand-400 underline" target="_blank" rel="noopener noreferrer" href="${escAttr(p.signup)}">${escapeHtml(p.signup)}</a> e cole acima. Ela fica no cofre do Hera (protegido pelo Windows); o Hera nunca a mostra de volta. Os nomes de modelo mudam: use <strong>Buscar modelos</strong> depois de adicionar.</div>` : "");
-    }
-
-    function renderRouterProviders() {
-      const box = document.getElementById("router-providers");
-      const list = routerState.providers;
-      if (!list.length) { box.innerHTML = '<div class="text-xs text-zinc-500">Nenhum provedor de nuvem ainda. Adicione um abaixo; o Ollama local já é usado sempre.</div>'; return; }
-      box.innerHTML = list.map(p => {
-        const paused = p.health.state === "paused";
-        const st = !p.enabled ? ["DESLIGADO", "#6b7280", "bg-zinc-500/10 text-zinc-400 border-zinc-500/20"]
-          : paused ? [`EM PAUSA ${p.health.resume_in_s}s`, "#f59e0b", "bg-amber-500/10 text-amber-400 border-amber-500/20"]
-          : p.active ? ["ATIVO", "#10b981", "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"]
-          : ["SEM CHAVE", "#f59e0b", "bg-amber-500/10 text-amber-400 border-amber-500/20"];
-        const keys = (p.keys || []).map(k => `<span class="px-1.5 py-0.5 rounded bg-zinc-800 text-[10px] font-mono">${escapeHtml(k.id)}: ${escapeHtml(k.state)}${k.cooldown_remaining_s ? " " + k.cooldown_remaining_s + "s" : ""}</span>`).join(" ");
-        const where = [p.keys_stored ? `${p.keys_stored} no cofre` : "", p.keys_env ? `${p.keys_env} no ambiente` : ""].filter(Boolean).join(" · ") || "nenhuma chave";
-        const n = escAttr(p.name);
-        const num = (field, label, ph) => `<label class="text-[10px] text-zinc-500">${label}<input id="lim-${field}-${n}" type="number" min="0" value="${p[field] && !(field === "priority" && p[field] === 100) ? p[field] : ""}" placeholder="${ph}" class="mt-0.5 w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100"></label>`;
-        return `<div class="bg-zinc-950 border border-zinc-800 rounded-xl p-4 space-y-3">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <div class="flex flex-wrap items-center gap-2.5">
-              <span class="text-sm font-bold text-white">${escapeHtml(p.name)}</span>
-              <span class="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${st[2]}"><span class="dot" style="background:${st[1]}"></span>${escapeHtml(st[0])}</span>
-              <span class="text-[11px] text-zinc-500">${escapeHtml(p.tier)} · ${escapeHtml(p.default_model)} · ${(p.models || []).length} modelo(s)</span>
-            </div>
-            <label class="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer">Ligado
-              <span class="switch"><input type="checkbox" ${p.enabled ? "checked" : ""} onchange="toggleRouterProvider('${n}', this.checked)"><span></span></span>
-            </label>
-          </div>
-          <div class="text-[11px] text-zinc-400">Chaves: ${where} ${keys ? " · " + keys : ""}</div>
-          ${paused ? `<div class="text-[11px] text-amber-300">Pausado após falhas seguidas. Último erro: ${escapeHtml(p.health.last_error || "-")} <button onclick="resetBreaker('${n}')" class="underline ml-1">tentar de novo agora</button></div>` : ""}
-          <div class="grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
-            ${num("priority", "Prioridade (menor = antes)", "100")}${num("rpm", "Req. por minuto", "sem limite")}${num("daily_requests", "Req. por dia", "sem limite")}${num("daily_tokens", "Tokens por dia", "sem limite")}
-            <button onclick="saveLimits('${n}')" class="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold">Salvar limites</button>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <input id="key-${n}" type="password" autocomplete="off" placeholder="Colar chave de API" class="flex-1 min-w-[220px] bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 font-mono">
-            <button onclick="saveRouterKey('${n}')" class="px-2.5 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-semibold">Guardar chave</button>
-            ${p.keys_stored ? `<button onclick="clearRouterKeys('${n}')" class="px-2.5 py-1.5 text-rose-400 hover:text-rose-300 text-xs">Apagar chaves</button>` : ""}
-            <button onclick="testRouterProvider('${n}')" class="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs">Testar</button>
-            <button onclick="discoverRouterModels('${n}')" class="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs">Buscar modelos</button>
-            <button onclick="deleteRouterProvider('${n}')" class="px-2.5 py-1.5 text-zinc-500 hover:text-rose-300 text-xs">Remover</button>
-          </div>
-          <div id="router-test-${n}" class="text-[11px] font-mono text-zinc-400"></div>
-        </div>`;
-      }).join("");
-    }
-
-    async function addRouterProvider() {
-      const preset = document.getElementById("router-preset").value;
-      const newKey = document.getElementById("router-newkey").value.trim();
-      const body = { enabled: true };
-      if (preset === CUSTOM_PRESET) {
-        body.name = document.getElementById("rc-name").value.trim().toLowerCase();
-        body.base_url = document.getElementById("rc-url").value.trim();
-        body.default_model = document.getElementById("rc-model").value.trim();
-        body.key_env = "";
-        if (!body.name || !body.base_url || !body.default_model) { alert("Preencha nome, endereço e modelo padrão."); return; }
-      } else { body.preset = preset; }
-      const code = askHumanCode("ligar um provedor de nuvem (seus prompts passarão a poder ir para ele)");
-      if (!code) return;
-      body.human_code = code;
-      try {
-        const r = await routerCall("/api/router/providers", "POST", body);
-        if (newKey) await routerCall(`/api/router/providers/${encodeURIComponent(r.provider.name)}/keys`, "POST", { keys: [newKey], human_code: code });
-        document.getElementById("router-newkey").value = "";
-        await loadRouterState();
-        loadHealth();
-      } catch (e) { alert("Não foi possível adicionar: " + e.message); await loadRouterState(); }
     }
 
     async function saveLimits(name) {
@@ -2040,13 +2293,55 @@
       const input = document.getElementById("key-" + name);
       const value = input.value.trim();
       if (!value) { alert("Cole a chave de API no campo."); return; }
-      const code = askHumanCode(`guardar a chave de ${name} no cofre`);
+      const code = askProviderCode(`guardar a chave de ${name} no cofre`);
       if (!code) return;
       try {
         await routerCall(`/api/router/providers/${encodeURIComponent(name)}/keys`, "POST", { keys: value.split(/[\s,;]+/).filter(Boolean), human_code: code });
         input.value = "";
         await loadRouterState();
       } catch (e) { alert("Não foi possível guardar a chave: " + e.message); }
+    }
+
+    // Mais uma conta/chave no MESMO provedor (nao apaga as que ja existem). O Hera alterna entre elas e descansa a que bater no limite.
+    async function addRouterKey(name) {
+      const input = document.getElementById("key-" + name);
+      const value = input.value.trim();
+      if (!value) { alert("Cole a chave de API no campo."); return; }
+      try {
+        await routerCall(`/api/router/providers/${encodeURIComponent(name)}/keys`, "POST", { keys: value.split(/[\s,;]+/).filter(Boolean), mode: "append", human_code: askProviderCode("") });
+        input.value = "";
+        await loadRouterState();
+      } catch (e) { alert("Não foi possível adicionar a chave: " + e.message); }
+    }
+
+    async function removeRouterKey(name, index) {
+      if (!confirm(`Tirar a chave #${index + 1} de ${name}? As outras continuam.`)) return;
+      try { await routerCall(`/api/router/providers/${encodeURIComponent(name)}/keys/${index}`, "DELETE"); await loadRouterState(); }
+      catch (e) { alert("Não foi possível tirar a chave: " + e.message); }
+    }
+
+    async function saveRouterHeaders(name) {
+      const box = document.getElementById("hdr-" + name);
+      const headers = {};
+      for (const line of box.value.split(/\r?\n/)) {
+        const t = line.trim();
+        if (!t) continue;
+        const i = t.indexOf(":");
+        if (i < 1) { alert(`Linha inválida (use "Nome: valor"): ${t}`); return; }
+        headers[t.slice(0, i).trim()] = t.slice(i + 1).trim();
+      }
+      try { await routerCall(`/api/router/providers/${encodeURIComponent(name)}/headers`, "PUT", { headers }); await loadRouterState(); ovToastSafe("Cabeçalhos salvos."); }
+      catch (e) { alert("Não foi possível salvar os cabeçalhos: " + e.message); }
+    }
+
+    function quotaLine(q) {
+      if (!q) return "";
+      const bits = [];
+      if (q.remaining_requests != null) bits.push(`${fmt(q.remaining_requests)}${q.limit_requests != null ? " de " + fmt(q.limit_requests) : ""} req. restantes`);
+      if (q.remaining_tokens != null) bits.push(`${fmt(q.remaining_tokens)}${q.limit_tokens != null ? " de " + fmt(q.limit_tokens) : ""} tokens restantes`);
+      const reset = q.remaining_requests === 0 ? q.reset_requests_s : (q.remaining_tokens === 0 ? q.reset_tokens_s : null);
+      if (reset) bits.push(`volta em ${Math.ceil(reset)}s`);
+      return bits.length ? "Cota informada pelo provedor: " + bits.join(" · ") : "";
     }
 
     async function clearRouterKeys(name) {
@@ -2056,7 +2351,7 @@
 
     async function toggleRouterProvider(name, enabled) {
       const body = { enabled };
-      if (enabled) { body.human_code = askHumanCode(`ligar o provedor ${name}`); if (!body.human_code) { await loadRouterState(); return; } }
+      if (enabled) { body.human_code = askProviderCode(`ligar o provedor ${name}`); if (!body.human_code) { await loadRouterState(); return; } }
       try { await routerCall(`/api/router/providers/${encodeURIComponent(name)}/enabled`, "POST", body); } catch (e) { alert("Não foi possível alterar: " + e.message); }
       await loadRouterState();
     }
@@ -2086,78 +2381,12 @@
       } catch (e) { if (out) out.innerText = "Erro: " + e.message; }
     }
 
-    // ---------- combos e apelidos
-    function stepProviders() { return [...routerState.providers.filter(p => p.active).map(p => p.name), "ollama"]; }
-    function modelsFor(provider) {
-      if (provider === "ollama") return routerState.ollama_models || [];
-      const p = routerState.providers.find(x => x.name === provider);
-      return p ? [...new Set([p.default_model, ...(p.models || [])])] : [];
-    }
-
-    function renderRouterCombos() {
-      document.getElementById("router-datalists").innerHTML = stepProviders().map(pr =>
-        `<datalist id="models-${escAttr(pr)}">${modelsFor(pr).map(m => `<option value="${escAttr(m)}">`).join("")}</datalist>`).join("");
-      const box = document.getElementById("router-combos");
-      const names = Object.keys(routerCombosDraft);
-      if (!names.length) { box.innerHTML = '<div class="text-xs text-zinc-500">Nenhum combo ainda.</div>'; return; }
-      box.innerHTML = names.map(cn => {
-        const combo = routerCombosDraft[cn];
-        const weighted = combo.strategy === "weighted";
-        const rows = combo.steps.map((st, i) => `
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="text-[11px] text-zinc-500 w-4">${i + 1}.</span>
-            <select onchange="routerCombosDraft['${escAttr(cn)}'].steps[${i}].provider = this.value; renderRouterCombos()" class="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100">
-              ${stepProviders().map(pr => `<option value="${escAttr(pr)}" ${pr === st.provider ? "selected" : ""}>${escapeHtml(pr)}</option>`).join("")}
-            </select>
-            <input list="models-${escAttr(st.provider)}" value="${escAttr(st.model)}" oninput="routerCombosDraft['${escAttr(cn)}'].steps[${i}].model = this.value" placeholder="modelo" class="flex-1 min-w-[180px] bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100 font-mono">
-            ${weighted ? `<input type="number" min="1" max="100" value="${st.weight || 1}" title="peso" oninput="routerCombosDraft['${escAttr(cn)}'].steps[${i}].weight = parseInt(this.value || '1', 10)" class="w-16 bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100">` : ""}
-            <button onclick="moveComboStep('${escAttr(cn)}', ${i}, -1)" class="text-xs text-zinc-500 hover:text-white" title="subir">↑</button>
-            <button onclick="moveComboStep('${escAttr(cn)}', ${i}, 1)" class="text-xs text-zinc-500 hover:text-white" title="descer">↓</button>
-            <button onclick="removeComboStep('${escAttr(cn)}', ${i})" class="text-xs text-rose-400">x</button>
-          </div>`).join("");
-        return `<div class="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-2">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <span class="text-sm font-bold text-white font-mono">${escapeHtml(cn)}</span>
-            <div class="flex items-center gap-3">
-              <select onchange="routerCombosDraft['${escAttr(cn)}'].strategy = this.value; renderRouterCombos()" class="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100">
-                ${(routerState.strategies || []).map(s => `<option value="${s}" ${s === combo.strategy ? "selected" : ""}>${STRATEGY_LABELS[s] || s}</option>`).join("")}
-              </select>
-              <button onclick="addComboStep('${escAttr(cn)}')" class="text-xs text-brand-400">+ passo</button>
-              <button onclick="deleteCombo('${escAttr(cn)}')" class="text-xs text-rose-400">apagar combo</button>
-            </div>
-          </div>${rows}</div>`;
-      }).join("");
-    }
-
-    function addRouterCombo() {
-      const name = (prompt("Nome do combo (letras minúsculas, números, - e _):") || "").trim().toLowerCase();
-      if (!name) return;
-      routerCombosDraft[name] = { strategy: "priority", steps: [{ provider: stepProviders()[0], model: modelsFor(stepProviders()[0])[0] || "" }] };
-      renderRouterCombos();
-    }
-    function addComboStep(cn) { const pr = stepProviders()[0]; routerCombosDraft[cn].steps.push({ provider: pr, model: modelsFor(pr)[0] || "" }); renderRouterCombos(); }
-    function removeComboStep(cn, i) { routerCombosDraft[cn].steps.splice(i, 1); if (!routerCombosDraft[cn].steps.length) delete routerCombosDraft[cn]; renderRouterCombos(); }
-    function moveComboStep(cn, i, d) {
-      const steps = routerCombosDraft[cn].steps, j = i + d;
-      if (j < 0 || j >= steps.length) return;
-      [steps[i], steps[j]] = [steps[j], steps[i]]; renderRouterCombos();
-    }
-    function deleteCombo(cn) { delete routerCombosDraft[cn]; renderRouterCombos(); }
-
-    async function saveRouterCombos() {
-      try {
-        await routerCall("/api/router/combos", "PUT", { combos: routerCombosDraft });
-        await loadRouterState();
-        ovToastSafe("Combos salvos. Já dá para usar o nome do combo como modelo.");
-      } catch (e) { alert("Não foi possível salvar os combos: " + e.message); }
-    }
-
     function renderAliases() {
       document.getElementById("rt-aliases").innerHTML = rtAliasDraft.map((row, i) => `
         <div class="flex flex-wrap items-center gap-2">
           <input value="${escAttr(row[0])}" oninput="rtAliasDraft[${i}][0] = this.value.trim()" placeholder="apelido (ex.: codigo)" class="w-44 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100 font-mono">
           <span class="text-zinc-500">→</span>
-          <input value="${escAttr(row[1])}" oninput="rtAliasDraft[${i}][1] = this.value.trim()" placeholder="combo, provedor/modelo ou modelo" class="flex-1 min-w-[220px] bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100 font-mono">
+          <input value="${escAttr(row[1])}" oninput="rtAliasDraft[${i}][1] = this.value.trim()" placeholder="provedor/modelo ou modelo" list="alias-targets" class="flex-1 min-w-[220px] bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100 font-mono">
           <button onclick="rtAliasDraft.splice(${i}, 1); renderAliases()" class="text-xs text-rose-400">x</button>
         </div>`).join("") || '<div class="text-xs text-zinc-500">Nenhum apelido ainda.</div>';
     }
@@ -2336,13 +2565,13 @@
       try { data = JSON.parse(await file.text()); } catch (e) { alert("O arquivo não é um JSON válido."); return; }
       const code = askHumanCode("importar uma configuração do roteador (os provedores chegam desligados)");
       if (!code) return;
-      try { const r = await routerCall("/api/router/import", "POST", { data, human_code: code }); await loadRouterState(); alert(`Importado: ${r.providers} provedor(es) (desligados) e ${r.combos} combo(s).`); }
+      try { const r = await routerCall("/api/router/import", "POST", { data, human_code: code }); await loadRouterState(); alert(`Importado: ${r.providers} provedor(es) (desligados).`); }
       catch (e) { alert("Importação recusada: " + e.message); }
     }
 
     // ==================== CONSOLE DO HERA (ao vivo) ====================
     const HC = { open: false, live: [], shown: [], view: "live", plan: null, done: 0, total: 0, running: new Set(), lastText: null };
-    const ENGINE_COLOR = { claude_code: "#e56a4a", antigravity: "#60a5fa", ollama: "#34d399", hera_router: "#c084fc" };
+    const ENGINE_COLOR = { claude_code: "#19b8a4", antigravity: "#60a5fa", ollama: "#34d399", hera_router: "#c084fc", codex: "#10b981", cursor: "#cfdae6", qoder: "#f59e0b", codebuddy: "#60a5fa", kimi: "#c084fc" };
 
     function hcEl(tag, cls, text) {
       const e = document.createElement(tag);
@@ -2430,7 +2659,7 @@
       const body = document.getElementById("hc-body");
       if (!hcVisible(ev)) return;
       if (body.firstChild && body.firstChild.dataset && body.firstChild.dataset.empty) body.innerHTML = "";
-      const color = ENGINE_COLOR[ev.engine] || "#9ca3af";
+      const color = ENGINE_COLOR[ev.engine] || "#8396ab";
       const label = ev.step ? `[${ev.step}]` : "";
       let node = null;
       if (ev.kind === "text") {
@@ -2775,7 +3004,7 @@
       pv.classList.toggle("hidden", m === "edit");
       panes.className = "grid gap-3 flex-1 min-h-[420px] " + (m === "split" ? "grid-cols-1 2xl:grid-cols-2" : "grid-cols-1");
       for (const id of ["edit", "split", "view"]) {
-        document.getElementById("ovm-" + id).className = "px-2.5 py-1 " + (id === m ? "bg-brand-500 text-white" : "bg-zinc-900 text-zinc-300");
+        document.getElementById("ovm-" + id).className = "px-2.5 py-1 " + (id === m ? "bg-brand-500 text-brand-ink" : "bg-zinc-900 text-zinc-300");
       }
       if (m !== "edit") ovRenderPreview();
     }
@@ -2936,7 +3165,7 @@
       const modal = document.getElementById("ov-graph-modal");
       modal.classList.remove("hidden");
       const svg = document.getElementById("ov-graph");
-      svg.innerHTML = '<text x="480" y="280" fill="#9ca3af" text-anchor="middle" font-size="14">Montando o mapa...</text>';
+      svg.innerHTML = '<text x="480" y="280" fill="#8396ab" text-anchor="middle" font-size="14">Montando o mapa...</text>';
       let g;
       try { g = await ovApi("/api/obsidian/graph"); } catch (e) { svg.innerHTML = `<text x="480" y="280" fill="#f87171" text-anchor="middle">${escapeHtml(e.message)}</text>`; return; }
       let seed = 7;
@@ -2964,11 +3193,554 @@
         }
       }
       const top = new Set([...nodes].sort((a, b) => b.degree - a.degree).slice(0, 12).map(n => n.path));
-      svg.innerHTML = edges.map(([a, b]) => `<line x1="${nodes[a].x.toFixed(1)}" y1="${nodes[a].y.toFixed(1)}" x2="${nodes[b].x.toFixed(1)}" y2="${nodes[b].y.toFixed(1)}" stroke="#4a4a4a" stroke-opacity="0.35" stroke-width="1"/>`).join("")
-        + nodes.map(n => `<g data-path="${escAttr(n.path)}" style="cursor:pointer"><circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${4 + Math.min(n.degree, 12) * 0.9}" fill="${n.path === OV.path ? "#e56a4a" : "#9ca3af"}" opacity="0.9"><title>${escapeHtml(n.path)}</title></circle>`
-          + (top.has(n.path) ? `<text x="${(n.x + 8).toFixed(1)}" y="${(n.y + 3).toFixed(1)}" fill="#d4d4d4" font-size="10">${escapeHtml(n.title.slice(0, 24))}</text>` : "") + "</g>").join("");
+      svg.innerHTML = edges.map(([a, b]) => `<line x1="${nodes[a].x.toFixed(1)}" y1="${nodes[a].y.toFixed(1)}" x2="${nodes[b].x.toFixed(1)}" y2="${nodes[b].y.toFixed(1)}" stroke="#2d3f56" stroke-opacity="0.35" stroke-width="1"/>`).join("")
+        + nodes.map(n => `<g data-path="${escAttr(n.path)}" style="cursor:pointer"><circle cx="${n.x.toFixed(1)}" cy="${n.y.toFixed(1)}" r="${4 + Math.min(n.degree, 12) * 0.9}" fill="${n.path === OV.path ? "#19b8a4" : "#8396ab"}" opacity="0.9"><title>${escapeHtml(n.path)}</title></circle>`
+          + (top.has(n.path) ? `<text x="${(n.x + 8).toFixed(1)}" y="${(n.y + 3).toFixed(1)}" fill="#cfdae6" font-size="10">${escapeHtml(n.title.slice(0, 24))}</text>` : "") + "</g>").join("");
       svg.onclick = e => { const gEl = e.target.closest("[data-path]"); if (gEl) { modal.classList.add("hidden"); ovOpen(gEl.dataset.path); } };
     }
   </script>
+
+<script>
+  // ---------- Conexões: rotas, OAuth e busca (sub-aba do Roteador)
+  const CN_ENDPOINTS = [
+    ["/v1/chat/completions", "Chat (OpenAI)", "Cursor, Cline, Continue, scripts"],
+    ["/v1/messages", "Chat (Anthropic)", "Claude Code, SDK da Anthropic"],
+    ["/v1/responses", "Responses API (OpenAI)", "Codex CLI, SDK novo da OpenAI"],
+    ["/v1/embeddings", "Embeddings", "RAG, busca semântica (nuvem ou Ollama)"],
+    ["/v1/images/generations", "Imagens", "provedores com API de imagem"],
+    ["/v1/audio/speech", "Texto em voz (TTS)", "provedores com API de voz"],
+    ["/v1/audio/transcriptions", "Voz em texto (STT)", "áudio de até 25 MB"],
+    ["/v1/videos", "Vídeo (assíncrono)", "cria, consulta e baixa"],
+    ["/v1/search", "Busca na web", "Brave, Tavily, Exa"],
+  ];
+  let oauthTimer = null, oauthDeviceTimer = null;
+
+  function loadConnections() { renderEndpoints(); loadOAuth(); loadSearchState(); }
+
+  function renderEndpoints() {
+    const base = location.origin;
+    const rows = CN_ENDPOINTS.map(([path, label, use]) => `<tr class="border-t border-zinc-800">
+      <td class="py-1.5 pr-3 text-zinc-300">${escapeHtml(label)}</td>
+      <td class="py-1.5 pr-3"><code class="text-brand-300 font-mono">${escapeHtml(base + path)}</code></td>
+      <td class="py-1.5 text-zinc-500">${escapeHtml(use)}</td></tr>`).join("");
+    document.getElementById("cn-endpoints").innerHTML =
+      `<table class="w-full text-xs"><thead><tr class="text-zinc-500 text-left"><th class="pb-1 pr-3">Para</th><th class="pb-1 pr-3">Endereço</th><th class="pb-1">Usado por</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  // ----- OAuth
+  const OAUTH_GRANTS = { authorization_code: "login pelo navegador", device_code: "login por código", client_credentials: "credenciais do app" };
+
+  async function loadOAuth() {
+    const box = document.getElementById("cn-oauth");
+    try {
+      const data = await routerCall("/api/oauth/providers", "GET");
+      const list = data.providers || [];
+      if (!list.length) { box.innerHTML = `<div class="text-xs text-zinc-500">Nenhum provedor OAuth configurado. Veja o bloco <code class="text-brand-300 font-mono">oauth:</code> em <code class="text-brand-300 font-mono">app/gateway/oauth.py</code>.</div>`; return; }
+      box.innerHTML = list.map(p => {
+        const state = p.connected ? `<span class="text-emerald-300 font-semibold">conectado</span>` + (p.expires_in != null ? ` <span class="text-zinc-500">· token vale mais ${escapeHtml(String(Math.round(p.expires_in / 60)))} min${p.has_refresh ? " (renova sozinho)" : ""}</span>` : "")
+          : (p.pending ? `<span class="text-amber-300 font-semibold">aguardando login</span>` : `<span class="text-zinc-400">não conectado</span>`);
+        return `<div class="bg-zinc-950 border border-zinc-800 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2">
+          <div class="space-y-0.5"><div class="text-sm text-white font-semibold">${escapeHtml(p.name)}</div>
+            <div class="text-xs text-zinc-500">${escapeHtml(OAUTH_GRANTS[p.grant] || p.grant)} · ${state}</div></div>
+          <div class="flex gap-2">
+            <button data-oauth="connect" data-name="${escAttr(p.name)}" class="px-3 py-1.5 bg-brand-500 hover:bg-brand-400 text-brand-ink rounded-lg text-xs font-semibold">${p.connected ? "Reconectar" : "Conectar"}</button>
+            ${p.connected ? `<button data-oauth="disconnect" data-name="${escAttr(p.name)}" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-semibold">Desconectar</button>` : ""}
+          </div></div>`;
+      }).join("");
+    } catch (e) { box.innerHTML = `<div class="text-xs text-rose-300">Não consegui ler os provedores OAuth: ${escapeHtml(e.message)}</div>`; }
+  }
+
+  document.addEventListener("click", e => {
+    const b = e.target.closest("[data-oauth]");
+    if (!b) return;
+    if (b.dataset.oauth === "connect") oauthConnect(b.dataset.name);
+    if (b.dataset.oauth === "disconnect") oauthDisconnect(b.dataset.name);
+  });
+
+  function oauthPollStop() {
+    if (oauthTimer) { clearInterval(oauthTimer); oauthTimer = null; }
+    if (oauthDeviceTimer) { clearInterval(oauthDeviceTimer); oauthDeviceTimer = null; }
+  }
+
+  async function oauthConnect(name) {
+    const code = askProviderCode(`conectar o provedor OAuth "${name}"`);
+    if (!code) return;
+    const dev = document.getElementById("cn-oauth-device");
+    dev.classList.add("hidden");
+    try {
+      const r = await routerCall(`/api/oauth/${encodeURIComponent(name)}/start`, "POST", { human_code: code });
+      if (r.authorize_url) {
+        const u = new URL(r.authorize_url);
+        if (u.protocol !== "https:" && u.protocol !== "http:") throw new Error("endereço de login inválido");
+        window.open(u.href, "_blank", "noopener");
+        ovToastSafe("Faça o login na aba que abriu; esta tela atualiza sozinha.");
+        oauthWatch();
+      } else if (r.user_code) {
+        dev.classList.remove("hidden");
+        let link = "";
+        try { const u = new URL(r.verification_uri_complete || r.verification_uri || ""); if (u.protocol === "https:") link = u.href; } catch (_) {}
+        dev.innerHTML = `<div class="text-zinc-300">${link ? `Abra <a class="text-brand-300 underline" target="_blank" rel="noopener noreferrer" href="${escAttr(link)}">${escapeHtml(link)}</a>` : "Abra o endereço de verificação do provedor"} e digite o código:</div>
+          <div class="text-lg font-mono text-white tracking-widest">${escapeHtml(r.user_code)}</div><div id="cn-device-status" class="text-zinc-500">aguardando você autorizar…</div>`;
+        oauthDevicePoll(name, Math.max(2, r.interval || 5));
+      } else if (r.connected) { ovToastSafe("Conectado."); loadOAuth(); }
+    } catch (e) { alert("OAuth: " + e.message); }
+  }
+
+  function oauthWatch() {                       // depois do login no navegador, atualiza o estado por ~2 min
+    oauthPollStop();
+    let n = 0;
+    oauthTimer = setInterval(async () => { await loadOAuth(); if (++n > 40) oauthPollStop(); }, 3000);
+  }
+
+  function oauthDevicePoll(name, every) {
+    oauthPollStop();
+    oauthDeviceTimer = setInterval(async () => {
+      const st = document.getElementById("cn-device-status");
+      try {
+        const r = await routerCall(`/api/oauth/${encodeURIComponent(name)}/poll`, "POST");
+        if (r.status === "connected") { oauthPollStop(); document.getElementById("cn-oauth-device").classList.add("hidden"); ovToastSafe("Conectado."); loadOAuth(); }
+        else if (r.status === "expired" || r.status === "denied") { oauthPollStop(); if (st) st.textContent = r.status === "denied" ? "login negado." : "o código expirou; comece de novo."; }
+      } catch (e) { oauthPollStop(); if (st) st.textContent = "erro: " + e.message; }
+    }, every * 1000);
+  }
+
+  async function oauthDisconnect(name) {
+    const code = askProviderCode(`desconectar o provedor OAuth "${name}"`);
+    if (!code) return;
+    try { await routerCall(`/api/oauth/${encodeURIComponent(name)}/disconnect`, "POST", { human_code: code }); loadOAuth(); }
+    catch (e) { alert("OAuth: " + e.message); }
+  }
+
+  // ----- Busca
+  async function loadSearchState() {
+    const box = document.getElementById("cn-search");
+    try {
+      const data = await routerCall("/api/search/providers", "GET");
+      box.innerHTML = (data.providers || []).map(p => {
+        const keys = (p.keys || []).map(k => k.state).join(", ");
+        const state = p.active ? `<span class="text-emerald-300 font-semibold">ligado</span> <span class="text-zinc-500">· chaves: ${escapeHtml(keys || "—")}</span>` : `<span class="text-zinc-400">desligado</span>`;
+        const link = p.signup ? ` · <a class="text-brand-300 underline" target="_blank" rel="noopener noreferrer" href="${escAttr(p.signup)}">criar chave</a>` : "";
+        return `<div class="bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-xs"><span class="text-sm text-white font-semibold">${escapeHtml(p.name)}</span> · ${state}${link}</div>`;
+      }).join("");
+    } catch (e) { box.innerHTML = `<div class="text-xs text-rose-300">Não consegui ler a busca: ${escapeHtml(e.message)}</div>`; }
+  }
+
+  async function runSearchTest() {
+    const q = document.getElementById("cn-search-q").value.trim();
+    const out = document.getElementById("cn-search-out");
+    if (!q) return;
+    out.innerHTML = `<div class="text-zinc-500">buscando…</div>`;
+    try {
+      const res = await fetch("/v1/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: q, max_results: 5 }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data.error && data.error.message) || ("HTTP " + res.status));
+      out.innerHTML = `<div class="text-zinc-500">via ${escapeHtml(data.provider)} em ${escapeHtml(String(data.latency_ms))} ms</div>` + (data.results || []).map(r => {
+        let safe = "";
+        try { const u = new URL(r.url); if (u.protocol === "https:" || u.protocol === "http:") safe = u.href; } catch (_) {}
+        const title = escapeHtml(r.title || r.url);
+        return `<div class="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-1">
+          ${safe ? `<a class="text-brand-300 underline" target="_blank" rel="noopener noreferrer" href="${escAttr(safe)}">${title}</a>` : `<span class="text-zinc-300">${title}</span>`}
+          <div class="text-zinc-400">${escapeHtml(r.snippet || "")}</div></div>`;
+      }).join("") || `<div class="text-zinc-500">sem resultados.</div>`;
+    } catch (e) { out.innerHTML = `<div class="text-rose-300">${escapeHtml(e.message)}</div>`; }
+  }
+</script>
+
+<script>
+  // ---------- Início (painel de abertura) e chips da barra superior
+  function goConnections() { switchTab("router"); rtSub("connections"); }
+
+  function hmStatusChip(status) {
+    const s = String(status || "").toUpperCase();
+    if (s === "SUCCEEDED") return ["chip-ok", "concluída"];
+    if (s === "FAILED") return ["chip-bad", "falhou"];
+    if (s === "CANCELLED") return ["", "cancelada"];
+    if (s === "RUNNING" || s === "VALIDATING") return ["chip-info", s === "RUNNING" ? "rodando" : "validando"];
+    return ["chip-warn", s === "QUEUED" ? "na fila" : s === "PLANNING" ? "planejando" : "pendente"];
+  }
+
+  function hmWhen(epoch) {
+    if (!epoch) return "";
+    const d = new Date(epoch * 1000), now = new Date();
+    const same = d.toDateString() === now.toDateString();
+    return same ? d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+                : d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  }
+
+  function hmChips(health) {
+    const engines = Object.entries((health && health.engines) || {});
+    const chip = document.getElementById("tb-engines");
+    const offline = document.getElementById("tb-offline");
+    if (offline) offline.classList.toggle("hidden", !(health && health.default_offline));
+    if (!chip || !engines.length) return;
+    const ready = engines.filter(([, e]) => e.enabled && e.healthy).length;
+    document.getElementById("tb-engines-text").textContent = `${ready}/${engines.length} motores`;
+    chip.className = "chip " + (ready === 0 ? "chip-bad" : ready < engines.length ? "chip-warn" : "chip-ok");
+    chip.classList.remove("hidden");
+  }
+
+  function hmRenderEngines(health) {
+    hmChips(health);
+    const engines = Object.entries((health && health.engines) || {});
+    const ready = engines.filter(([, e]) => e.enabled && e.healthy);
+    document.getElementById("hm-k-engines").textContent = engines.length ? `${ready.length}/${engines.length}` : "–";
+    document.getElementById("hm-k-engines-h").textContent = engines.length
+      ? (ready.length ? ready.map(([n]) => n).join(", ") : "nenhum respondendo agora") : "sem resposta do servidor";
+    document.getElementById("hm-engines").innerHTML = engines.length ? engines.map(([name, e]) => {
+      const state = !e.enabled ? ["", "desligado"] : e.healthy ? ["chip-ok", "pronto"] : ["chip-bad", "indisponível"];
+      return `<div class="list-row"><div class="min-w-0"><div class="text-zinc-100 font-semibold truncate">${escapeHtml(name)}</div>
+        <div class="text-[11px] text-zinc-500 truncate font-mono">${escapeHtml(e.default_model || "padrão do motor")}</div></div>
+        <span class="chip ${state[0]}">${state[1]}</span></div>`;
+    }).join("") : '<div class="empty">Não consegui consultar os motores.</div>';
+  }
+
+  function hmRenderTasks(tasks) {
+    const list = Array.isArray(tasks) ? tasks : [];
+    document.getElementById("hm-tasks").innerHTML = list.length ? list.map(t => {
+      const [cls, label] = hmStatusChip(t.status);
+      return `<div class="list-row"><div class="min-w-0"><div class="text-zinc-100 font-medium truncate">${escapeHtml(t.title || "(sem título)")}</div>
+        <div class="text-[11px] text-zinc-500 truncate">${escapeHtml(t.assigned_agent || "—")} · ${escapeHtml(t.assigned_model || "modelo padrão")}</div></div>
+        <div class="flex items-center gap-3 shrink-0"><span class="text-[11px] text-zinc-500 font-mono">${escapeHtml(hmWhen(t.created_at))}</span><span class="chip ${cls}">${label}</span></div></div>`;
+    }).join("") : '<div class="empty">Nenhuma tarefa ainda. Comece por uma conversa no <strong>Plano</strong>.</div>';
+  }
+
+  function hmRenderUsage(usage) {
+    const totals = usage && usage.totals;
+    document.getElementById("hm-k-calls").textContent = totals ? fmt(totals.requests) : "–";
+    document.getElementById("hm-k-calls-h").textContent = totals && totals.requests
+      ? (totals.success_rate === null ? "pelo Roteador" : `${totals.success_rate}% com sucesso`) : "pelo Roteador";
+    document.getElementById("hm-k-tokens").textContent = totals ? fmt((totals.prompt_tokens || 0) + (totals.completion_tokens || 0)) : "–";
+    document.getElementById("hm-k-cost").textContent = totals ? money(totals.cost_usd) : "–";
+    const days = (usage && usage.by_day) || [];
+    const max = Math.max(1, ...days.map(d => d.requests));
+    document.getElementById("hm-spark").innerHTML = days.length
+      ? `<div class="spark">${days.map(d => `<span title="${escAttr(d.day)}: ${d.requests} chamada(s)" style="height:${Math.max(6, Math.round(d.requests / max * 100))}%"></span>`).join("")}</div>
+         <div class="flex justify-between text-[10px] text-zinc-500 mt-2 font-mono"><span>${escapeHtml(days[0].day.slice(5))}</span><span>${escapeHtml(days[days.length - 1].day.slice(5))}</span></div>`
+      : '<div class="empty">Sem uso ainda. Aponte uma ferramenta para o Roteador e ela aparece aqui.</div>';
+  }
+
+  // Cada bloco aparece assim que o seu dado chega: a checagem dos motores (CLIs) pode demorar e não trava o resto.
+  function loadHome() {
+    const get = async (url) => { try { const r = await fetch(url); return r.ok ? await r.json() : null; } catch (e) { return null; } };
+    document.getElementById("hm-base").textContent = location.origin;
+    const done = () => lucide.createIcons();
+    get("/api/tasks?limit=6").then(hmRenderTasks).then(done);
+    get("/api/router/usage?days=7").then(hmRenderUsage).then(done);
+    get("/api/health").then(hmRenderEngines).then(done);
+  }
+</script>
+<script>
+  // ---------- Catálogo de provedores (Roteador → Provedores): todas as IAs, as disponíveis primeiro, login com a sua conta
+  let pvFilter = "all", pvQuery = "", pvTimer = null;
+  const pvOpen = new Set();
+  let claudeAuth = null, pvOauth = [];
+  const PV_TIER = { cloud_free: ["chip-ok", "grátis"], cloud_cheap: ["chip-info", "barata"], cloud_premium: ["chip-brand", "premium"] };
+
+  function pvColor(seed) {
+    let h = 0;
+    for (const c of String(seed)) h = (h * 31 + c.charCodeAt(0)) % 360;
+    return `hsl(${h} 46% 33%)`;
+  }
+  function pvAvatar(label, seed) {
+    return `<span class="pv-avatar" style="background:${pvColor(seed)}" aria-hidden="true">${escapeHtml(String(label).trim().charAt(0).toUpperCase() || "?")}</span>`;
+  }
+  function pvBtn(a) {
+    const kind = a.primary ? "btn-primary" : "btn-ghost";
+    return `<button type="button" class="btn btn-sm ${kind}" data-pv="${escAttr(a.act)}" data-id="${escAttr(a.id)}"${a.mode ? ` data-mode="${escAttr(a.mode)}"` : ""}>${escapeHtml(a.label)}</button>`;
+  }
+
+  async function pvLoadAccounts(fresh) {
+    const get = async (url) => { try { const r = await fetch(url); return r.ok ? await r.json() : null; } catch (e) { return null; } };
+    const [ca, oa] = await Promise.all([get("/api/auth/claude/status" + (fresh ? "?fresh=true" : "")), get("/api/oauth/providers")]);
+    claudeAuth = ca;
+    pvOauth = (oa && oa.providers) || [];
+    pvRender();
+  }
+
+  // ----- entradas do catálogo
+  function pvAccountEntries() {
+    const h = globalHealth || {};
+    const eng = (n) => h[n] || {};
+    const out = [];
+
+    const ca = claudeAuth;
+    let cst = ["", "verificando…"], cline = "";
+    if (ca) {
+      if (!ca.available) cst = ["chip-bad", "CLI não encontrada"];
+      else if (ca.logged_in) { cst = ["chip-ok", "conectado"]; cline = `Assinatura ${ca.subscription || ca.method || ""} · ${ca.account || "conta Claude"}`.trim(); }
+      else cst = ["chip-warn", "sem login"];
+    }
+    const claudeReady = !!(ca && ca.logged_in && eng("claude_code").enabled !== false);
+    out.push({ id: "claude_code", label: "Claude Code", ready: claudeReady, status: cst, line: cline, tier: null,
+      note: "Use a sua assinatura do Claude pela CLI oficial. A senha fica com a Anthropic, nunca com o Hera.",
+      actions: ca && ca.available ? (ca.logged_in
+        ? [{ act: "claude-refresh", id: "claude_code", label: "Atualizar" }, { act: "claude-logout", id: "claude_code", label: "Sair da conta" }]
+        : [{ act: "claude-login", id: "claude_code", label: "Entrar com a minha conta", primary: true, mode: "claudeai" },
+           { act: "claude-login", id: "claude_code", label: "Entrar pelo Console (API)", mode: "console" }])
+        : [{ act: "claude-refresh", id: "claude_code", label: "Verificar de novo" }] });
+
+    const ag = eng("antigravity");
+    out.push({ id: "antigravity", label: "Antigravity (Gemini)", ready: !!(ag.healthy && ag.enabled !== false),
+      status: ag.healthy ? ["chip-ok", "pronto"] : (globalHealth ? ["chip-bad", "indisponível"] : ["", "verificando…"]),
+      line: ag.version ? `Versão ${ag.version}` : "", tier: null,
+      note: "CLI Antigravity com a sua conta Google. O login é feito uma vez no terminal, rodando `agy`.",
+      actions: [{ act: "goto-engines", id: "antigravity", label: "Gerenciar motor" }] });
+
+    // CLIs oficiais (Codex, Cursor, Qoder, CodeBuddy, Kimi): o login é feito UMA vez no terminal; o Hera só chama o programa.
+    [["codex", "Codex (OpenAI)", "codex login"], ["cursor", "Cursor Agent", "agent login"], ["qoder", "Qoder", "qodercli login"],
+     ["codebuddy", "CodeBuddy", "codebuddy"], ["kimi", "Kimi Code", "kimi login"]].forEach(([cid, clabel, cmd]) => {
+      const ce = eng(cid);
+      const ready = !!(ce.healthy && ce.enabled !== false);
+      out.push({ id: cid, label: clabel, ready,
+        status: ce.healthy ? (ce.enabled === false ? ["", "desligado"] : ["chip-ok", "pronto"]) : (globalHealth ? ["chip-warn", ce.error_message && /login/i.test(ce.error_message) ? "sem login" : "indisponível"] : ["", "verificando…"]),
+        line: ce.version ? `Versão ${ce.version}` : "", tier: null,
+        note: `CLI oficial: o login é feito uma vez no terminal (${cmd}). O Hera só chama o programa; nunca vê a senha.`,
+        actions: [{ act: "goto-engines", id: cid, label: ce.enabled === false ? "Ligar o motor" : "Gerenciar motor", primary: !ready }] });
+    });
+
+    const ol = eng("ollama");
+    out.push({ id: "ollama", label: "Ollama (local)", ready: !!ol.healthy,
+      status: ol.healthy ? ["chip-ok", "rodando"] : (globalHealth ? ["chip-warn", "parado"] : ["", "verificando…"]),
+      line: ol.healthy ? `${(ol.available_models || []).length} modelo(s) instalado(s)` : "", tier: "local",
+      note: "Modelos no seu PC: sem conta, sem chave e sem enviar nada para a nuvem.",
+      actions: [{ act: "goto-engines", id: "ollama", label: ol.healthy ? "Gerenciar" : "Iniciar o Ollama", primary: !ol.healthy }] });
+
+    pvOauth.forEach(p => out.push({ id: "oauth:" + p.name, label: p.name, ready: !!p.connected,
+      status: p.connected ? ["chip-ok", "conectado"] : (p.pending ? ["chip-warn", "aguardando login"] : ["", "não conectado"]), tier: null,
+      line: p.connected && p.expires_in != null ? `Token vale mais ${Math.round(p.expires_in / 60)} min${p.has_refresh ? " (renova sozinho)" : ""}` : "",
+      note: "Login OAuth com o seu próprio app (configurado no config.yaml).",
+      actions: p.connected
+        ? [{ act: "oauth-connect", id: p.name, label: "Reconectar" }, { act: "oauth-disconnect", id: p.name, label: "Desconectar" }]
+        : [{ act: "oauth-connect", id: p.name, label: "Conectar", primary: true }] }));
+    return out;
+  }
+
+  function pvDetailHtml(p) {
+    const paused = p.health.state === "paused";
+    const keys = (p.keys || []).map(k => `<span class="chip">${escapeHtml(k.id)}: ${escapeHtml(k.state)}${k.cooldown_remaining_s ? " " + k.cooldown_remaining_s + "s" : ""}</span>`).join(" ");
+    const where = [p.keys_stored ? `${p.keys_stored} no cofre` : "", p.keys_env ? `${p.keys_env} no ambiente` : ""].filter(Boolean).join(" · ") || "nenhuma chave";
+    const n = escAttr(p.name);
+    const num = (field, label, ph) => `<label class="text-[10px] text-zinc-500">${label}<input id="lim-${field}-${n}" type="number" min="0" value="${p[field] && !(field === "priority" && p[field] === 100) ? p[field] : ""}" placeholder="${ph}" class="mt-0.5 w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100"></label>`;
+    const stored = (p.stored_hints || []).map((h, i) => `<span class="chip">#${i + 1} ${escapeHtml(h)} <button type="button" title="Tirar esta chave" onclick="removeRouterKey('${n}', ${i})" class="ml-1 text-rose-300 hover:text-rose-200">✕</button></span>`).join(" ");
+    const quota = quotaLine(p.quota);
+    const hdrText = Object.entries(p.headers || {}).map(([k, v]) => `${k}: ${v}`).join("\n");
+    return `<div class="text-[11px] text-zinc-400">Chaves: ${where}</div>${stored ? `<div class="pv-meta" title="Contas guardadas no cofre (só os 4 últimos caracteres)">${stored}</div>` : ""}${keys ? `<div class="pv-meta">${keys}</div>` : ""}
+      ${quota ? `<div class="text-[11px] text-sky-300">${escapeHtml(quota)}</div>` : ""}
+      ${paused ? `<div class="text-[11px] text-amber-300">Pausado após falhas seguidas. Último erro: ${escapeHtml(p.health.last_error || "-")} <button type="button" onclick="resetBreaker('${n}')" class="underline ml-1">tentar de novo agora</button></div>` : ""}
+      <div class="flex flex-wrap items-center gap-2">
+        <input id="key-${n}" type="password" autocomplete="off" placeholder="Colar chave de API" class="flex-1 min-w-[180px] bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 font-mono">
+        <button type="button" onclick="addRouterKey('${n}')" class="btn btn-sm btn-primary" title="Soma esta chave às que já existem (várias contas no mesmo provedor)">Adicionar outra conta</button>
+        <button type="button" onclick="saveRouterKey('${n}')" class="btn btn-sm btn-ghost" title="Troca TODAS as chaves guardadas por esta">Substituir todas</button>
+        ${p.keys_stored ? `<button type="button" onclick="clearRouterKeys('${n}')" class="px-2 py-1 text-rose-300 hover:text-rose-200 text-xs">Apagar chaves</button>` : ""}
+      </div>
+      <details class="text-[11px] text-zinc-400"><summary class="cursor-pointer">Cabeçalhos extras (opcional)</summary>
+        <textarea id="hdr-${n}" rows="3" spellcheck="false" placeholder="Nome: valor (um por linha). Ex.: HTTP-Referer: https://meusite.com" class="mt-1 w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-100 font-mono">${escapeHtml(hdrText)}</textarea>
+        <button type="button" onclick="saveRouterHeaders('${n}')" class="btn btn-sm btn-ghost mt-1">Salvar cabeçalhos</button>
+        <div class="mt-1">Não use para segredos. Authorization, Content-Type e outros de enquadramento são recusados.</div></details>
+      <div class="grid grid-cols-2 gap-2 items-end">
+        ${num("priority", "Prioridade (menor = antes)", "100")}${num("rpm", "Req. por minuto", "sem limite")}${num("daily_requests", "Req. por dia", "sem limite")}${num("daily_tokens", "Tokens por dia", "sem limite")}
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <button type="button" onclick="saveLimits('${n}')" class="btn btn-sm btn-ghost">Salvar limites</button>
+        <button type="button" onclick="testRouterProvider('${n}')" class="btn btn-sm btn-ghost">Testar</button>
+        <button type="button" onclick="discoverRouterModels('${n}')" class="btn btn-sm btn-ghost">Buscar modelos</button>
+        <button type="button" onclick="deleteRouterProvider('${n}')" class="px-2 py-1 text-zinc-500 hover:text-rose-300 text-xs">Remover</button>
+      </div>
+      <div id="router-test-${n}" class="text-[11px] font-mono text-zinc-400"></div>`;
+  }
+
+  function pvKeyEntries() {
+    const st = routerState || { presets: [], providers: [] };
+    const cfg = new Map(st.providers.map(p => [p.name, p]));
+    const presetIds = new Set(st.presets.map(x => x.id));
+    const rows = st.presets.map(pr => ({ pr, p: cfg.get(pr.id) }));
+    st.providers.filter(p => !presetIds.has(p.name)).forEach(p => rows.push({ pr: { id: p.name, label: p.name, tier: p.tier, note: "Provedor personalizado (API compatível com OpenAI).", custom: true }, p }));
+    return rows.map(({ pr, p }) => {
+      const paused = p && p.health && p.health.state === "paused";
+      const ready = !!(p && p.enabled && p.active);
+      let status = ["", "não conectado"];
+      if (p) status = !p.enabled ? ["", "desligado"] : paused ? ["chip-warn", `em pausa ${p.health.resume_in_s}s`] : p.active ? ["chip-ok", "ativo"] : ["chip-warn", "sem chave"];
+      const n = pr.id;
+      const actions = [];
+      if (!p) {
+        if (pr.login === "key_login") actions.push({ act: "login-key", id: n, label: "Entrar com a minha conta", primary: true });
+        actions.push({ act: "add-open", id: n, label: "Colar chave" });
+      } else {
+        if (!p.enabled) actions.push({ act: "enable", id: n, label: "Ligar", primary: true });
+        else if (!p.active) actions.push({ act: "manage", id: n, label: "Colar chave" });
+        else actions.push({ act: "test", id: n, label: "Testar" });
+        if (p.enabled) actions.push({ act: "disable", id: n, label: "Desligar" });
+        if (pr.login === "key_login" && !p.active) actions.unshift({ act: "login-key", id: n, label: "Entrar com a minha conta", primary: true });
+        actions.push({ act: "manage", id: n, label: pvOpen.has(n) ? "Fechar" : "Gerenciar" });
+      }
+      const addForm = !p && pvOpen.has("add:" + n) ? `<div class="pv-detail"><div class="flex flex-wrap items-center gap-2">
+          <input id="pv-key-${escAttr(n)}" type="password" autocomplete="off" placeholder="Cole a chave de API (opcional agora)" class="flex-1 min-w-[160px] bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 font-mono">
+          <button type="button" class="btn btn-sm btn-primary" data-pv="add-confirm" data-id="${escAttr(n)}">Adicionar e ligar</button></div>
+          ${pr.signup ? `<div class="text-[11px] text-zinc-400">Crie a chave em <a class="text-brand-300 underline" target="_blank" rel="noopener noreferrer" href="${escAttr(pr.signup)}">${escapeHtml(pr.signup)}</a>. Ela fica no cofre do Hera, protegida pelo Windows.</div>` : ""}</div>` : "";
+      const line = p ? `${p.default_model || ""} · ${(p.models || []).length} modelo(s)` : (pr.default_model ? `${pr.default_model}` : "");
+      return { id: n, label: pr.label || n, ready, status, line, tier: pr.tier, note: pr.note || "", actions,
+        detail: p && pvOpen.has(n) ? pvDetailHtml(p) : "", extra: addForm };
+    });
+  }
+
+  function pvCardHtml(e) {
+    const tier = e.tier && PV_TIER[e.tier] ? `<span class="chip ${PV_TIER[e.tier][0]}">${PV_TIER[e.tier][1]}</span>` : (e.tier === "local" ? '<span class="chip">no seu PC</span>' : "");
+    return `<article class="pv-card${e.ready ? " is-ready" : ""}" data-card="${escAttr(e.id)}">
+      <div class="pv-top">${pvAvatar(e.label, e.id)}<div class="min-w-0"><div class="pv-name">${escapeHtml(e.label)}</div>
+        <div class="pv-meta"><span class="chip ${e.status[0]}">${escapeHtml(e.status[1])}</span>${tier}</div></div></div>
+      <div class="pv-note">${escapeHtml(e.note)}</div>
+      ${e.line ? `<div class="pv-line">${escapeHtml(e.line)}</div>` : ""}
+      <div class="pv-actions">${e.actions.map(pvBtn).join("")}</div>
+      ${e.extra || ""}${e.detail ? `<div class="pv-detail">${e.detail}</div>` : ""}
+    </article>`;
+  }
+
+  function pvMatches(e) {
+    if (pvFilter === "ready" && !e.ready) return false;
+    if (pvFilter === "todo" && e.ready) return false;
+    const q = pvQuery.trim().toLowerCase();
+    return !q || (e.label + " " + e.id + " " + e.note).toLowerCase().includes(q);
+  }
+
+  function pvRender() {
+    const accounts = pvAccountEntries(), keys = pvKeyEntries();
+    const all = [...accounts, ...keys];
+    const ready = all.filter(e => e.ready).length;
+    const summary = document.getElementById("pv-summary");
+    if (!summary) return;
+    summary.textContent = `${ready} de ${all.length} IAs disponíveis`;
+    document.querySelectorAll("#pv-filters [data-pvf]").forEach(b => b.setAttribute("aria-pressed", b.dataset.pvf === pvFilter ? "true" : "false"));
+    const order = (a, b) => (b.ready - a.ready) || a.label.localeCompare(b.label, "pt-BR");
+    // Re-renderizar (atualizacao de estado/saude em segundo plano) recria os campos: guarda o que o usuario ja colou
+    // (ex.: a chave de API) e o foco, senao a chave "some" antes de clicar em "Adicionar e ligar".
+    const typed = {};
+    document.querySelectorAll('#pv-accounts input[id], #pv-keys input[id], #pv-keys textarea[id], #pv-accounts textarea[id]').forEach(i => { if (i.value && i.id !== "pv-search") typed[i.id] = i.value; });
+    const ae = document.activeElement;
+    const focusedId = ae && ae.id && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA") && ae.id !== "pv-search" && (ae.closest("#pv-accounts") || ae.closest("#pv-keys")) ? ae.id : "";
+    const fill = (id, list) => {
+      const shown = list.filter(pvMatches).sort(order);
+      document.getElementById(id).innerHTML = shown.length ? shown.map(pvCardHtml).join("") : '<div class="empty">Nada por aqui com esse filtro.</div>';
+      document.getElementById(id).parentElement.classList.toggle("hidden", !shown.length && (pvFilter !== "all" || !!pvQuery.trim()));
+    };
+    fill("pv-accounts", accounts);
+    if (routerState) fill("pv-keys", keys);
+    else document.getElementById("pv-keys").innerHTML = '<div class="empty">Carregando o catálogo…</div>';
+    Object.entries(typed).forEach(([k, v]) => { const el = document.getElementById(k); if (el) el.value = v; });
+    if (focusedId) { const el = document.getElementById(focusedId); if (el) el.focus(); }
+    lucide.createIcons();
+  }
+
+  // ----- ações
+  document.addEventListener("click", (ev) => {
+    const f = ev.target.closest("[data-pvf]");
+    if (f) { pvFilter = f.dataset.pvf; pvRender(); return; }
+    const b = ev.target.closest("[data-pv]");
+    if (!b) return;
+    const id = b.dataset.id;
+    switch (b.dataset.pv) {
+      case "claude-login": claudeLogin(b.dataset.mode || "claudeai"); break;
+      case "claude-logout": claudeLogout(); break;
+      case "claude-refresh": pvLoadAccounts(true); break;
+      case "goto-engines": switchTab("engines"); break;
+      case "oauth-connect": oauthConnect(id); break;
+      case "oauth-disconnect": oauthDisconnect(id); break;
+      case "login-key": pvLoginKey(id); break;
+      case "add-open": pvOpen.has("add:" + id) ? pvOpen.delete("add:" + id) : pvOpen.add("add:" + id); pvRender(); break;
+      case "add-confirm": pvAddPreset(id); break;
+      case "enable": toggleRouterProvider(id, true); break;
+      case "disable": toggleRouterProvider(id, false); break;
+      case "manage": pvOpen.has(id) ? pvOpen.delete(id) : pvOpen.add(id); pvRender(); break;
+      case "test": pvOpen.add(id); pvRender(); testRouterProvider(id); break;
+    }
+  });
+  document.addEventListener("input", (ev) => { if (ev.target && ev.target.id === "pv-search") { pvQuery = ev.target.value; pvRender(); } });
+
+  function pvStopWatch() { if (pvTimer) { clearInterval(pvTimer); pvTimer = null; } }
+  function pvWatch(check, done) {
+    pvStopWatch();
+    let n = 0;
+    pvTimer = setInterval(async () => { if (await check() || ++n > 40) { pvStopWatch(); if (n <= 40) done(); } }, 3000);
+  }
+
+  async function claudeLogin(mode) {
+    const code = askProviderCode("abrir o login do Claude Code com a sua conta");
+    if (!code) return;
+    try {
+      const r = await routerCall("/api/auth/claude/login", "POST", { human_code: code, mode });
+      if (!r.started) { alert((r.message || "Rode no terminal:") + "\n\n" + (r.command || "")); return; }
+      ovToastSafe("Janela do Claude Code aberta. Conclua o login no navegador.");
+      pvWatch(async () => { await pvLoadAccounts(true); return !!(claudeAuth && claudeAuth.logged_in); }, () => ovToastSafe("Claude Code conectado."));
+    } catch (e) { alert("Login do Claude Code: " + e.message); }
+  }
+
+  async function claudeLogout() {
+    const code = askProviderCode("sair da conta do Claude Code");
+    if (!code) return;
+    try { await routerCall("/api/auth/claude/logout", "POST", { human_code: code }); await pvLoadAccounts(true); }
+    catch (e) { alert("Não consegui sair da conta: " + e.message); }
+  }
+
+  async function pvLoginKey(id) {
+    const code = askProviderCode(`entrar com a sua conta em ${id} (o provedor será ligado e seus prompts poderão ir para ele)`);
+    if (!code) return;
+    try {
+      const r = await routerCall(`/api/router/login/${encodeURIComponent(id)}/start`, "POST", { human_code: code });
+      const u = new URL(r.authorize_url);
+      if (u.protocol !== "https:") throw new Error("endereço de login inválido");
+      window.open(u.href, "_blank", "noopener");
+      ovToastSafe("Faça o login na aba que abriu; o Hera conecta sozinho.");
+      pvWatch(async () => { await loadRouterState(); const p = (routerState.providers || []).find(x => x.name === id); return !!(p && p.active); }, () => ovToastSafe("Conectado."));
+    } catch (e) { alert("Login: " + e.message); }
+  }
+
+  async function pvAddPreset(id) {
+    const input = document.getElementById("pv-key-" + id);
+    const key = input ? input.value.trim() : "";
+    const code = askProviderCode("ligar um provedor de nuvem (seus prompts passarão a poder ir para ele)");
+    if (!code) return;
+    const preset = ((routerState && routerState.presets) || []).find(x => x.id === id) || {};
+    const params = {};
+    for (const prm of (preset.params || [])) {       // partes do endereço que só o usuário sabe (ex.: ID da conta)
+      const v = (prompt(prm.label) || "").trim();
+      if (!v) return;
+      params[prm.key] = v;
+    }
+    try {
+      await routerCall("/api/router/providers", "POST", { preset: id, enabled: true, human_code: code, params: Object.keys(params).length ? params : undefined });
+      if (key) await routerCall(`/api/router/providers/${encodeURIComponent(id)}/keys`, "POST", { keys: key.split(/[\s,;]+/).filter(Boolean), human_code: code });
+      pvOpen.delete("add:" + id);
+      await loadRouterState();
+      loadHealth();
+    } catch (e) { alert("Não foi possível adicionar: " + e.message); await loadRouterState(); }
+  }
+
+  async function pvAddCustom() {
+    const val = (i) => document.getElementById(i).value.trim();
+    const body = { enabled: true, name: val("rc-name").toLowerCase(), base_url: val("rc-url"), default_model: val("rc-model"), key_env: "" };
+    if (!body.name || !body.base_url || !body.default_model) { alert("Preencha nome, endereço e modelo padrão."); return; }
+    const code = askProviderCode("ligar um provedor de nuvem (seus prompts passarão a poder ir para ele)");
+    if (!code) return;
+    body.human_code = code;
+    try {
+      const r = await routerCall("/api/router/providers", "POST", body);
+      const key = val("rc-key");
+      if (key) await routerCall(`/api/router/providers/${encodeURIComponent(r.provider.name)}/keys`, "POST", { keys: [key], human_code: code });
+      ["rc-name", "rc-url", "rc-model", "rc-key"].forEach(i => { document.getElementById(i).value = ""; });
+      await loadRouterState();
+    } catch (e) { alert("Não foi possível adicionar: " + e.message); await loadRouterState(); }
+  }
+
+  // ----- apelidos: sugestões de destino (provedor/modelo)
+  function aliasTargets() {
+    const out = [];
+    ((routerState && routerState.providers) || []).filter(p => p.active).forEach(p => [...new Set([p.default_model, ...(p.models || [])])].forEach(m => out.push(`${p.name}/${m}`)));
+    ((routerState && routerState.ollama_models) || []).forEach(m => out.push(`ollama/${m}`));
+    return out;
+  }
+  function renderAliasTargets() {
+    const dl = document.getElementById("alias-targets");
+    if (dl) dl.innerHTML = aliasTargets().map(t => `<option value="${escAttr(t)}">`).join("");
+  }
+</script>
 </body>
 </html>

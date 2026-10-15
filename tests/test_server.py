@@ -92,4 +92,4 @@ async def test_api_index_html():
     async with AsyncClient(transport=transport, base_url=TEST_BASE_URL, headers=AUTH_HEADERS) as client:
         resp = await client.get("/")
         assert resp.status_code == 200
-        assert "HERA Multiagent" in resp.text
+        assert "Hera · Orquestração local de IAs" in resp.text and "/static/brand/favicon.svg" in resp.text

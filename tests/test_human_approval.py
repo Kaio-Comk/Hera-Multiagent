@@ -246,6 +246,6 @@ def test_comando_approval_code_imprime_o_mesmo_codigo_do_servidor():
     from pathlib import Path
     root = Path(server.__file__).resolve().parent.parent
     # mesmo HERA_DATA_DIR do processo de testes => mesmo segredo => mesmo código
-    out = subprocess.run([sys.executable, "main.py", "approval-code"], cwd=root, capture_output=True, text=True,
+    out = subprocess.run([sys.executable, "main.py", "approval-code"], cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace",
                          env={**os.environ, "PYTHONIOENCODING": "utf-8"}, timeout=60).stdout
     assert server.HUMAN_CODE.current() in out or server.HUMAN_CODE._code_for(int(time.time() // 300) - 1) in out

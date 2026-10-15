@@ -340,3 +340,37 @@ def test_v1_models_inclui_modelos_dos_provedores_de_nuvem(monkeypatch):
     data = TestClient(server.app, base_url=TEST_BASE_URL, headers=AUTH_HEADERS).get("/v1/models").json()["data"]
     ids = {m["id"]: m["owned_by"] for m in data}
     assert ids["deepseek-chat"] == "hera-deep" and ids["deepseek-reasoner"] == "hera-deep"
+
+
+def test_localhost_vira_ipv4_so_para_loopback():
+    """No Windows `localhost` tenta o IPv6 antes do IPv4 e dobra o tempo para dizer que o Ollama esta parado."""
+    from app.gateway.provider_policy import prefer_ipv4_loopback as f
+    assert f("http://localhost:11434") == "http://127.0.0.1:11434"
+    assert f("http://LOCALHOST/api") == "http://127.0.0.1/api"
+    assert f("http://127.0.0.1:11434") == "http://127.0.0.1:11434"
+    assert f("https://api.groq.com/v1") == "https://api.groq.com/v1"
+    assert f("http://localhost.evil.com:11434") == "http://localhost.evil.com:11434"     # nome parecido nao e loopback
+    from adapters.ollama import OllamaAdapter
+    assert OllamaAdapter(base_url="http://localhost:11434").base_url == "http://127.0.0.1:11434"
+
+
+@pytest.mark.asyncio
+async def test_ollama_parado_responde_apos_uma_tentativa_so():
+    """Daemon parado: a checagem de saude para no primeiro erro de conexao (nao tenta `/api/tags` de novo)."""
+    import httpx
+    from adapters.ollama import OllamaAdapter
+    calls = []
+
+    async def refuse(request):
+        calls.append(request.url.path)
+        raise httpx.ConnectError("recusado", request=request)
+
+    real = httpx.AsyncClient
+    import adapters.ollama as mod
+    mod.httpx = type("H", (), {k: getattr(httpx, k) for k in dir(httpx) if not k.startswith("__")})
+    mod.httpx.AsyncClient = lambda **kw: real(transport=httpx.MockTransport(refuse), **kw)
+    try:
+        st = await OllamaAdapter().health_check()
+    finally:
+        mod.httpx = httpx
+    assert st.healthy is False and calls == ["/api/version"]

@@ -31,6 +31,29 @@ ENGINE_PROFILES: Dict[str, Dict[str, Any]] = {
         "about": "Agente com acesso ao workspace (arquivos e terminal) que oferece varios modelos (Gemini, Claude, GPT-OSS). "
                  "Bom para varrer muitos arquivos, tarefas longas de edicao e para ter uma segunda opiniao de outra familia.",
     },
+    "codex": {
+        "label": "Codex (OpenAI)", "files": True, "local": False, "cost": "assinatura",
+        "about": "Agente de codigo da OpenAI (CLI oficial `codex exec`) com acesso ao workspace. Bom para refatorar, escrever "
+                 "testes e ter uma segunda opiniao de outra familia de modelos. Usa a conta/assinatura do usuario.",
+    },
+    "cursor": {
+        "label": "Cursor Agent", "files": True, "local": False, "cost": "assinatura",
+        "about": "Agente do Cursor (CLI oficial `agent -p`) com acesso ao workspace e varios modelos. Bom para varrer codigo "
+                 "e editar em varios arquivos. Usa a assinatura do usuario.",
+    },
+    "qoder": {
+        "label": "Qoder", "files": True, "local": False, "cost": "assinatura",
+        "about": "Agente de codigo Qoder (CLI oficial `qodercli -p`) com acesso ao workspace. Usa a conta do usuario.",
+    },
+    "codebuddy": {
+        "label": "CodeBuddy", "files": True, "local": False, "cost": "assinatura",
+        "about": "Agente de codigo da Tencent (CLI oficial `codebuddy -p`) com acesso ao workspace. Usa a conta do usuario.",
+    },
+    "kimi": {
+        "label": "Kimi Code", "files": True, "local": False, "cost": "assinatura",
+        "about": "Agente de codigo da Moonshot (CLI oficial `kimi -p`) com acesso ao workspace. Bom em contexto longo. "
+                 "Usa a conta do usuario.",
+    },
     "hera_router": {
         "label": "Roteador Hera (nuvem)", "files": False, "local": False, "cost": "varia",
         "about": "Chat em modelos de nuvem dos provedores configurados (com fallback entre eles). NAO acessa arquivos nem "

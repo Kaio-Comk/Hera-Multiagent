@@ -8,8 +8,8 @@ import pytest
 
 from app.config_manager import DEFAULT_CONFIG, ConfigManager
 from app.locations import AGY_ENV, VAULT_ENV, default_vault_dir, find_agy_binary, resolve_vault_dir
-from app.obsidian import ObsidianVaultWriter
-from app.vault_memory import ObsidianMemoryManager
+from app.vault.obsidian import ObsidianVaultWriter
+from app.vault.memory import ObsidianMemoryManager
 
 ROOT = Path(__file__).resolve().parent.parent
 

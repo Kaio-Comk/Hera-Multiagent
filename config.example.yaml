@@ -48,3 +48,24 @@ providers: {}
 #    base_url: https://api.groq.com/openai/v1
 #    api_key_env: GROQ_API_KEY
 #    default_model: llama-3.3-70b-versatile
+
+# Busca na web (POST /v1/search). Chaves em variáveis de ambiente; a pergunta passa pelo DLP.
+# Formatos seguem a documentação pública de cada serviço (testados só com respostas simuladas).
+search: {}
+#  brave:  {enabled: true, api_key_env: BRAVE_API_KEY}
+#  tavily: {enabled: true, api_key_env: TAVILY_API_KEY}
+#  exa:    {enabled: false, api_key_env: EXA_API_KEY}
+#  order: [brave, tavily, exa]
+
+# Login OAuth por provedor: você registra o SEU app OAuth (nada de client IDs de terceiros).
+# O segredo do app fica numa variável de ambiente; tokens ficam no cofre local e são renovados sozinhos.
+# Use no provedor com `oauth: meu-provedor` no lugar de `api_key_env`. Veja app/gateway/oauth.py.
+oauth: {}
+#  meu-provedor:
+#    grant: authorization_code     # | device_code | client_credentials
+#    client_id: abc123
+#    client_secret_env: MEU_CLIENT_SECRET
+#    auth_url: https://idp.exemplo.com/oauth/authorize
+#    token_url: https://idp.exemplo.com/oauth/token
+#    scopes: [chat, offline_access]
+#    # redirect_uri: http://127.0.0.1:8000/api/oauth/callback   # registre esta URL no seu app OAuth

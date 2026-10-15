@@ -20,6 +20,8 @@ class AgentTask(BaseModel):
     instruction: str
     task_type: str = "coding"  # coding, research, review, test, docs
     workspace: str = ""
+    extra_dirs: List[str] = Field(default_factory=list)  # pastas extras legiveis pelo motor (ex.: o cofre do Obsidian)
+    images: List[str] = Field(default_factory=list)      # imagens anexadas pelo usuario (caminhos validados pelo servidor)
     status: TaskStatus = TaskStatus.PENDING
     dependencies: List[str] = Field(default_factory=list)
     timeout_seconds: int = 900

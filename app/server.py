@@ -7,12 +7,13 @@ import time
 import uuid
 import asyncio
 import psutil
+import shutil
 import subprocess
 from pathlib import Path
-from typing import Dict, Any, List, Literal, Optional, Union
+from typing import Dict, Any, List, Literal, Optional, Tuple, Union
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks, Request
-from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Response
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Response, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, StringConstraints
 from typing_extensions import Annotated
@@ -27,8 +28,8 @@ from models.agent import HealthStatus
 from app.state_store import StateStore
 from app.coordinator import Coordinator
 from app.router import TaskRouter
-from app.obsidian import ObsidianVaultWriter
-from app.vault_memory import ObsidianMemoryManager
+from app.vault.obsidian import ObsidianVaultWriter
+from app.vault.memory import ObsidianMemoryManager
 from app.validator import TaskValidator
 from app.auto_fix import AutoFixEngine
 from app.dag_scheduler import TaskDAG, DAGScheduler
@@ -38,13 +39,23 @@ from app.console_bus import ConsoleBus
 from app.runtime_state import resolve_db_path, merge_legacy_db, setup_file_logging
 from app.privacy_guard import PrivacyGuard
 from app.services_control import SERVICES, ServiceManager, port_open
-from app.vault_manager import VaultManager, VaultError, VaultConflict
+from app.vault.manager import VaultManager, VaultError, VaultConflict
 from app.locations import find_vault_root, resolve_vault_dir
 from adapters.ollama import OllamaAdapter
 from adapters.claude_code import ClaudeCodeAdapter
 from adapters.antigravity import AntigravityAdapter
+from adapters.cli_agents import CLI_ENGINES
 
-from app.gateway.schemas import ChatCompletionRequest, ChatCompletionResponse, ChatMessage
+from app.gateway.schemas import ChatCompletionRequest, ChatCompletionResponse, ChatMessage, MAX_BODY_BYTES
+from app.gateway.anthropic_api import (claude_body_to_chat, chat_response_to_claude, openai_sse_to_claude_sse,
+                                       error_body as anthropic_error_body)
+from app.gateway.openai_responses import (responses_body_to_chat, openai_sse_to_responses_sse,
+                                           error_body as responses_error_body)
+from app.gateway.translator.responses_api import chat_to_responses_response
+from app.gateway import modalities_api
+from app.gateway.oauth import OAuthManager, OAuthError, load_oauth_providers, KEY_LOGINS
+from app.gateway.search import SearchRouter, build_search_providers, MAX_RESULTS, MAX_QUERY_CHARS, PROVIDER_CLASSES
+from app.gateway.privacy import DataClassification
 from app.gateway.presets import PROVIDER_PRESETS, get_preset
 from app.gateway.key_manager import load_keys_from_env
 from app.gateway.secret_store import SecretStore, SecretStoreError
@@ -52,10 +63,10 @@ from app.gateway.usage import UsageLedger
 from adapters.hera_router import HeraRouterAdapter
 from app.gateway.privacy import GatewayPrivacyManager
 from app.gateway.providers import OllamaGatewayAdapter, GatewayProviderError
-from app.gateway.provider_policy import SSRFSecurityError, validate_provider_url
+from app.gateway.provider_policy import SSRFSecurityError, sanitize_extra_headers, validate_provider_url
 from app.gateway.safe_transport import make_safe_async_client
 from app.gateway.factory import build_gateway_adapters
-from app.gateway.tier_router import TierRouter, CLIENT_NAME, REQUEST_ID, STRATEGIES
+from app.gateway.tier_router import TierRouter, CLIENT_NAME, REQUEST_ID
 from app.gateway.client_keys import ClientKeyStore
 
 from app.hitl.schemas import (
@@ -122,7 +133,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 WEB_DIR = ROOT_DIR / "web"
 WEB_DIR.mkdir(parents=True, exist_ok=True)
 (WEB_DIR / "static").mkdir(parents=True, exist_ok=True)
-# CSS, fontes e bibliotecas da UI saem daqui (nada de CDN). Gerados por tools/build_ui.py.
+# CSS, fontes e bibliotecas da UI saem daqui (nada de CDN). Gerados por tools/ui/build_ui.py.
 app.mount("/static", StaticFiles(directory=str(WEB_DIR / "static")), name="static")
 
 # Inicializar adaptadores
@@ -131,9 +142,12 @@ adapters = {
         base_url=cfg["engines"]["ollama"].get("base_url", "http://localhost:11434"),
         default_model=cfg["engines"]["ollama"].get("default_model", "qwen2.5-coder:1.5b")
     ),
-    "claude_code": ClaudeCodeAdapter(),
-    "antigravity": AntigravityAdapter()
+    "claude_code": ClaudeCodeAdapter(permission_mode=str(cfg["engines"].get("claude_code", {}).get("permission_mode") or "")),
+    "antigravity": AntigravityAdapter(auto_approve=bool(cfg["engines"].get("antigravity", {}).get("auto_approve", False)))
 }
+for _name, _cls in CLI_ENGINES.items():          # CLIs oficiais (Codex, Cursor, Qoder, CodeBuddy, Kimi): ver adapters/cli_agents.py
+    adapters[_name] = _cls(timeout=float(cfg["engines"].get(_name, {}).get("timeout") or 300.0),
+                           auto_approve=bool(cfg["engines"].get(_name, {}).get("auto_approve", False)))
 
 # Banco de tarefas: caminho relativo vale a partir da PASTA DO PROJETO (antes dependia de onde o comando foi aberto).
 DB_PATH = resolve_db_path(cfg["general"].get("db_path"), ROOT_DIR)
@@ -191,7 +205,7 @@ async def _gateway_call(req: ChatCompletionRequest, only_provider: Optional[str]
 
 
 def _router_models() -> List[str]:
-    names = list(gateway_tier_router.combos)
+    names: List[str] = []
     for a in gateway_tier_router.adapters:
         names += sorted(a.served_models or [])
     return list(dict.fromkeys(names))
@@ -231,6 +245,12 @@ def _announce_human_code(reason: str) -> None:
         print("\n🔑 " + line + "\n", flush=True)
     except UnicodeEncodeError:
         print("\n" + line.encode("ascii", "replace").decode("ascii") + "\n", flush=True)
+
+
+def _provider_gate(code: Optional[str], reason: str) -> None:
+    """Ligar/configurar provedores e contas de nuvem NAO exige mais o codigo de aprovacao (decisao do dono, 14/10/2026).
+    Continuam com codigo: chaves de acesso de clientes, importar configuracao, servidores/ferramentas MCP e merge de patch."""
+    return None
 
 
 def _require_human_code(code: Optional[str], reason: str) -> None:
@@ -313,7 +333,7 @@ def broadcast_log(msg: str, level: str = "info"):
 CONSOLE = ConsoleBus(DATA_DIR / "runs", broadcast=lambda payload: ws_manager.broadcast(payload))
 
 ENGINE_ADAPTER_NAMES = {"ollama": "ollama", "claude_code": "claude_code", "antigravity": "antigravity",
-                        "hera_router": "hera_router"}
+                        "hera_router": "hera_router", **{n: n for n in CLI_ENGINES}}
 
 
 def _apply_engine_runtime(config: Dict[str, Any]) -> None:
@@ -370,12 +390,12 @@ class ConfigUpdateRequest(BaseModel):
 
 @app.get("/api/health")
 async def get_health():
-    """Retorna saúde e modelos disponíveis de cada motor."""
-    results = {}
-    for name, adapter in adapters.items():
+    """Retorna saúde e modelos disponíveis de cada motor. Os motores são checados EM PARALELO (cada CLI leva alguns
+    segundos; em série o painel esperava a soma, agora espera só o mais lento)."""
+    async def probe(name, adapter):
         try:
             status: HealthStatus = await adapter.health_check()
-            results[name] = {
+            return name, {
                 "enabled": name not in router.disabled,
                 "default_model": router.default_models.get(name),
                 "healthy": status.healthy,
@@ -384,7 +404,7 @@ async def get_health():
                 "error_message": status.error_message
             }
         except Exception as e:
-            results[name] = {
+            return name, {
                 "enabled": name not in router.disabled,
                 "default_model": router.default_models.get(name),
                 "healthy": False,
@@ -392,6 +412,8 @@ async def get_health():
                 "available_models": [],
                 "error_message": str(e)
             }
+
+    results = dict(await asyncio.gather(*(probe(n, a) for n, a in adapters.items())))
     return {"engines": results, "default_offline": router.default_offline}
 
 @app.get("/api/config")
@@ -403,8 +425,8 @@ ALLOWED_GENERAL_KEYS = {"host", "port", "default_offline", "default_engine", "va
                         "allowed_repo_roots"}
 # Ajustes de INICIALIZACAO: a API nao pode muda-los (so editando o config.yaml com o servidor parado).
 FROZEN_GENERAL_KEYS = ("host", "port", "vault_dir", "vault_root", "db_path", "allowed_repo_roots")
-ALLOWED_ENGINES = {"ollama", "claude_code", "antigravity", "hera_router"}
-ALLOWED_ENGINE_FIELDS = {"enabled", "base_url", "default_model", "timeout"}
+ALLOWED_ENGINES = {"ollama", "claude_code", "antigravity", "hera_router", *CLI_ENGINES}
+ALLOWED_ENGINE_FIELDS = {"enabled", "base_url", "default_model", "timeout", "permission_mode", "auto_approve"}
 LOCAL_ONLY_URL_ENGINES = {"ollama"}
 
 
@@ -440,6 +462,10 @@ def _validate_config_update(req: "ConfigUpdateRequest") -> None:
         if model is not None and (not isinstance(model, str) or len(model) > 200
                                   or any(ord(c) < 32 for c in model)):
             bad(f"engines.{name}.default_model invalido")
+        if "permission_mode" in eng and (name != "claude_code" or eng["permission_mode"] not in ("", "auto", "acceptEdits", "plan", "default")):
+            bad(f"engines.{name}.permission_mode invalido (use auto, acceptEdits, plan, default ou vazio; so no claude_code)")
+        if "auto_approve" in eng and (name not in ("antigravity", *CLI_ENGINES) or not isinstance(eng["auto_approve"], bool)):
+            bad(f"engines.{name}.auto_approve invalido (booleano; so no antigravity e nos CLIs oficiais)")
         timeout = eng.get("timeout")
         if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
                                     or not 1 <= timeout <= 3600):
@@ -502,12 +528,18 @@ class PlanStepModel(BaseModel):
     model: Annotated[str, StringConstraints(max_length=100)] = ""
     reason: Annotated[str, StringConstraints(max_length=orchestration.MAX_REASON_CHARS)] = ""
     depends_on: List[Annotated[str, StringConstraints(max_length=40)]] = Field(default_factory=list, max_length=12)
+    acceptance_criteria: List[Annotated[str, StringConstraints(max_length=orchestration.MAX_CRITERION_CHARS)]] = Field(
+        default_factory=list, max_length=orchestration.MAX_CRITERIA)
+    validation_commands: List[Annotated[str, StringConstraints(max_length=orchestration.MAX_COMMAND_CHARS)]] = Field(
+        default_factory=list, max_length=orchestration.MAX_COMMANDS)
 
 
 class PlanExecuteRequest(BaseModel):
     goal: Annotated[str, StringConstraints(max_length=orchestration.MAX_GOAL_CHARS)] = ""
     steps: List[PlanStepModel] = Field(min_length=1, max_length=orchestration.MAX_STEPS_LIMIT)
     executors: Optional[List[ShortStr]] = Field(default=None, max_length=8)
+    # Pasta do projeto onde os passos rodam (precisa estar em `general.allowed_repo_roots`); vazio = esta pasta do Hera.
+    project_dir: Optional[Annotated[str, StringConstraints(max_length=500)]] = None
 
 
 def _orchestration_cfg() -> Dict[str, Any]:
@@ -544,6 +576,16 @@ def _gpu_vram_mb() -> Optional[int]:
         pass
     _GPU_CACHE.update(at=time.monotonic(), mb=mb)
     return mb
+
+
+async def _ollama_fit_check(model: str) -> Optional[str]:
+    """Recusa (com motivo) o modelo do Ollama que nao cabe na GPU; vale para o roteador, escolha manual e painel."""
+    _fits, skipped = filter_ollama_models([model], await _ollama_sizes(), await asyncio.to_thread(_gpu_vram_mb))
+    return f"Modelo recusado: {skipped[0]}. Escolha um modelo menor." if skipped else None
+
+
+adapters["ollama"].fit_check = _ollama_fit_check
+ollama_gw_adapter.fit_check = _ollama_fit_check
 
 
 async def _ollama_sizes() -> Dict[str, int]:
@@ -606,7 +648,8 @@ async def console_run(run_id: str):
 async def get_orchestration():
     """Planejador escolhido, motores ligados e se o modo offline vai forcar tudo para o Ollama."""
     ocfg = _orchestration_cfg()
-    return {**ocfg, "active_engines": list(router.active_adapters()), "offline": router.default_offline}
+    return {**ocfg, "active_engines": list(router.active_adapters()), "offline": router.default_offline,
+            "quota_blocked": router.quota.snapshot()}
 
 
 @app.post("/api/orchestration/planner")
@@ -628,8 +671,14 @@ async def set_planner(req: PlannerChoice):
 @app.post("/api/orchestration/plan")
 async def make_plan(req: PlanRequest):
     """Pede ao planejador um plano em passos. NADA e executado aqui: o usuario revisa e depois chama /execute."""
+    return await _plan_for(req.goal, req.executors)
+
+
+async def _plan_for(goal: str, executors_req: Optional[List[str]], context: str = "",
+                    images: Optional[List[str]] = None, project_name: str = "") -> Dict[str, Any]:
+    """Planejamento compartilhado pelo endpoint avulso e pelas conversas (`context` = conversa ate aqui; `images` = caminhos)."""
     ocfg = _orchestration_cfg()
-    enabled = _active_executors(req.executors)
+    enabled = _active_executors(executors_req)
     planner_engine = ocfg["planner"]["engine"]
     if planner_engine in router.disabled or planner_engine not in adapters:
         raise HTTPException(status_code=400, detail={"error": "planner_off",
@@ -640,8 +689,10 @@ async def make_plan(req: PlanRequest):
             "error": "no_executor", "message": "Nenhum motor ligado esta no ar agora (confira Motores & IAs; o Ollama precisa ser iniciado)."})
     executors = [c["engine"] for c in catalog]
     models_map = {c["engine"]: [m["id"] for m in c["models"]] for c in catalog}
-    task = orchestration.build_planning_task(req.goal, catalog, ocfg["max_steps"], planner_engine,
-                                             ocfg["planner"]["model"], str(ROOT_DIR))
+    # o NOME do projeto da conversa (ex.: "NetHub") tambem aponta a pasta: o pedido ("ajude esse cliente...") quase nunca cita o projeto
+    folders = orchestration.match_project_folders(f"{goal} {project_name}", [str(r) for r in _allowed_repo_roots()], str(ROOT_DIR))
+    task = orchestration.build_planning_task(goal, catalog, ocfg["max_steps"], planner_engine,
+                                             ocfg["planner"]["model"], str(ROOT_DIR), context, images, folders)
     CONSOLE.emit("info", f"Planejador {planner_engine}{' / ' + ocfg['planner']['model'] if ocfg['planner']['model'] else ''} "
                          f"analisando o objetivo com {len(catalog)} motor(es) no ar...", step="planejamento", title="Planejamento")
     try:
@@ -653,6 +704,8 @@ async def make_plan(req: PlanRequest):
     warnings: List[str] = []
     if down:
         warnings.append(f"Motores ligados mas fora do ar agora (ficaram fora do plano): {', '.join(down)}.")
+    for eng, info in router.quota.snapshot().items():
+        warnings.append(f"{eng} esta sem limite de uso (volta em ~{info['minutes']} min): ficou fora do plano.")
     for entry in catalog:
         for note in entry.get("notes") or []:
             warnings.append(f"{entry['engine']}: modelo deixado de fora do plano por nao caber na GPU: {note}")
@@ -665,37 +718,117 @@ async def make_plan(req: PlanRequest):
             raise orchestration.PlanError(result.error_message or result.summary or "o planejador falhou")
         steps, plan_warnings = orchestration.parse_plan(result.output_text, executors, ocfg["max_steps"], models_map)
         warnings += plan_warnings
+        steps, balance_notes = orchestration.rebalance_steps(steps, catalog)
+        warnings += balance_notes
         CONSOLE.emit("info", f"Plano pronto: {len(steps)} passo(s) em {result.execution_time_seconds:.0f}s. Revise e execute.",
                      step="planejamento", title="Planejamento")
     except Exception as exc:        # noqa: BLE001 - qualquer falha do planejador cai no plano de 1 passo
         warnings.append(f"Plano automatico indisponivel ({type(exc).__name__}: {str(exc)[:200]}); usando 1 passo com o objetivo inteiro.")
         CONSOLE.emit("error", f"O planejador falhou ({type(exc).__name__}: {str(exc)[:200]}).", step="planejamento", title="Planejamento")
-        steps, _ = orchestration.normalize_steps(orchestration.fallback_single_step(req.goal), executors, 1)
+        steps, _ = orchestration.normalize_steps(orchestration.fallback_single_step(goal), executors, 1)
     used = {st["engine"] for st in steps if st["engine"]}
     if len(steps) >= 3 and len(used) == 1 and len(executors) > 1:
         warnings.append(f"Todos os passos ficaram no motor '{next(iter(used))}'. Confira se faz sentido ou troque o motor/modelo de algum passo.")
     return {"planner": {"engine": adapter.name, "model": model, "forced_local": forced},
-            "steps": steps, "warnings": warnings, "executors": executors, "catalog": catalog, "offline": router.default_offline}
+            "steps": steps, "warnings": warnings, "executors": executors, "catalog": catalog, "offline": router.default_offline,
+            "project_dirs": folders}
+
+
+async def _final_summary(goal: str, report: List[Dict[str, Any]], run_id: str) -> str:
+    """O planejador le a saida de todos os passos e escreve o resumo final. Falha aqui nunca derruba o plano: devolve ''."""
+    if not any(r.get("output_text") or r.get("summary") for r in report):
+        return ""
+    try:
+        ocfg = _orchestration_cfg()
+        engine = ocfg["planner"]["engine"]
+        if engine in router.disabled or engine not in adapters:
+            return ""
+        task = orchestration.build_synthesis_task(goal, report, engine, ocfg["planner"]["model"], str(ROOT_DIR))
+        CONSOLE.emit("info", f"Planejador {engine} lendo as saidas de todos os passos para o resumo final...", run=run_id,
+                     step="resumo", title="Resumo final")
+        adapter, _model, _reason = await router.route(task)
+        handle = await adapter.submit(task)
+        result = await asyncio.wait_for(adapter.collect(handle), timeout=task.timeout_seconds + 20)
+        if result.status != TaskStatus.SUCCEEDED:
+            raise RuntimeError(result.error_message or result.summary or "falhou")
+        return (result.output_text or "").strip()[:12000]
+    except Exception as exc:        # noqa: BLE001 - o resumo e um extra; sem ele o usuario ainda tem os passos
+        task_log.warning("Resumo final do plano %s indisponivel: %s", run_id, exc)
+        CONSOLE.emit("info", f"Resumo final indisponivel ({type(exc).__name__}); veja a saida de cada passo.", run=run_id,
+                     step="resumo", title="Resumo final")
+        return ""
+
+
+ACTIVE_RUNS: Dict[str, "asyncio.Task"] = {}
+
+
+@app.post("/api/orchestration/runs/{run_id}/cancel")
+async def cancel_run(run_id: str):
+    """Para um plano em andamento: cancela a execucao e mata os processos dos agentes (e filhos) daquele plano."""
+    if not re.fullmatch(r"run-[0-9a-f]{8}", run_id):
+        raise HTTPException(status_code=400, detail={"error": "invalid_run", "message": "Identificador de execucao invalido."})
+    task = ACTIVE_RUNS.get(run_id)
+    if task is None or task.done():
+        raise HTTPException(status_code=404, detail={"error": "not_running", "message": "Esse plano nao esta em execucao."})
+    from adapters.cli_stream import _kill_tree
+    for adapter in adapters.values():
+        for tid, proc in list(getattr(adapter, "_active_processes", {}).items()):
+            if str(tid).startswith(run_id + "-"):
+                try:
+                    _kill_tree(proc)
+                except Exception:       # noqa: BLE001 - o processo pode ja ter saido
+                    pass
+    task.cancel()
+    return {"status": "cancelling", "run_id": run_id}
 
 
 @app.post("/api/orchestration/execute")
 async def execute_plan(req: PlanExecuteRequest, background_tasks: BackgroundTasks):
     """Executa o plano (revalidado aqui: o corpo e nao confiavel) distribuindo os passos aos motores ligados."""
+    return await _start_run(req.goal, [s.model_dump() for s in req.steps], req.executors, req.project_dir, background_tasks)
+
+
+async def _start_run(goal: str, raw_steps: List[Dict[str, Any]], executors_req: Optional[List[str]], project_dir: Optional[str],
+                     background_tasks: BackgroundTasks, images: Optional[List[str]] = None, on_finish=None,
+                     extra_project_dirs: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Valida e enfileira a execucao. `on_finish(report, error)` (async) e chamado ao terminar, para a conversa guardar o resultado."""
     ocfg = _orchestration_cfg()
-    executors = _active_executors(req.executors)
+    executors = _active_executors(executors_req)
     catalog, _down = await _engine_catalog(executors)
     models_map = {c["engine"]: [m["id"] for m in c["models"]] for c in catalog}
     try:
-        steps, warnings = orchestration.normalize_steps([s.model_dump() for s in req.steps], executors, ocfg["max_steps"], models_map)
+        steps, warnings = orchestration.normalize_steps(raw_steps, executors, ocfg["max_steps"], models_map)
     except orchestration.PlanError as exc:
         raise HTTPException(status_code=400, detail={"error": "invalid_plan", "message": str(exc)})
     run_id = f"run-{uuid.uuid4().hex[:8]}"
-    dag = orchestration.build_dag(steps, run_id, str(ROOT_DIR))
+    workspace = str(ROOT_DIR)
+    if project_dir and project_dir.strip():
+        try:
+            resolved = ensure_inside(project_dir, _allowed_repo_roots())
+        except PathNotAllowedError as exc:
+            raise HTTPException(status_code=400, detail={
+                "error": "project_dir_not_allowed",
+                "message": f"{exc} Adicione a pasta em `general.allowed_repo_roots` no config.yaml (com o servidor parado)."})
+        if not resolved.is_dir():
+            raise HTTPException(status_code=400, detail={"error": "project_dir_missing",
+                                                         "message": f"A pasta do projeto nao existe: {resolved}"})
+        workspace = str(resolved)
+    # o cofre do Obsidian (caminho vindo do config.yaml, nao da API) fica legivel para os motores que aceitam pastas extras
+    vault_root = find_vault_root(resolve_vault_dir(cfg["general"].get("vault_dir")), cfg["general"].get("vault_root"))
+    extra_dirs = [str(vault_root)] if vault_root.is_dir() and str(vault_root) != workspace else []
+    for other in extra_project_dirs or []:                 # outras pastas do mesmo projeto (ex.: NetHub ES ao lado do BR)
+        try:
+            resolved_other = ensure_inside(other, _allowed_repo_roots())
+        except PathNotAllowedError:
+            continue
+        if resolved_other.is_dir() and str(resolved_other) != workspace and str(resolved_other) not in extra_dirs:
+            extra_dirs.append(str(resolved_other))
+    dag = orchestration.build_dag(steps, run_id, workspace, extra_dirs, images)
 
     async def _execute():
         broadcast_log(f"🧭 Plano {run_id}: {len(steps)} passo(s) em execucao.", level="info")
         started = time.monotonic()
-        CONSOLE.emit("plan_start", req.goal[:300], run=run_id, title=(req.goal or steps[0]["title"])[:120], total=len(steps),
+        CONSOLE.emit("plan_start", goal[:300], run=run_id, title=(goal or steps[0]["title"])[:120], total=len(steps),
                      mode="plano", steps=[{"id": st["id"], "title": st["title"], "engine": st["engine"], "model": st["model"],
                                            "depends_on": st["depends_on"]} for st in steps])
         try:
@@ -717,10 +850,13 @@ async def execute_plan(req: PlanExecuteRequest, background_tasks: BackgroundTask
                              "plano %s passo %s ('%s') motor=%s modelo=%s status=%s%s", run_id, row["id"], row["title"],
                              row["engine"], row["model"], row["status"], f" erro={row['error']}" if row["error"] else "")
             ok_n = sum(1 for r in report if r["status"] == "SUCCEEDED")
+            final = await _final_summary(goal, report, run_id)
             CONSOLE.emit("plan_end", f"{ok_n} de {len(report)} passo(s) deram certo.", run=run_id,
                          status="ok" if ok_n == len(report) else "problems", done=ok_n, total=len(report),
                          seconds=round(time.monotonic() - started, 1))
-            await ws_manager.broadcast({"type": "orchestration_finished", "run_id": run_id, "steps": report})
+            await ws_manager.broadcast({"type": "orchestration_finished", "run_id": run_id, "steps": report, "final": final})
+            if on_finish:
+                await on_finish(report, "", final)
         except Exception as exc:        # noqa: BLE001
             task_log.exception("Plano %s falhou", run_id)
             CONSOLE.emit("error", f"O plano falhou: {exc}", run=run_id)
@@ -729,11 +865,45 @@ async def execute_plan(req: PlanExecuteRequest, background_tasks: BackgroundTask
             broadcast_log(f"❌ Plano {run_id} falhou: {exc}", level="error")
             await ws_manager.broadcast({"type": "orchestration_finished", "run_id": run_id, "steps": [],
                                         "error": str(exc)[:500]})
+            if on_finish:
+                try:
+                    await on_finish([], str(exc)[:500], "")
+                except Exception:       # noqa: BLE001 - a conversa nao pode derrubar o aviso de falha
+                    task_log.exception("Falha ao registrar o fim do plano %s na conversa", run_id)
+
+    async def _tracked():
+        """Roda o plano guardando a tarefa em ACTIVE_RUNS, para o botao "Parar" poder cancelar."""
+        ACTIVE_RUNS[run_id] = asyncio.current_task()
+        started = time.monotonic()
+        try:
+            await _execute()
+        except asyncio.CancelledError:
+            CONSOLE.emit("error", "Plano cancelado pelo usuario.", run=run_id)
+            CONSOLE.emit("plan_end", "Cancelado pelo usuario.", run=run_id, status="problems", done=0, total=len(steps),
+                         seconds=round(time.monotonic() - started, 1))
+            broadcast_log(f"⏹ Plano {run_id} cancelado pelo usuario.", level="warning")
+            await ws_manager.broadcast({"type": "orchestration_finished", "run_id": run_id, "steps": [], "error": "Cancelado pelo usuario."})
+            if on_finish:
+                try:
+                    await on_finish([], "Cancelado pelo usuario.", "")
+                except Exception:       # noqa: BLE001
+                    task_log.exception("Falha ao registrar o cancelamento do plano %s", run_id)
+        finally:
+            ACTIVE_RUNS.pop(run_id, None)
 
     task_log.info("plano %s enfileirado: %d passo(s): %s", run_id, len(steps),
                   "; ".join(f"{st['id']}={st['engine'] or 'auto'}/{st['model'] or 'padrao'}" for st in steps))
-    background_tasks.add_task(_execute)
+    background_tasks.add_task(_tracked)
     return {"status": "enqueued", "run_id": run_id, "steps": steps, "warnings": warnings}
+
+
+# ---------------------------------------------------------------------------------------------
+# Conversas do Plano: projetos, historico e imagens (app/chat/api.py)
+# ---------------------------------------------------------------------------------------------
+from app.chat import api as chat_api  # noqa: E402
+
+chat_api.install(app, data_dir=DATA_DIR, plan_for=_plan_for, start_run=_start_run, broadcast=ws_manager.broadcast,
+                 allowed_roots=lambda: _allowed_repo_roots(), ensure_inside=ensure_inside, step_model=PlanStepModel)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -959,7 +1129,7 @@ async def search_vault(q: str):
 
 # ---------------------------------------------------------------------------------------------
 # Obsidian dentro do Hera: explorar, ler, escrever, renomear (com links), lixeira, busca, tags, grafo, IA
-# (as regras de seguranca estao em app/vault_manager.py)
+# (as regras de seguranca estao em app/vault/manager.py)
 # ---------------------------------------------------------------------------------------------
 VAULT = VaultManager(find_vault_root(resolve_vault_dir(cfg["general"].get("vault_dir")),
                                      cfg["general"].get("vault_root")))
@@ -1157,13 +1327,29 @@ async def favicon():
     return Response(status_code=204)
 
 
+_STATIC_REF = re.compile(r'(?P<attr>(?:href|src)=")(?P<path>/static/[^"?#]+\.(?:css|js))(?P<tail>")')
+
+
+def _version_static_assets(html: str) -> str:
+    """Poe `?v=<mtime>` nos CSS/JS locais da UI. Sem isso o navegador guarda o `tailwind.css` antigo por heuristica e,
+    depois de atualizar o Hera, mostra HTML novo com CSS velho (layout quebrado). O token continua so no HTML (no-store)."""
+    def bump(m: "re.Match[str]") -> str:
+        path = WEB_DIR / m.group("path").removeprefix("/")
+        try:
+            version = int(path.stat().st_mtime)
+        except OSError:
+            return m.group(0)
+        return f'{m.group("attr")}{m.group("path")}?v={version}{m.group("tail")}'
+    return _STATIC_REF.sub(bump, html)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
     """Serve a UI com o token da sessao embutido. A pagina so e legivel pela propria origem
     (Host/Origin checados no middleware, sem CORS), entao outro site nao consegue le-lo."""
     index_file = WEB_DIR / "index.html"
     if index_file.exists():
-        html = index_file.read_text(encoding="utf-8")
+        html = _version_static_assets(index_file.read_text(encoding="utf-8"))
         inject = f"<script>window.HERA_TOKEN = {json.dumps(SECURITY.token)};</script>"
         html = html.replace("</head>", inject + "</head>", 1)
         return HTMLResponse(html, headers={"Cache-Control": "no-store", "Content-Security-Policy": UI_CSP})
@@ -1198,9 +1384,6 @@ async def list_gateway_models(request: Request):
     for ad in gateway_tier_router.adapters:                    # enderecamento direto: provedor/modelo
         for m in sorted(ad.served_models or [])[:20]:
             models_list.append({"id": f"{ad.name}/{m}", "object": "model", "created": 1700000000, "owned_by": f"hera-{ad.name}"})
-    for combo in gateway_tier_router.combos:                   # combos do Roteador embutido
-        if combo not in [x["id"] for x in models_list]:
-            models_list.append({"id": combo, "object": "model", "created": 1700000000, "owned_by": "hera-combo"})
     for alias in gateway_tier_router.aliases:                  # apelidos
         if alias not in [x["id"] for x in models_list]:
             models_list.append({"id": alias, "object": "model", "created": 1700000000, "owned_by": "hera-alias"})
@@ -1231,10 +1414,9 @@ async def list_gateway_providers():
     return {"tier_order": gateway_tier_router.tier_order, "providers": out}
 
 # ---------------------------------------------------------------------------------------------
-# Roteador embutido: provedores de nuvem, combos com fallback, teste
+# Roteador embutido: provedores de nuvem (catalogo), apelidos, fallback entre provedores, teste
 # ---------------------------------------------------------------------------------------------
 _PROVIDER_NAME = re.compile(r"^[a-z][a-z0-9_-]{1,31}$")
-_COMBO_NAME = re.compile(r"^[a-z][a-z0-9_-]{1,39}$")
 _KEY_ENV = re.compile(r"^[A-Z][A-Z0-9_]{1,63}_API_KEYS?$")
 _RESERVED_NAMES = {"default", "ollama", "local", "auto"}
 _MODEL_OK = re.compile(r"^[^\x00-\x1f\x7f]{1,200}$")
@@ -1245,43 +1427,23 @@ def _bad_router(msg: str, status: int = 400):
     raise HTTPException(status_code=status, detail={"error": "invalid_router_config", "message": msg})
 
 
-def _combo_defs_from_cfg(config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    """`gateway.combos` -> {nome: {"strategy": ..., "steps": [...]}}. Aceita o formato antigo (so a lista de passos)."""
-    out: Dict[str, Dict[str, Any]] = {}
-    for name, value in ((config.get("gateway") or {}).get("combos") or {}).items():
-        strategy, raw_steps = "priority", value
-        if isinstance(value, dict):
-            strategy, raw_steps = str(value.get("strategy") or "priority"), value.get("steps")
-        if strategy not in STRATEGIES or not isinstance(raw_steps, list):
-            continue
-        steps = []
-        for st in raw_steps:
-            if isinstance(st, dict) and st.get("provider") and st.get("model"):
-                item: Dict[str, Any] = {"provider": str(st["provider"]), "model": str(st["model"])}
-                if st.get("weight"):
-                    item["weight"] = int(st["weight"])
-                steps.append(item)
-        if steps:
-            out[str(name)] = {"strategy": strategy, "steps": steps}
-    return out
-
-
-def _combos_from_cfg(config: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
-    return {name: d["steps"] for name, d in _combo_defs_from_cfg(config).items()}
-
-
 SECRET_STORE = SecretStore(DATA_DIR / ".hera_provider_keys.json")
 USAGE = UsageLedger(DATA_DIR / "usage.db")
 gateway_tier_router.usage = USAGE
+search_router = SearchRouter(build_search_providers(cfg, secrets=SECRET_STORE))
+OAUTH_STORE = SecretStore(DATA_DIR / ".hera_oauth_tokens.json")
+oauth_manager = OAuthManager(load_oauth_providers(cfg), OAUTH_STORE)
 
 
 def reload_gateway() -> None:
     """Reconstroi os provedores do gateway a partir do config.yaml + variaveis de ambiente + cofre (sem reiniciar)."""
     fresh = config_mgr.load_config()
-    gateway_tier_router.adapters = build_gateway_adapters(fresh, secrets=SECRET_STORE)
-    defs = _combo_defs_from_cfg(fresh)
-    gateway_tier_router.combos = {n: d["steps"] for n, d in defs.items()}
-    gateway_tier_router.combo_strategies = {n: d["strategy"] for n, d in defs.items()}
+    oauth_manager.providers = load_oauth_providers(fresh)
+    gateway_tier_router.adapters = build_gateway_adapters(fresh, secrets=SECRET_STORE, oauth=oauth_manager)
+    for ad in gateway_tier_router.adapters:
+        if ad.name == "ollama":
+            ad.fit_check = _ollama_fit_check
+    search_router.providers = build_search_providers(fresh, secrets=SECRET_STORE)
     gw = fresh.get("gateway") or {}
     gateway_tier_router.aliases = {str(k): str(v) for k, v in (gw.get("aliases") or {}).items()}
     gateway_tier_router.pricing = {str(k): {"in": float(v.get("in", 0)), "out": float(v.get("out", 0))}
@@ -1304,8 +1466,14 @@ def _env_keys_found(key_env: str) -> int:
 
 
 class RouterKeysBody(BaseModel):
-    keys: List[Annotated[str, StringConstraints(max_length=600)]] = Field(min_length=1, max_length=10)
+    keys: List[Annotated[str, StringConstraints(max_length=600)]] = Field(min_length=1, max_length=20)
+    mode: Literal["replace", "append"] = "replace"     # "append" = mais uma conta no mesmo provedor (nao apaga as outras)
     human_code: Optional[str] = None
+
+
+class RouterHeadersBody(BaseModel):
+    headers: Dict[Annotated[str, StringConstraints(max_length=60)], Annotated[str, StringConstraints(max_length=500)]] = Field(
+        default_factory=dict, max_length=10)
 
 
 def _clean_models(models: Any) -> List[str]:
@@ -1331,6 +1499,7 @@ class RouterProviderBody(BaseModel):
     models: Optional[List[Annotated[str, StringConstraints(max_length=200)]]] = Field(default=None, max_length=50)
     enabled: bool = True
     daily_request_limit: Optional[int] = Field(default=None, ge=1, le=10_000_000)
+    params: Optional[Dict[Annotated[str, StringConstraints(max_length=40)], Annotated[str, StringConstraints(max_length=80)]]] = Field(default=None, max_length=5)
     human_code: Optional[str] = None
 
 
@@ -1343,15 +1512,6 @@ class RouterStep(BaseModel):
     provider: Annotated[str, StringConstraints(max_length=40)]
     model: Annotated[str, StringConstraints(max_length=200)]
     weight: Optional[int] = Field(default=None, ge=1, le=100)
-
-
-class RouterCombo(BaseModel):
-    strategy: Literal["priority", "round_robin", "fastest", "least_used", "weighted"] = "priority"
-    steps: List[RouterStep]
-
-
-class RouterCombosBody(BaseModel):
-    combos: Dict[Annotated[str, StringConstraints(max_length=40)], Union[RouterCombo, List[RouterStep]]] = Field(max_length=20)
 
 
 class RouterLimitsBody(BaseModel):
@@ -1410,7 +1570,9 @@ def _provider_view(name: str, p: Dict[str, Any]) -> Dict[str, Any]:
             "models": list(p.get("models") or []), "key_env": p.get("api_key_env", ""),
             "keys_env": _env_keys_found(p.get("api_key_env", "")), "keys_stored": SECRET_STORE.count(name),
             "keys_found": _env_keys_found(p.get("api_key_env", "")) + SECRET_STORE.count(name), "active": live is not None,
-            "keys": km.status() if km else [], "daily_request_limit": p.get("daily_request_limit"),
+            "keys": km.status() if km else [], "stored_hints": SECRET_STORE.hints(name),
+            "headers": dict(p.get("headers") or {}), "quota": getattr(live, "quota", None) or None,
+            "daily_request_limit": p.get("daily_request_limit"),
             "priority": p.get("priority") or 100, "rpm": p.get("rpm"), "daily_requests": p.get("daily_requests"),
             "daily_tokens": p.get("daily_tokens"), "health": gateway_tier_router.guard.status(name),
             "today": USAGE.today(provider=name)}
@@ -1418,7 +1580,7 @@ def _provider_view(name: str, p: Dict[str, Any]) -> Dict[str, Any]:
 
 @app.get("/api/router/state")
 async def router_state():
-    """Presets, provedores configurados (sem segredos: so QUANTAS chaves foram achadas) e combos."""
+    """Presets, provedores configurados (sem segredos: so QUANTAS chaves foram achadas) e apelidos."""
     current = config_mgr.load_config()
     providers = [_provider_view(n, p) for n, p in (current.get("providers") or {}).items() if isinstance(p, dict)]
     ollama_models: List[str] = []
@@ -1428,9 +1590,9 @@ async def router_state():
     except Exception:       # noqa: BLE001
         pass
     gw = current.get("gateway") or {}
-    return {"presets": PROVIDER_PRESETS, "providers": providers, "combos": _combo_defs_from_cfg(current),
+    return {"presets": PROVIDER_PRESETS, "providers": providers,
             "tier_order": gateway_tier_router.tier_order, "offline": router.default_offline,
-            "ollama_models": ollama_models, "strategies": list(STRATEGIES), "aliases": gw.get("aliases") or {},
+            "ollama_models": ollama_models, "aliases": gw.get("aliases") or {},
             "pricing": gw.get("pricing") or {}, "breaker_threshold": gateway_tier_router.guard.threshold,
             "rtk": {"enabled": RUNTIME_FLAGS["rtk"], **gateway_tier_router.rtk_stats}}
 
@@ -1454,6 +1616,13 @@ async def router_upsert_provider(body: RouterProviderBody):
     if key_env and (not _KEY_ENV.match(key_env) or key_env.startswith("HERA_")):
         _bad_router("O nome da variavel da chave precisa terminar em _API_KEY (ex.: GROQ_API_KEY) e nao pode comecar com HERA_.")
     base_url = (body.base_url or base.get("base_url") or "").strip()
+    for key, value in (body.params or {}).items():              # partes do endereco que so o usuario sabe (ex.: ID da conta)
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", value.strip()):
+            _bad_router(f"Valor invalido para '{key}' (letras, numeros, - e _).")
+        base_url = base_url.replace("{" + key + "}", value.strip())
+    if re.search(r"\{[a-z_]+\}", base_url):
+        missing = ", ".join(p.get("label", p.get("key", "?")) for p in (base.get("params") or [])) or "parametros do endereco"
+        _bad_router(f"Faltam dados para montar o endereco do provedor: {missing}.")
     try:
         base_url = validate_provider_url(base_url, is_local_profile=False)
     except (SSRFSecurityError, ValueError) as exc:
@@ -1462,7 +1631,7 @@ async def router_upsert_provider(body: RouterProviderBody):
     if not _MODEL_OK.match(default_model):
         _bad_router("Informe o modelo padrao.")
     models = _clean_models(body.models if body.models is not None else base.get("models"))
-    _require_human_code(body.human_code, f"Provedor de nuvem '{name}' sera configurado")
+    _provider_gate(body.human_code, f"Provedor de nuvem '{name}' sera configurado")
 
     current = config_mgr.load_config()
     providers = dict(current.get("providers") or {})
@@ -1484,7 +1653,7 @@ async def router_set_enabled(name: str, body: RouterEnabledBody):
     if name not in providers:
         raise HTTPException(status_code=404, detail={"error": "not_found", "message": "Provedor desconhecido."})
     if body.enabled:                                    # desligar nao precisa de codigo; ligar sim
-        _require_human_code(body.human_code, f"Provedor de nuvem '{name}' sera LIGADO")
+        _provider_gate(body.human_code, f"Provedor de nuvem '{name}' sera LIGADO")
     providers[name] = {**providers[name], "enabled": body.enabled}
     config_mgr.save_config({**current, "providers": providers})
     reload_gateway()
@@ -1497,10 +1666,11 @@ async def router_delete_provider(name: str):
     providers = dict(current.get("providers") or {})
     if name not in providers:
         raise HTTPException(status_code=404, detail={"error": "not_found", "message": "Provedor desconhecido."})
-    used = [c for c, steps in _combos_from_cfg(current).items() if any(s["provider"] == name for s in steps)]
+    used = [a for a, target in (( current.get("gateway") or {}).get("aliases") or {}).items()
+            if str(target).split("/", 1)[0] == name]
     if used:
         raise HTTPException(status_code=409, detail={"error": "in_use",
-                                                     "message": f"O provedor esta nos combos: {', '.join(used)}. Tire-o de la primeiro."})
+                                                     "message": f"Os apelidos {', '.join(used)} apontam para este provedor. Tire-os de la primeiro."})
     providers.pop(name)
     config_mgr.save_config({**current, "providers": providers})
     SECRET_STORE.delete(name)
@@ -1513,14 +1683,29 @@ async def router_set_keys(name: str, body: RouterKeysBody):
     """Guarda as chaves do provedor no cofre local (DPAPI). Exige o codigo humano. Nunca devolve a chave."""
     if name not in (config_mgr.load_config().get("providers") or {}):
         raise HTTPException(status_code=404, detail={"error": "not_found", "message": "Provedor desconhecido."})
-    _require_human_code(body.human_code, f"Chave de API do provedor '{name}' sera gravada no cofre")
+    _provider_gate(body.human_code, f"Chave de API do provedor '{name}' sera gravada no cofre")
     try:
-        count = SECRET_STORE.set(name, body.keys)
+        count = SECRET_STORE.add(name, body.keys) if body.mode == "append" else SECRET_STORE.set(name, body.keys)
     except SecretStoreError as exc:
         _bad_router(str(exc))
     reload_gateway()
-    broadcast_log(f"🔐 [ROTEADOR] {count} chave(s) de '{name}' gravada(s) no cofre.", level="success")
+    verb = "acrescentada(s)" if body.mode == "append" else "gravada(s)"
+    broadcast_log(f"🔐 [ROTEADOR] {verb} chave(s) de '{name}'; agora {count} no cofre.", level="success")
     return {"status": "ok", "keys_stored": count}
+
+
+@app.delete("/api/router/providers/{name}/keys/{index}")
+async def router_remove_key(name: str, index: int):
+    """Tira UMA chave do cofre (posicao na lista mostrada no painel), sem mexer nas outras contas do provedor."""
+    if name not in (config_mgr.load_config().get("providers") or {}):
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": "Provedor desconhecido."})
+    try:
+        left = SECRET_STORE.remove_at(name, index)
+    except SecretStoreError as exc:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": str(exc)})
+    reload_gateway()
+    broadcast_log(f"🔐 [ROTEADOR] uma chave de '{name}' foi removida; restam {left} no cofre.", level="info")
+    return {"status": "ok", "keys_stored": left}
 
 
 @app.delete("/api/router/providers/{name}/keys")
@@ -1528,6 +1713,28 @@ async def router_clear_keys(name: str):
     SECRET_STORE.delete(name)
     reload_gateway()
     return {"status": "ok", "keys_stored": 0}
+
+
+@app.put("/api/router/providers/{name}/headers")
+async def router_set_headers(name: str, body: RouterHeadersBody):
+    """Cabecalhos extras enviados a ESTE provedor (ex.: HTTP-Referer, X-Title). Nao aceita Authorization nem os de enquadramento."""
+    current = config_mgr.load_config()
+    providers = dict(current.get("providers") or {})
+    if name not in providers:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": "Provedor desconhecido."})
+    try:
+        clean = sanitize_extra_headers(body.headers)
+    except ValueError as exc:
+        _bad_router(str(exc))
+    entry = dict(providers[name])
+    if clean:
+        entry["headers"] = clean
+    else:
+        entry.pop("headers", None)
+    providers[name] = entry
+    config_mgr.save_config({**current, "providers": providers})
+    reload_gateway()
+    return {"status": "ok", "headers": clean}
 
 
 @app.post("/api/router/providers/{name}/discover")
@@ -1540,7 +1747,7 @@ async def router_discover_models(name: str):
     lease = km.acquire()
     client = make_safe_async_client(timeout=20.0)
     try:
-        resp = await client.get(f"{adapter.base_url}/models", headers={"Authorization": f"Bearer {lease.secret}"})
+        resp = await client.get(f"{adapter.base_url}/models", headers={**getattr(adapter, "extra_headers", {}), "Authorization": f"Bearer {lease.secret}"})
     except Exception as exc:        # noqa: BLE001
         return {"ok": False, "error": f"Nao foi possivel consultar o provedor ({type(exc).__name__})."}
     finally:
@@ -1569,35 +1776,6 @@ async def router_discover_models(name: str):
 async def router_usage(days: int = 7):
     """Chamadas, tokens, erros e latencia por provedor/modelo/dia. So metadados: nunca o conteudo."""
     return await asyncio.to_thread(USAGE.summary, days)
-
-
-@app.put("/api/router/combos")
-async def router_set_combos(body: RouterCombosBody):
-    """Substitui os combos. Um combo so reordena provedores ja configurados: nao precisa de codigo."""
-    current = config_mgr.load_config()
-    known = set((current.get("providers") or {})) | {"ollama"}
-    clean: Dict[str, Dict[str, Any]] = {}
-    for cname, value in body.combos.items():
-        if not _COMBO_NAME.match(cname) or cname in _RESERVED_NAMES or cname in known:
-            _bad_router(f"Nome de combo invalido: {cname!r}")
-        strategy, steps = (value.strategy, value.steps) if isinstance(value, RouterCombo) else ("priority", value)
-        if not 1 <= len(steps) <= 8:
-            _bad_router(f"O combo {cname!r} precisa ter de 1 a 8 passos.")
-        out = []
-        for step in steps:
-            if step.provider not in known:
-                _bad_router(f"O combo {cname!r} usa um provedor que nao existe: {step.provider!r}")
-            if not _MODEL_OK.match(step.model):
-                _bad_router(f"Modelo invalido no combo {cname!r}.")
-            item: Dict[str, Any] = {"provider": step.provider, "model": step.model}
-            if step.weight:
-                item["weight"] = step.weight
-            out.append(item)
-        clean[cname] = {"strategy": strategy, "steps": out}
-    gateway_cfg = {**(current.get("gateway") or {}), "combos": clean}
-    config_mgr.save_config({**current, "gateway": gateway_cfg})
-    reload_gateway()
-    return {"status": "ok", "combos": clean}
 
 
 @app.post("/api/router/providers/{name}/limits")
@@ -1638,7 +1816,7 @@ async def router_set_settings(body: RouterSettingsBody):
             _bad_router("A ordem das camadas nao pode repetir e precisa incluir 'local'.")
         gw["default_tier_order"] = list(body.tier_order)
     if body.aliases is not None:
-        known = set((current.get("providers") or {})) | set(_combo_defs_from_cfg(current))
+        known = set((current.get("providers") or {}))
         clean_aliases = {}
         for alias, target in body.aliases.items():
             if not re.match(r"^[A-Za-z0-9][A-Za-z0-9._\-]{0,59}$", alias) or alias in _RESERVED_NAMES or alias in known or alias == target:
@@ -1740,7 +1918,7 @@ async def router_logs(limit: int = 100, provider: Optional[str] = None, client: 
 async def router_export():
     current = config_mgr.load_config()
     gw = current.get("gateway") or {}
-    return {"version": 1, "providers": current.get("providers") or {}, "combos": _combo_defs_from_cfg(current),
+    return {"version": 1, "providers": current.get("providers") or {},
             "aliases": gw.get("aliases") or {}, "pricing": gw.get("pricing") or {},
             "tier_order": gw.get("default_tier_order") or gateway_tier_router.tier_order,
             "breaker_threshold": gw.get("breaker_threshold") or 3,
@@ -1775,7 +1953,7 @@ def _validated_provider_entry(name: str, raw: Any) -> Dict[str, Any]:
 
 @app.post("/api/router/import")
 async def router_import(body: RouterImportBody):
-    """Importa provedores (chegam DESLIGADOS: ligar exige o codigo humano de novo), combos, apelidos e precos."""
+    """Importa provedores (chegam DESLIGADOS: ligar exige o codigo humano de novo), apelidos e precos."""
     data = body.data
     if data.get("version") != 1:
         _bad_router("Arquivo de versao desconhecida.")
@@ -1786,26 +1964,9 @@ async def router_import(body: RouterImportBody):
     current = config_mgr.load_config()
     gw = dict(current.get("gateway") or {})
     known = set(providers) | {"ollama"}
-    combos: Dict[str, Any] = {}
-    for cname, value in (data.get("combos") or {}).items():
-        strategy = value.get("strategy", "priority") if isinstance(value, dict) else "priority"
-        steps = value.get("steps") if isinstance(value, dict) else value
-        if (not _COMBO_NAME.match(str(cname)) or cname in _RESERVED_NAMES or cname in known or strategy not in STRATEGIES
-                or not isinstance(steps, list) or not 1 <= len(steps) <= 8):
-            _bad_router(f"Combo invalido no arquivo: {cname!r}")
-        clean_steps = []
-        for st in steps:
-            if not isinstance(st, dict) or st.get("provider") not in known or not _MODEL_OK.match(str(st.get("model", ""))):
-                _bad_router(f"Passo invalido no combo {cname!r}.")
-            item = {"provider": st["provider"], "model": str(st["model"])}
-            if st.get("weight"):
-                item["weight"] = max(1, min(100, int(st["weight"])))
-            clean_steps.append(item)
-        combos[cname] = {"strategy": strategy, "steps": clean_steps}
-    gw["combos"] = combos
     aliases = {}
     for a, t in (data.get("aliases") or {}).items():
-        if re.match(r"^[A-Za-z0-9][A-Za-z0-9._\-]{0,59}$", str(a)) and _MODEL_OK.match(str(t)) and a not in known and a not in combos:
+        if re.match(r"^[A-Za-z0-9][A-Za-z0-9._\-]{0,59}$", str(a)) and _MODEL_OK.match(str(t)) and a not in known:
             aliases[str(a)] = str(t)
     gw["aliases"] = aliases
     prices = {}
@@ -1818,7 +1979,7 @@ async def router_import(body: RouterImportBody):
         gw["default_tier_order"] = order
     config_mgr.save_config({**current, "providers": providers, "gateway": gw})
     reload_gateway()
-    return {"status": "ok", "providers": len(providers), "combos": len(combos)}
+    return {"status": "ok", "providers": len(providers)}
 
 
 @app.post("/api/router/test")
@@ -1894,6 +2055,474 @@ async def chat_completions(req: ChatCompletionRequest, request: Request):
     finally:
         if should_close and not req.stream:
             await client_to_use.aclose()
+
+
+@app.post("/v1/messages")
+async def anthropic_messages(request: Request):
+    """Endpoint no formato da Messages API da Anthropic (Claude Code, SDK da Anthropic). Traduz para o mesmo
+    caminho do `/v1/chat/completions`, entao chaves de cliente, limites, DLP, fallback e telemetria valem igual."""
+    raw = await request.body()
+    if len(raw) > MAX_BODY_BYTES:
+        return JSONResponse(anthropic_error_body(413, "Corpo da requisicao grande demais."), status_code=413)
+    try:
+        chat = claude_body_to_chat(json.loads(raw))
+        req = ChatCompletionRequest(**chat)
+    except (ValueError, TypeError) as exc:       # JSON invalido, campo faltando ou schema do gateway recusou
+        return JSONResponse(anthropic_error_body(400, str(exc)[:300]), status_code=400)
+    try:
+        result = await chat_completions(req, request)
+    except HTTPException as exc:
+        return JSONResponse(anthropic_error_body(exc.status_code, exc.detail if isinstance(exc.detail, str) else "erro"),
+                            status_code=exc.status_code, headers=exc.headers)
+    if isinstance(result, StreamingResponse):
+        return StreamingResponse(openai_sse_to_claude_sse(result.body_iterator, req.model),
+                                 media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive"})
+    return JSONResponse(chat_response_to_claude(result.model_dump(), req.model))
+
+@app.post("/v1/responses")
+async def openai_responses(request: Request):
+    """Endpoint no formato da Responses API da OpenAI (Codex CLI, SDK novo da OpenAI). Traduz para o mesmo caminho do
+    `/v1/chat/completions`: chaves de cliente, limites, DLP, fallback e telemetria valem igual."""
+    raw = await request.body()
+    if len(raw) > MAX_BODY_BYTES:
+        return JSONResponse(responses_error_body(413, "Corpo da requisicao grande demais."), status_code=413)
+    try:
+        chat = responses_body_to_chat(json.loads(raw))
+        custom_names = chat.pop("_custom_tool_names", None)
+        req = ChatCompletionRequest(**chat)
+    except (ValueError, TypeError) as exc:
+        return JSONResponse(responses_error_body(400, str(exc)[:300]), status_code=400)
+    try:
+        result = await chat_completions(req, request)
+    except HTTPException as exc:
+        return JSONResponse(responses_error_body(exc.status_code, exc.detail if isinstance(exc.detail, str) else "erro"),
+                            status_code=exc.status_code, headers=exc.headers)
+    if isinstance(result, StreamingResponse):
+        return StreamingResponse(openai_sse_to_responses_sse(result.body_iterator, custom_names, req.model),
+                                 media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive"})
+    return JSONResponse(chat_to_responses_response(result.model_dump(), custom_names))
+
+def _client_gate(request: Request, model: str) -> None:
+    """Chave de ACESSO de cliente (nao e o token mestre): modelo permitido e limite diario de tokens. Igual ao chat."""
+    ck = getattr(request.state, "client_key", None)
+    if ck is not None:
+        if not ck.allows(model):
+            raise HTTPException(status_code=403, detail=f"A chave '{ck.name}' nao tem acesso ao modelo '{model}'.")
+        if ck.daily_tokens and USAGE.today(client=ck.name)["tokens"] >= ck.daily_tokens:
+            raise HTTPException(status_code=429, detail=f"A chave '{ck.name}' atingiu o limite diario de {ck.daily_tokens} tokens.",
+                                headers={"Retry-After": "3600"})
+        CLIENT_NAME.set(ck.name)
+    REQUEST_ID.set(f"req-{uuid.uuid4().hex[:10]}")
+
+
+async def _modality_call(request: Request, kind: str, model: str, dlp_text: str, payload: dict, files=None):
+    try:
+        _client_gate(request, model)
+        client = gateway_http_client if gateway_http_client is not None and not gateway_http_client.is_closed else None
+        owned = client is None
+        client = client or make_safe_async_client(timeout=120.0)
+        try:
+            resp = await gateway_tier_router.route_modality(kind, model, dlp_text, payload, client, files=files,
+                                                            force_offline=router.default_offline)
+        finally:
+            if owned:
+                await client.aclose()
+    except HTTPException as exc:
+        return JSONResponse(modalities_api.error_body(exc.status_code, exc.detail if isinstance(exc.detail, str) else "erro"),
+                            status_code=exc.status_code, headers=exc.headers)
+    except GatewayProviderError as exc:
+        return JSONResponse(modalities_api.error_body(exc.status_code, str(exc)), status_code=exc.status_code)
+    out = Response(content=resp.content, media_type=resp.media_type, status_code=resp.status)
+    out._hera_provider = resp.provider
+    return out
+
+
+async def _json_modality(request: Request, kind: str):
+    raw = await request.body()
+    if len(raw) > MAX_BODY_BYTES:
+        return JSONResponse(modalities_api.error_body(413, "Corpo da requisicao grande demais."), status_code=413)
+    try:
+        body = json.loads(raw)
+        model, text = modalities_api.prepare(kind, body)
+    except (ValueError, TypeError) as exc:
+        return JSONResponse(modalities_api.error_body(400, str(exc)[:300]), status_code=400)
+    return await _modality_call(request, kind, model, text, body)
+
+
+@app.post("/v1/embeddings")
+async def v1_embeddings(request: Request):
+    """Embeddings (OpenAI-compatible). Provedores de nuvem e Ollama local (`provedor/modelo` ou apelido)."""
+    return await _json_modality(request, "embeddings")
+
+
+@app.post("/v1/images/generations")
+async def v1_images(request: Request):
+    return await _json_modality(request, "images")
+
+
+@app.post("/v1/audio/speech")
+async def v1_speech(request: Request):
+    return await _json_modality(request, "speech")
+
+
+@app.post("/v1/audio/transcriptions")
+async def v1_transcriptions(request: Request):
+    """Transcricao de audio (multipart: `file` + `model`). O audio vai a um provedor de nuvem: o modo 100% offline barra."""
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > modalities_api.MAX_AUDIO_BYTES + 64 * 1024:
+        return JSONResponse(modalities_api.error_body(413, "Arquivo de audio grande demais (maximo 25 MB)."), status_code=413)
+    try:
+        form = await request.form()
+    except Exception:
+        return JSONResponse(modalities_api.error_body(400, "Corpo multipart invalido."), status_code=400)
+    upload, model = form.get("file"), form.get("model")
+    if not hasattr(upload, "read") or not isinstance(model, str) or not model.strip():
+        return JSONResponse(modalities_api.error_body(400, "'file' e 'model' sao obrigatorios."), status_code=400)
+    content = await upload.read()
+    if len(content) > modalities_api.MAX_AUDIO_BYTES:
+        return JSONResponse(modalities_api.error_body(413, "Arquivo de audio grande demais (maximo 25 MB)."), status_code=413)
+    fields = {k: v for k, v in form.items() if k not in ("file", "model") and isinstance(v, str)}
+    files = {"file": (getattr(upload, "filename", None) or "audio", content,
+                      getattr(upload, "content_type", None) or "application/octet-stream")}
+    return await _modality_call(request, "transcription", model, fields.get("prompt", ""), fields, files=files)
+
+@app.post("/v1/search")
+async def v1_search(request: Request):
+    """Busca na web (Brave, Tavily, Exa). A pergunta passa pelo mesmo DLP do chat: segredo na busca ou modo 100%
+    offline barram a saida. `model`: `search` (primeiro provedor ligado) ou `search/<provedor>`."""
+    raw = await request.body()
+    if len(raw) > modalities_api.MAX_SEARCH_BODY:
+        return JSONResponse(modalities_api.error_body(413, "Corpo da requisicao grande demais."), status_code=413)
+    try:
+        body = json.loads(raw)
+        query, count, provider = modalities_api.prepare_search(body, MAX_RESULTS, MAX_QUERY_CHARS)
+    except (ValueError, TypeError) as exc:
+        return JSONResponse(modalities_api.error_body(400, str(exc)[:300]), status_code=400)
+    model = f"search/{provider}" if provider else "search"
+    started = time.perf_counter()
+    try:
+        _client_gate(request, model)
+        verdict = gateway_tier_router.privacy_manager.inspect_request(
+            ChatCompletionRequest(model="search", messages=[ChatMessage(role="user", content=query)]),
+            force_offline=router.default_offline)
+        if verdict.classification == DataClassification.LOCAL_ONLY:
+            raise GatewayProviderError(f"Busca bloqueada: {verdict.rejection_reason}. A pergunta nao sai da maquina.",
+                                       status_code=403)
+        client = gateway_http_client if gateway_http_client is not None and not gateway_http_client.is_closed else None
+        owned = client is None
+        client = client or make_safe_async_client(timeout=30.0)
+        try:
+            result = await search_router.search(query, count, client, provider)
+        finally:
+            if owned:
+                await client.aclose()
+    except HTTPException as exc:
+        return JSONResponse(modalities_api.error_body(exc.status_code, exc.detail if isinstance(exc.detail, str) else "erro"),
+                            status_code=exc.status_code, headers=exc.headers)
+    except GatewayProviderError as exc:
+        USAGE.record(provider or "search", "search", False, exc.status_code, None, None,
+                     int((time.perf_counter() - started) * 1000), False, client=CLIENT_NAME.get(),
+                     requested_model=model, request_id=REQUEST_ID.get(), error=str(exc)[:200])
+        return JSONResponse(modalities_api.error_body(exc.status_code, str(exc)), status_code=exc.status_code)
+    USAGE.record(result["provider"], "search", True, 200, None, None, result["latency_ms"], False,
+                 client=CLIENT_NAME.get(), requested_model=model, request_id=REQUEST_ID.get())
+    return JSONResponse(result)
+
+@app.post("/v1/videos")
+async def v1_video_create(request: Request):
+    """Gera video (assincrono, estilo OpenAI): devolve um id `provedor~id`. Consulte `GET /v1/videos/{id}` e baixe
+    o arquivo em `GET /v1/videos/{id}/content`."""
+    resp = await _json_modality(request, "video")
+    if resp.status_code != 200 or not isinstance(resp, Response):
+        return resp
+    provider = getattr(resp, "_hera_provider", "")
+    try:
+        data = json.loads(resp.body)
+    except ValueError:
+        return resp
+    if isinstance(data, dict) and data.get("id") and provider:
+        data["id"] = modalities_api.tag_video_id(provider, str(data["id"]))
+        return JSONResponse(data)
+    return resp
+
+
+def _video_adapter(tagged_id: str):
+    provider, raw = modalities_api.split_video_id(tagged_id)
+    adapter = next((a for a in gateway_tier_router.adapters if a.name == provider and a.supports("video")), None)
+    if adapter is None:
+        raise HTTPException(status_code=404, detail=f"Provedor de video '{provider}' indisponivel.")
+    return adapter, raw
+
+
+async def _video_fetch(request: Request, video_id: str, content: bool):
+    try:
+        adapter, raw = _video_adapter(video_id)
+    except ValueError as exc:
+        return JSONResponse(modalities_api.error_body(400, str(exc)), status_code=400)
+    except HTTPException as exc:
+        return JSONResponse(modalities_api.error_body(exc.status_code, exc.detail), status_code=exc.status_code)
+    owned = False
+    client = None
+    try:
+        _client_gate(request, f"video/{adapter.name}")
+        if router.default_offline:
+            raise GatewayProviderError("Modo 100% offline ativo: o video fica no provedor de nuvem.", status_code=403)
+        client = gateway_http_client if gateway_http_client is not None and not gateway_http_client.is_closed else None
+        owned = client is None
+        client = client or make_safe_async_client(timeout=120.0)
+        resp = await adapter.video_fetch(raw, client, content=content)
+    except HTTPException as exc:
+        if owned and client is not None:
+            await client.aclose()
+        return JSONResponse(modalities_api.error_body(exc.status_code, exc.detail if isinstance(exc.detail, str) else "erro"),
+                            status_code=exc.status_code, headers=exc.headers)
+    except GatewayProviderError as exc:
+        if owned and client is not None:
+            await client.aclose()
+        return JSONResponse(modalities_api.error_body(exc.status_code, str(exc)), status_code=exc.status_code)
+    if not content:
+        body = resp.content
+        if owned:
+            await client.aclose()
+        try:
+            data = json.loads(body)
+        except ValueError:
+            return Response(content=body, media_type="application/json")
+        if isinstance(data, dict) and data.get("id"):
+            data["id"] = modalities_api.tag_video_id(adapter.name, str(data["id"]))
+        return JSONResponse(data)
+
+    async def _close():
+        await resp.aclose()
+        if owned:
+            await client.aclose()
+
+    from starlette.background import BackgroundTask
+    return StreamingResponse(resp.aiter_bytes(), media_type=resp.headers.get("content-type", "video/mp4").split(";")[0],
+                             background=BackgroundTask(_close))
+
+
+@app.get("/v1/videos/{video_id}")
+async def v1_video_status(video_id: str, request: Request):
+    return await _video_fetch(request, video_id, content=False)
+
+
+@app.get("/v1/videos/{video_id}/content")
+async def v1_video_content(video_id: str, request: Request):
+    return await _video_fetch(request, video_id, content=True)
+
+_SEARCH_SIGNUP = {"brave": "https://brave.com/search/api/", "tavily": "https://app.tavily.com/", "exa": "https://dashboard.exa.ai/"}
+
+
+@app.get("/api/search/providers")
+async def search_providers_state():
+    """Provedores de busca que o Hera conhece e quais estao ligados (com chave). Nunca devolve chave."""
+    live = {p.name: p for p in search_router.providers}
+    return {"providers": [
+        {"name": name, "active": name in live, "signup": _SEARCH_SIGNUP.get(name, ""),
+         "keys": live[name].key_manager.status() if name in live else []}
+        for name in PROVIDER_CLASSES]}
+
+
+# ==================== OAUTH POR PROVEDOR (app proprio do usuario; tokens no cofre) ====================
+
+class OAuthActionBody(BaseModel):
+    human_code: Optional[str] = None
+
+
+def _oauth_client():
+    client = gateway_http_client if gateway_http_client is not None and not gateway_http_client.is_closed else None
+    return client, client is None
+
+
+def _oauth_error(exc: OAuthError) -> JSONResponse:
+    return JSONResponse({"detail": {"error": "oauth_error", "message": str(exc)}}, status_code=exc.status_code)
+
+
+@app.get("/api/oauth/providers")
+async def oauth_providers():
+    """Provedores OAuth configurados e o estado de cada um (conectado, validade). Nunca devolve token."""
+    return {"providers": oauth_manager.statuses()}
+
+
+@app.post("/api/oauth/{name}/start")
+async def oauth_start(name: str, body: OAuthActionBody, request: Request):
+    _provider_gate(body.human_code, f"Login OAuth do provedor '{name}' sera iniciado")
+    client, owned = _oauth_client()
+    client = client or make_safe_async_client(timeout=30.0)
+    try:
+        host = request.headers.get("host", "127.0.0.1")
+        return await oauth_manager.start(name, f"{request.url.scheme}://{host}/api/oauth/callback", client)
+    except OAuthError as exc:
+        return _oauth_error(exc)
+    finally:
+        if owned:
+            await client.aclose()
+
+
+@app.get("/api/oauth/callback")
+async def oauth_callback(request: Request):
+    """Volta do navegador depois do login. Publico de proposito (o navegador nao leva o token da API); o que vale e o
+    `state` aleatorio, de uso unico, que so existe se um humano com o token iniciou a conexao."""
+    qs = request.query_params
+    client, owned = _oauth_client()
+    client = client or make_safe_async_client(timeout=30.0)
+    try:
+        if qs.get("error"):
+            raise OAuthError("O provedor recusou o login.", 400)
+        name = await oauth_manager.callback(qs.get("state", ""), qs.get("code", ""), client)
+        title, text, status = "Conectado", f"Provedor '{name}' conectado. Pode fechar esta aba.", 200
+    except OAuthError as exc:
+        title, text, status = "Falhou", str(exc), exc.status_code
+    finally:
+        if owned:
+            await client.aclose()
+    import html as _html
+    return HTMLResponse(f"<!doctype html><meta charset=utf-8><title>Hera - {title}</title>"
+                        f"<body style='font-family:system-ui;margin:3rem'><h2>{title}</h2><p>{_html.escape(text)}</p>",
+                        status_code=status, headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/oauth/{name}/poll")
+async def oauth_poll(name: str):
+    """Login por codigo (device_code): consulta se voce ja autorizou no navegador."""
+    client, owned = _oauth_client()
+    client = client or make_safe_async_client(timeout=30.0)
+    try:
+        return await oauth_manager.poll_device(name, client)
+    except OAuthError as exc:
+        return _oauth_error(exc)
+    finally:
+        if owned:
+            await client.aclose()
+
+
+@app.post("/api/oauth/{name}/disconnect")
+async def oauth_disconnect(name: str, body: OAuthActionBody):
+    _provider_gate(body.human_code, f"Provedor OAuth '{name}' sera desconectado")
+    if name not in oauth_manager.providers:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": "Provedor OAuth desconhecido."})
+    oauth_manager.disconnect(name)
+    return {"status": "ok", "provider": oauth_manager.status(name)}
+
+# ==================== LOGIN COM A SUA CONTA (catalogo de provedores) ====================
+
+def _store_login_key(preset_id: str, key: str) -> None:
+    """Fim do login por conta (OpenRouter...): guarda a chave no cofre, cria o provedor a partir do catalogo se ainda
+    nao existe e o liga. So e chamado depois que um humano com o codigo iniciou o login (o `state` e de uso unico)."""
+    base = get_preset(preset_id)
+    name = base["id"]
+    current = config_mgr.load_config()
+    providers = dict(current.get("providers") or {})
+    if name in providers:
+        providers[name] = {**providers[name], "enabled": True}
+    else:
+        providers[name] = {"enabled": True, "tier": base["tier"], "base_url": validate_provider_url(base["base_url"], is_local_profile=False),
+                           "api_key_env": "", "default_model": base["default_model"], "models": _clean_models(base.get("models")),
+                           "timeout": 60}
+    config_mgr.save_config({**current, "providers": providers})
+    SECRET_STORE.set(name, [*SECRET_STORE.get(name)[-9:], key])          # no maximo 10 chaves; a nova entra por ultimo
+    reload_gateway()
+    broadcast_log(f"[ROTEADOR] Login com a conta concluido: provedor '{name}' ligado.", level="success")
+
+
+oauth_manager.on_key = _store_login_key
+
+
+@app.post("/api/router/login/{preset}/start")
+async def router_login_start(preset: str, body: OAuthActionBody, request: Request):
+    """Login de um clique com a SUA conta no provedor (hoje: OpenRouter, PKCE oficial). Devolve o endereco para abrir."""
+    if preset not in KEY_LOGINS:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": "Este provedor nao tem login por conta."})
+    _provider_gate(body.human_code, f"Login com a conta do provedor '{preset}' (um provedor de nuvem sera ligado)")
+    try:
+        host = request.headers.get("host", "127.0.0.1")
+        return oauth_manager.start_key_login(preset, f"{request.url.scheme}://{host}/api/oauth/callback")
+    except OAuthError as exc:
+        return _oauth_error(exc)
+
+
+_CLAUDE_STATUS_CACHE: Dict[str, Any] = {"at": 0.0, "value": None}
+
+
+def _mask_email(email: Any) -> str:
+    text = str(email or "")
+    local, at, domain = text.partition("@")
+    return f"{local[:1]}***@{domain}" if at and local else ""
+
+
+def _claude_binary() -> Optional[str]:
+    adapter = adapters.get("claude_code")
+    binary = getattr(adapter, "binary_path", None)
+    return binary if binary and (os.path.isfile(binary) or shutil.which(binary)) else None
+
+
+async def _run_claude(args: List[str], timeout: float) -> Tuple[int, str]:
+    binary = _claude_binary()
+    if not binary:
+        return 127, ""
+    proc = await asyncio.create_subprocess_exec(binary, *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        proc.kill()
+        return 124, ""
+    return proc.returncode or 0, out.decode("utf-8", "replace")
+
+
+@app.get("/api/auth/claude/status")
+async def claude_auth_status(fresh: bool = False):
+    """Estado do login do Claude Code (CLI oficial: `claude auth status`). Nunca devolve o e-mail inteiro nem tokens."""
+    now = time.monotonic()
+    if not fresh and _CLAUDE_STATUS_CACHE["value"] is not None and now - _CLAUDE_STATUS_CACHE["at"] < 15:
+        return _CLAUDE_STATUS_CACHE["value"]
+    if not _claude_binary():
+        value = {"available": False, "logged_in": False, "error": "Claude Code nao encontrado neste PC."}
+    else:
+        code, out = await _run_claude(["auth", "status", "--json"], timeout=20)
+        try:
+            data = json.loads(out) if code == 0 else {}
+        except ValueError:
+            data = {}
+        value = {"available": True, "logged_in": bool(data.get("loggedIn")), "method": str(data.get("authMethod") or ""),
+                 "subscription": str(data.get("subscriptionType") or ""), "account": _mask_email(data.get("email"))}
+        if code != 0:
+            value["error"] = "Nao consegui consultar o login (o comando `claude auth status` falhou)."
+    _CLAUDE_STATUS_CACHE.update(at=now, value=value)
+    return value
+
+
+class ClaudeLoginBody(BaseModel):
+    human_code: Optional[str] = None
+    mode: Literal["claudeai", "console"] = "claudeai"       # assinatura Claude (padrao) ou Console (cobranca por uso da API)
+
+
+@app.post("/api/auth/claude/login")
+async def claude_auth_login(body: ClaudeLoginBody):
+    """Abre o login OFICIAL do Claude Code (`claude auth login`) numa janela de terminal, com a SUA conta. O Hera nao ve a
+    senha nem o token: quem conversa com o navegador e a propria CLI."""
+    _provider_gate(body.human_code, "O login do Claude Code sera aberto")
+    binary = _claude_binary()
+    if not binary:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": "Claude Code nao encontrado neste PC."})
+    args = [binary, "auth", "login", f"--{body.mode}"]
+    if sys.platform != "win32":
+        return {"started": False, "command": " ".join(args), "message": "Rode este comando no terminal."}
+    subprocess.Popen(args, creationflags=subprocess.CREATE_NEW_CONSOLE, close_fds=True)      # noqa: S603 - args fixos, sem shell
+    _CLAUDE_STATUS_CACHE["value"] = None
+    return {"started": True, "message": "Uma janela do Claude Code abriu. Conclua o login no navegador."}
+
+
+@app.post("/api/auth/claude/logout")
+async def claude_auth_logout(body: OAuthActionBody):
+    _provider_gate(body.human_code, "O login do Claude Code sera encerrado")
+    code, _ = await _run_claude(["auth", "logout"], timeout=30)
+    _CLAUDE_STATUS_CACHE["value"] = None
+    if code != 0:
+        raise HTTPException(status_code=502, detail={"error": "claude_logout_failed", "message": "O Claude Code nao conseguiu sair da conta."})
+    return {"status": "ok"}
 
 # ==================== ENDPOINTS HITL (VISUAL DIFF & APPROVAL) ====================
 

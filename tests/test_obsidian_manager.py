@@ -8,7 +8,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 import app.server as server
-from app.vault_manager import MAX_NOTE_BYTES, VaultConflict, VaultError, VaultManager
+from app.vault.manager import MAX_NOTE_BYTES, VaultConflict, VaultError, VaultManager
 from models.agent import HealthStatus, RunHandle
 from models.task import AgentResult, TaskStatus
 from helpers import AUTH_HEADERS, TEST_BASE_URL

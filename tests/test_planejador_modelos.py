@@ -70,7 +70,7 @@ def steps(*items):
 def test_modelo_valido_e_motivo_sao_mantidos():
     out, warnings = orchestration.parse_plan(steps({"engine": "claude_code", "model": "opus", "reason": "bug sutil\x00"}),
                                              ["claude_code", "ollama"], 8, MODELS)
-    assert out[0]["model"] == "opus" and out[0]["reason"] == "bug sutil" and warnings == []
+    assert out[0]["model"] == "opus" and out[0]["reason"] == "bug sutil" and [w for w in warnings if "criterio de aceite" not in w] == []
 
 
 def test_modelo_que_o_motor_nao_tem_vira_padrao_com_aviso():
@@ -192,7 +192,8 @@ async def test_api_executar_envia_o_modelo_escolhido_para_cada_motor(api):
         if len(planner.received) >= 2 and len(local.received) >= 1:
             break
         await asyncio.sleep(0.1)
-    assert [t.assigned_model for t in planner.received] == ["haiku", "sonnet"]           # o inventado virou o padrao do motor
+    steps_rcv = [t for t in planner.received if not t.id.startswith("synth-")]           # o resumo final do planejador nao e passo
+    assert [t.assigned_model for t in steps_rcv] == ["haiku", "sonnet"]                  # o inventado virou o padrao do motor
     assert local.received[0].assigned_model == "qwen3.5:4b"
 
 
@@ -270,3 +271,112 @@ async def test_passo_que_falha_mostra_o_motivo_e_fica_no_log_sem_segredo(api, mo
 
 async def _record(events, payload):
     events.append(payload)
+
+
+# --------------------------------------------------------------------------- falhas do log de 13/10 (OOM do Ollama, escrita negada, validacao longa)
+@pytest.mark.asyncio
+async def test_gateway_do_ollama_recusa_modelo_que_nao_cabe_antes_de_chamar():
+    from app.gateway.providers import GatewayProviderError, OllamaGatewayAdapter
+    from app.gateway.schemas import ChatCompletionRequest, ChatMessage
+    import httpx
+    ad = OllamaGatewayAdapter()
+
+    async def refuse(model):
+        return f"Modelo recusado: {model}"
+    ad.fit_check = refuse
+
+    def boom(request):
+        raise AssertionError("nao deveria chamar o Ollama")
+    req = ChatCompletionRequest(model="grande:4b", messages=[ChatMessage(role="user", content="oi")])
+    async with httpx.AsyncClient(transport=httpx.MockTransport(boom)) as client:
+        with pytest.raises(GatewayProviderError) as e:
+            await ad.chat_complete(req, client)
+        assert e.value.status_code == 400
+        with pytest.raises(GatewayProviderError):
+            await ad.open_stream(req, client)
+
+
+def test_claude_code_so_pede_modo_de_permissao_valido():
+    from adapters.claude_code import ClaudeCodeAdapter
+    assert ClaudeCodeAdapter(binary_path="claude", permission_mode="acceptEdits").permission_mode == "acceptEdits"
+    assert ClaudeCodeAdapter(binary_path="claude", permission_mode="bypassPermissions").permission_mode == ""   # nunca libera tudo
+    assert ClaudeCodeAdapter(binary_path="claude").permission_mode == ""
+
+
+def test_validador_aguenta_a_suite_completa():
+    from app.validator import TaskValidator
+    assert TaskValidator().command_timeout >= 180
+
+
+def test_modos_automaticos_dos_motores_de_codigo(tmp_path):
+    from adapters.antigravity import AntigravityAdapter
+    from adapters.claude_code import ClaudeCodeAdapter
+    from app.config_manager import ConfigManager
+    assert ClaudeCodeAdapter(binary_path="claude", permission_mode="auto").permission_mode == "auto"
+    assert AntigravityAdapter(binary_path="agy").auto_approve is False and AntigravityAdapter(binary_path="agy", auto_approve=True).auto_approve
+    cfg = ConfigManager(config_path=str(tmp_path / "config.yaml")).load_config()["engines"]
+    assert cfg["claude_code"]["permission_mode"] == "auto" and cfg["antigravity"]["auto_approve"] is True
+
+
+# --------------------------------------------------------------------------- divisao do trabalho entre motores
+def _cat():
+    return build_catalog({"claude_code": {"models": ["haiku", "sonnet", "opus"], "default": "sonnet"},
+                          "antigravity": {"models": ["gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-pro-high"], "default": ""}})
+
+
+def _step(i, engine, model, typ):
+    return {"id": f"s{i}", "title": f"Passo {i}", "instruction": "faz", "type": typ, "engine": engine, "model": model, "reason": "", "depends_on": []}
+
+
+def test_planejador_que_poe_tudo_no_claude_e_rebalanceado():
+    from app.orchestration import rebalance_steps
+    steps = [_step(1, "claude_code", "sonnet", "research"), _step(2, "claude_code", "opus", "coding"),
+             _step(3, "claude_code", "sonnet", "review"), _step(4, "claude_code", "haiku", "docs")]
+    out, notes = rebalance_steps(steps, _cat())
+    engines = [s["engine"] for s in out]
+    assert engines.count("antigravity") == 2 and engines.count("claude_code") == 2 and len(notes) == 2
+    assert all(s["model"] for s in out if s["engine"] == "antigravity")
+    assert [s["type"] for s in out if s["engine"] == "claude_code"].count("coding") == 1       # o passo de codigo fica no motor original
+
+
+def test_plano_pequeno_ou_ja_dividido_nao_muda():
+    from app.orchestration import rebalance_steps
+    two = [_step(1, "claude_code", "sonnet", "coding"), _step(2, "claude_code", "sonnet", "review")]
+    assert rebalance_steps(two, _cat()) == (two, [])
+    mixed = [_step(1, "claude_code", "sonnet", "coding"), _step(2, "antigravity", "gemini-3.8-flash-medium", "review"),
+             _step(3, "claude_code", "sonnet", "docs")]
+    assert rebalance_steps(mixed, _cat())[1] == []
+    only_one = [_step(i, "claude_code", "sonnet", "coding") for i in range(1, 5)]
+    assert rebalance_steps(only_one, build_catalog({"claude_code": {"models": ["sonnet"], "default": ""}}))[1] == []
+
+
+def test_prompt_manda_dividir_o_trabalho():
+    from app.orchestration import build_planning_prompt
+    assert "DIVIDA O TRABALHO" in build_planning_prompt("x", _cat(), 8)
+
+
+def test_comando_de_validacao_bloqueado_pela_politica_e_descartado():
+    raw = [{"id": "s1", "instruction": "mover modulos", "engine": "ollama",
+            "validation_commands": ['python -c "import main"', "python -m pytest -q", "rm -rf /"]}]
+    steps, warns = orchestration.normalize_steps(raw, ["ollama"], 5)
+    assert steps[0]["validation_commands"] == ["python -m pytest -q"]
+    assert sum("descartado" in w for w in warns) == 2
+
+
+# --------------------------------------------------------------------------- pedido sobre um projeto vai para a pasta DELE, nao para a do Hera
+def test_pedido_que_cita_nethub_acha_as_pastas_do_nethub_e_nao_a_do_hera():
+    from app.project_match import match_project_folders
+    roots = ["B:/multiagent-orchestrator", "B:/NetHub BR", "B:/NetHub ES"]
+    hera = "B:/multiagent-orchestrator"
+    assert match_project_folders("Eu quero reorganizar as pastas do nethub, estou achando muito bagunçado", roots, hera) == ["B:/NetHub BR", "B:/NetHub ES"]
+    assert match_project_folders("corrija o NetHub BR", roots, hera) == ["B:/NetHub BR", "B:/NetHub ES"]     # "nethub" tambem casa a ES
+    assert match_project_folders("melhore o painel do Hera", roots, hera) == [hera]
+    assert match_project_folders("escreva um poema", roots, hera) == []
+
+
+def test_prompt_traz_as_pastas_do_projeto_citado():
+    from app.orchestration import build_planning_prompt
+    with_dirs = build_planning_prompt("x", _cat(), 8, folders=["B:/NetHub BR"])
+    assert "PASTAS DO PROJETO CITADO" in with_dirs and "- B:/NetHub BR" in with_dirs
+    without = build_planning_prompt("x", _cat(), 8)
+    assert "nenhuma pasta de projeto foi citada" in without and "PASTAS DO PROJETO CITADO" not in without

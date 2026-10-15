@@ -1,9 +1,9 @@
 """Motor `hera_router`: o Roteador embutido do Hera.
 
 Não abre porta nem processo externo: chama o gateway do próprio Hera (provedores de nuvem com rodízio de chaves,
-combos com fallback, camadas, DLP e modo offline) diretamente, em memória.
+fallback entre provedores, camadas, DLP e modo offline) diretamente, em memória.
 
-O modelo da tarefa pode ser: `default` (o roteador escolhe), o nome de um COMBO, ou o nome de um modelo de algum
+O modelo da tarefa pode ser: `default` (o roteador escolhe), um apelido, `provedor/modelo`, ou o nome de um modelo de algum
 provedor ligado.
 """
 from __future__ import annotations
@@ -12,6 +12,7 @@ import asyncio
 import time
 from typing import Awaitable, Callable, Dict, List, Optional
 
+from adapters import images as images_mod
 from adapters.base import AgentAdapter  # noqa: F401 - documenta o protocolo implementado
 from adapters.progress import STATUS, TEXT, say
 from app.gateway.providers import GatewayProviderError
@@ -55,6 +56,7 @@ class HeraRouterAdapter:
         user = f"Tarefa: {task.title}\nTipo: {task.task_type}\nInstrução:\n{task.instruction}"
         if task.acceptance_criteria:
             user += "\n\nCritérios de Aceite:\n" + "\n".join(f"- {c}" for c in task.acceptance_criteria)
+        user += images_mod.not_supported_note("hera_router", task.images)
         return ChatCompletionRequest(
             model=task.assigned_model or self.default_model,
             messages=[

@@ -1,4 +1,5 @@
 import asyncio
+import re
 import time
 from typing import Dict, List, Set, Optional, Tuple, Callable
 from collections import defaultdict, deque
@@ -8,6 +9,7 @@ from app.coordinator import Coordinator
 from app.router import TaskRouter
 from app.validator import TaskValidator
 from adapters import progress
+from app.quota import is_quota_error, seconds_until_reset
 
 class CycleDetectedError(Exception):
     """Lançado quando há ciclo de dependência circular no grafo de tarefas."""
@@ -99,6 +101,44 @@ class DAGScheduler:
         if self.on_feedback:
             self.on_feedback(msg)
 
+    BLOCKED_MARK = "BLOQUEADO:"
+    MAX_DEP_CHARS = 12000
+
+    @staticmethod
+    def _is_optional(task: AgentTask, result: Optional[AgentResult]) -> bool:
+        """Passo cujo titulo comeca com OPCIONAL: se ele proprio falhar (nao se foi cancelado), os dependentes seguem."""
+        return (result is not None and result.status == TaskStatus.FAILED
+                and bool(re.match(r"\W*OPCIONAL\b", task.title or "", re.IGNORECASE)))
+
+    def _is_blocked(self, result: AgentResult) -> bool:
+        # aceita "BLOQUEADO:", "BLOQUEADO (parcial):", "**BLOQUEADO**"... no inicio da resposta
+        return bool(re.match(r"\W*BLOQUEAD[OA]\b", (result.output_text or "").lstrip(), re.IGNORECASE))
+
+    def _with_context(self, task: AgentTask, results: Dict[str, AgentResult]) -> str:
+        """Instrucao do passo + saida (cortada) dos passos de que ele depende + regra de reportar bloqueio."""
+        if "[RESULTADOS DOS PASSOS ANTERIORES]" in task.instruction:
+            return task.instruction                       # ja montada (nova tentativa)
+        text = task.instruction
+        blocks = []
+        for dep in sorted(task.dependencies):
+            res = results.get(dep)
+            if res is not None and res.output_text:
+                blocks.append(f"--- {dep} ---\n{res.output_text.strip()[:self.MAX_DEP_CHARS]}")
+        if blocks:
+            text += "\n\n[RESULTADOS DOS PASSOS ANTERIORES]\n" + "\n\n".join(blocks)
+        if self.run_id:
+            text += (f"\n\n[REGRA] Se NAO conseguir cumprir o OBJETIVO PRINCIPAL deste passo (sem acesso a pasta/arquivo, "
+                     f"dado essencial ausente, etc.), comece a resposta com `{self.BLOCKED_MARK}` e explique. Nunca finja que "
+                     f"concluiu. Se o objetivo principal foi cumprido e so faltou um detalhe secundario que exige acesso que "
+                     f"voce nao tem (ex.: medir algo num servico remoto), NAO use `{self.BLOCKED_MARK}`: entregue o resultado e "
+                     f"liste o que faltou numa linha final `PENDENCIAS:`. Nunca consulte nem altere bancos/servicos de producao "
+                     f"por conta propria a menos que o passo peca isso explicitamente. "
+                     f"[REGRA] NUNCA abra nem leia arquivos de segredos (.env, *.pem, *.jks, *.p12, *.session, credenciais): "
+                     f"para saber nomes de variaveis use o .env.example. Edite so o que o passo pede (em documentos, altere as "
+                     f"secoes necessarias, sem reescrever o arquivo inteiro nem mudar o idioma). Nao deixe arquivos temporarios "
+                     f"na pasta do projeto. Nao faca commit/push a menos que o passo peca.")
+        return text
+
     def _step_id(self, task: AgentTask) -> str:
         prefix = f"{self.run_id}-" if self.run_id else ""
         return task.id[len(prefix):] if prefix and task.id.startswith(prefix) else task.id
@@ -135,6 +175,9 @@ class DAGScheduler:
 
         async def run_single_task(task: AgentTask) -> Tuple[str, AgentResult]:
             async with semaphore:
+                # 0. Passa o resultado dos passos anteriores e (nos planos) o protocolo de bloqueio
+                task.instruction = self._with_context(task, results)
+
                 # 1. Roteamento inteligente
                 adapter, model_name, reason = await self.router.route(task)
                 task.assigned_agent = adapter.name
@@ -158,8 +201,29 @@ class DAGScheduler:
                     token = progress.bind(self.console.sink_for(self.run_id, step, **ctx))
                     heartbeat = asyncio.create_task(self._heartbeat(step, ctx, started))
                 try:
-                    handle = await adapter.submit(task)
-                    result = await adapter.collect(handle)
+                    for _attempt in range(3):
+                        handle = await adapter.submit(task)
+                        result = await adapter.collect(handle)
+                        text = f"{result.error_message or ''} {result.summary or ''}"
+                        if result.status == TaskStatus.SUCCEEDED or not is_quota_error(text):
+                            break
+                        # o motor (assinatura) bateu no limite de uso: marca como esgotado e refaz o passo em outro motor
+                        wait = seconds_until_reset(text)
+                        self.router.quota.mark(adapter.name, wait, text)
+                        alt = self.router.fallback_adapter(task, adapter.name)
+                        minutos = max(1, wait // 60)
+                        if alt is None:
+                            result.error_message = (f"{adapter.name} atingiu o limite de uso (volta em ~{minutos} min) e nao ha outro motor "
+                                                    f"adequado ligado para refazer este passo. Detalhe: {text.strip()[:300]}")
+                            break
+                        old = adapter.name
+                        adapter, model_name = alt
+                        task.assigned_agent, task.assigned_model = adapter.name, model_name
+                        task.routing_reason = f"{old} sem limite de uso (volta em ~{minutos} min): passo refeito em {adapter.name}"
+                        self._notify(f"🔁 [DAG] {old} atingiu o limite de uso; `{task.id}` sera refeita em {adapter.name}.")
+                        if self.console is not None and self.run_id:
+                            self.console.emit("info", task.routing_reason, run=self.run_id, step=step)
+                            ctx = {"title": task.title, "engine": adapter.name, "model": model_name}
                 finally:
                     if heartbeat is not None:
                         heartbeat.cancel()
@@ -169,8 +233,24 @@ class DAGScheduler:
                 # 3. Validação objetiva
                 criteria_count = len(task.acceptance_criteria) + len(task.validation_commands)
                 self.coordinator.start_validation(task.id, criteria_count=criteria_count)
+                if self.run_id and not task.validation_commands:
+                    quais = (f"os {len(task.acceptance_criteria)} critério(s) de aceite só orientam o agente"
+                             if task.acceptance_criteria else "sem critério de aceite")
+                    self._notify(f"⚠️ [DAG] `{task.id}` não tem comando de teste ({quais}): "
+                                 f"só o protocolo BLOQUEADO confere o resultado; revise a saída.")
 
                 val_result = await self.validator.validate(task, result)
+                if val_result.passed and self.run_id and self._is_blocked(result):
+                    # o motor terminou sem erro, mas disse que nao conseguiu fazer o passo: nao e sucesso
+                    result.status = TaskStatus.FAILED
+                    result.error_message = "O passo reportou BLOQUEADO: " + result.output_text.strip()[:400]
+                    result.summary = "Passo bloqueado (o motor nao conseguiu executar)"
+                    self.coordinator.complete_task(task.id, result)
+                    if self.console is not None:
+                        self.console.emit("step_end", result.summary, run=self.run_id, step=step, title=task.title,
+                                          engine=adapter.name, model=model_name, status=result.status.value,
+                                          seconds=round(time.monotonic() - started, 1), error=result.error_message)
+                    return task.id, result
                 if val_result.passed:
                     result.status = TaskStatus.SUCCEEDED
                     for crit in task.acceptance_criteria:
@@ -196,13 +276,15 @@ class DAGScheduler:
         while len(succeeded_ids) + len(failed_ids) < total_tasks:
             # 1. Obter tarefas prontas
             active_or_done = succeeded_ids | failed_ids | active_ids
-            ready_tasks = dag.get_ready_tasks(succeeded_ids, active_or_done)
+            # passo OPCIONAL que falhou nao derruba quem depende dele (o consolidador roda e registra a pendencia)
+            optional_failed = {t for t in failed_ids if self._is_optional(dag.tasks[t], results.get(t))}
+            ready_tasks = dag.get_ready_tasks(succeeded_ids | optional_failed, active_or_done)
 
             # Se alguma dependência falhou, cancelar dependentes que nunca poderão rodar
             for task_id, task in dag.tasks.items():
                 if task_id not in active_or_done:
                     deps = dag.dependencies[task_id]
-                    if deps.intersection(failed_ids):
+                    if deps.intersection(failed_ids - optional_failed):
                         # Pelo menos uma dependência falhou
                         failed_ids.add(task_id)
                         res = AgentResult(
@@ -230,10 +312,17 @@ class DAGScheduler:
                 break
 
             # 3. Aguardar conclusão de pelo menos uma tarefa em andamento
-            done, _ = await asyncio.wait(
-                running_futures.values(),
-                return_when=asyncio.FIRST_COMPLETED
-            )
+            try:
+                done, _ = await asyncio.wait(
+                    running_futures.values(),
+                    return_when=asyncio.FIRST_COMPLETED
+                )
+            except asyncio.CancelledError:
+                # o plano foi cancelado (botao "Parar"): os passos em andamento sao tarefas separadas e precisam parar junto
+                for fut in running_futures.values():
+                    fut.cancel()
+                await asyncio.gather(*running_futures.values(), return_exceptions=True)
+                raise
 
             # 4. Processar tarefas concluídas
             for fut in done:

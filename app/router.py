@@ -2,6 +2,7 @@ from typing import Dict, Tuple, Optional
 from models.task import AgentTask
 from adapters.base import AgentAdapter
 from app.privacy_guard import PrivacyGuard
+from app.quota import QuotaTracker
 
 class TaskRouter:
     """Roteador inteligente de tarefas multiagente com Gate de Privacidade (DLP).
@@ -16,9 +17,26 @@ class TaskRouter:
         # Ligar/desligar motores e escolher o modelo de cada um pelo painel (sem reiniciar).
         self.disabled: set = set()
         self.default_models: Dict[str, str] = {}
+        self.quota = QuotaTracker()          # motores por assinatura que bateram no limite de uso (ficam fora por um tempo)
 
     def active_adapters(self) -> Dict[str, AgentAdapter]:
-        return {name: ad for name, ad in self.adapters.items() if name not in self.disabled}
+        return {name: ad for name, ad in self.adapters.items() if name not in self.disabled and not self.quota.blocked(name)}
+
+    def fallback_adapter(self, task: AgentTask, failed_engine: str):
+        """Outro motor para refazer um passo cujo motor ficou sem limite de uso. None se nao houver um adequado.
+        Passo que mexe em arquivos so vai para outro motor com acesso a arquivos; so texto pode ir ao Roteador/Ollama."""
+        adapters = {n: a for n, a in self.active_adapters().items() if n != failed_engine}
+        order = ["claude_code", "antigravity", "codex", "cursor", "qoder", "codebuddy", "kimi"]
+        if task.task_type in ("research", "review", "summary", "docs"):
+            order += ["hera_router", "ollama"]
+        for name in order:
+            ad = adapters.get(name)
+            if ad is None:
+                continue
+            if name == "hera_router" and not getattr(ad, "has_cloud", lambda: False)():
+                continue
+            return ad, self._model(name, getattr(ad, "default_model", "default"))
+        return None
 
     def _model(self, engine: str, fallback: str) -> str:
         return self.default_models.get(engine) or fallback

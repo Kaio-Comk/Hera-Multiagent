@@ -1,7 +1,7 @@
 import os
 import pytest
-from app.vault_memory import ObsidianMemoryManager
-from app.obsidian import ObsidianVaultWriter
+from app.vault.memory import ObsidianMemoryManager
+from app.vault.obsidian import ObsidianVaultWriter
 
 @pytest.fixture
 def temp_vault(tmp_path):

@@ -1,10 +1,12 @@
 <div align="center">
 
-# 👑 HERA Multiagent
-### The Sovereign Local AI Orchestration Engine for Windows
+<img src="web/static/brand/hera-mark.svg" alt="Hera" width="72" height="72">
+
+# HERA
+### Local AI orchestration, under your control — Windows
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12%2B-blue.svg?logo=python&logoColor=white)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-500%20passing%20%7C%202%20skipped%20(need%20Ollama)-success.svg?logo=pytest&logoColor=white)](https://github.com/Kaio-Comk/hera-multiagent)
+[![Tests](https://img.shields.io/badge/Tests-839%20passing%20%7C%201%20skipped-success.svg?logo=pytest&logoColor=white)](https://github.com/Kaio-Comk/hera-multiagent)
 [![Architecture](https://img.shields.io/badge/Architecture-DAG%20%7C%20FastAPI%20%7C%20WebSockets-orange.svg)](https://github.com/Kaio-Comk/hera-multiagent)
 [![Interface](https://img.shields.io/badge/Interface-Web%20%7C%20Desktop%20GUI-blueviolet.svg)](https://github.com/Kaio-Comk/hera-multiagent)
 [![Gateway](https://img.shields.io/badge/Gateway-OpenAI%20%28%2Fv1%29%20%7C%20RTK%20Token%20Saver-green.svg)](https://github.com/Kaio-Comk/hera-multiagent)
@@ -16,7 +18,7 @@
 
 **Connect, route, validate, and orchestrate Ollama, Claude Code CLI, Antigravity CLI, the built-in Router, and Obsidian as permanent memory — featuring a native Python OpenAI-compatible gateway (`/v1`), RTK Token Saver, AST Repo-Map for 4GB VRAM GPUs, Human-in-the-Loop (HITL) Visual Diff Review, Model Context Protocol (MCP) server & tool catalog, and Multi-Model Arena benchmarks under deterministic guardrails.**
 
-[Key Features](#-key-features) • [Mission Control GUI](#-mission-control-web--desktop-gui) • [Architecture](#-architecture) • [Security Model](#-hardened-security-model) • [Benchmark](#-hardware-benchmark) • [Quickstart](#-quickstart) • [CLI Cheatsheet](#-cli-cheatsheet)
+[Key Features](#-key-features) • [Panel](#-mission-control-web--desktop-gui) • [Architecture](#-architecture) • [Security Model](#-hardened-security-model) • [Benchmark](#-hardware-benchmark) • [Quickstart](#-quickstart) • [CLI Cheatsheet](#-cli-cheatsheet)
 
 </div>
 
@@ -34,7 +36,7 @@
 
 * **🧠 4 Decoupled AI Engines:**
   * **Ollama (Local GPU):** Blazing-fast 100% offline inference on consumer GPUs (GTX 1650 Super @ **~107 tokens/s**).
-  * **Built-in Router:** cloud providers with key rotation, tiers and fallback combos, inside Hera itself (no external process).
+  * **Built-in Router:** a catalog of cloud providers (API key or sign-in with your account), key rotation, tiers and automatic fallback between providers, inside Hera itself (no external process).
   * **Claude Code CLI:** Headless non-interactive `-p` subprocess for complex codebase refactoring.
   * **Antigravity CLI (`agy`):** Headless autonomous workspace operations with full tool support.
 * **🔀 Directed Acyclic Graph (DAG) Scheduler:**
@@ -76,7 +78,7 @@ A docked **Console do Hera** (bottom of every tab) narrates a plan or task in re
 
 ## 🧱 UI without CDNs
 
-The panel loads everything from the server itself (`/static`: compiled Tailwind CSS, Lucide, marked, DOMPurify and the Inter/JetBrains Mono fonts), so it works offline and ships with a strict Content-Security-Policy. Static files are public read-only; every API route still needs the token. After changing Tailwind classes in `web/index.html`, regenerate with `python tools/build_ui.py` (needs Node.js).
+The panel loads everything from the server itself (`/static`: compiled Tailwind CSS, Lucide, marked, DOMPurify and the Inter/JetBrains Mono fonts), so it works offline and ships with a strict Content-Security-Policy. Static files are public read-only; every API route still needs the token. After changing Tailwind classes in `web/index.html`, regenerate with `python tools/ui/build_ui.py` (needs Node.js).
 
 ## 🔌 Start/stop local services from the panel
 
@@ -92,18 +94,43 @@ The **Obsidian** tab opens your whole vault (auto-detected from the folder that 
 
 ## 🌐 Built-in Router
 
-The **Roteador** tab configures cloud providers (Groq, OpenRouter, DeepSeek, Gemini, Mistral, Cerebras, Together, NVIDIA, OpenAI, xAI) and **combos**: ordered chains of `provider + model` that Hera tries until one answers. Use a combo name as the model in the Task Studio, in the Plan tab, or from any tool pointed at `http://127.0.0.1:8000/v1`. No external process or port is needed (engine `hera_router`).
+The **Roteador** tab is a catalog of every AI Hera can use, available ones first: **your account** (Claude Code via its official `claude auth login`, Antigravity, local Ollama, your own OAuth apps), **sign-in in one click** (OpenRouter, official PKCE flow that hands Hera a key of yours), and **API-key** providers (50 ready-made ones plus any HTTPS OpenAI-compatible API; 25 of them came from the 9router provider registry and are not yet tested live). Filter by *Available / To connect* and search by name. Which AI handles each task is decided by the planner model, not by fixed chains: there are no combos. Use `provider/model` or an alias as the model from the Plan tab or any tool pointed at `http://127.0.0.1:8000/v1`. No external process or port is needed (engine `hera_router`).
+
+<p align="center"><img src="docs/screenshots/painel-roteador.png" alt="Router catalog" width="860"></p>
 
 - **Keys:** paste them in the panel (they go to a local vault protected by Windows DPAPI, never shown again) or, if you prefer, set an environment variable (`setx GROQ_API_KEY "..."`, name must end in `_API_KEY`). Pasting/enabling needs the human approval code.
-- **Addressing:** use a combo name, `provider/model` (e.g. `groq/llama-3.3-70b-versatile`) or `default` as the model in any OpenAI-compatible tool pointed at `http://127.0.0.1:8000/v1` (the card "Conectar suas ferramentas" shows the URL and key).
+- **Addressing:** use an alias, `provider/model` (e.g. `groq/llama-3.3-70b-versatile`) or `default` as the model in any OpenAI-compatible tool pointed at `http://127.0.0.1:8000/v1` (the card "Conectar suas ferramentas" shows the URL and key).
 - **Usage:** calls, errors, tokens and latency per provider/model/day (metadata only, never the conversation).
 - **Discovery:** "Buscar modelos" asks the provider for its model list; any HTTPS OpenAI-compatible API can be added as a custom provider.
-- **Combo strategies:** priority, round-robin, fastest (lowest recent latency), least used today, or weighted; every strategy still falls back to the next step on failure. **Aliases** (`codigo` → `deepseek/deepseek-chat`) let you change the target without touching your tools.
+- **Aliases** (`codigo` → `deepseek/deepseek-chat`) let you change the target without touching your tools.
 - **Resilience:** per-provider circuit breaker (pauses after N consecutive failures, doubling up to 10 min, with a "retry now" button), requests/minute, requests/day and tokens/day limits, and priority inside a tier. Tier order is editable.
 - **Access keys for external tools:** one key per tool (Cursor, Cline, scripts...). A key only opens `/v1`, can be limited to models (`groq/*`), requests per minute and tokens per day, and is shown once (only a salted hash is stored). Creating/re-enabling needs the approval code.
 - **Dashboard:** usage, success rate, p50/p95 latency, estimated cost (prices *you* enter, local/free = 0), per provider/model/client/day, provider health, and a live call log (metadata only; fallback attempts grouped).
-- **More:** 25 ready-made providers, RTK token saver toggle with savings counter, export/import of the router config (never includes keys; imported providers arrive disabled).
-- The privacy gate applies to every step: secrets or Offline mode skip cloud steps, so end combos with an `ollama` step as a local plan B.
+- **Several accounts per provider:** "Add another account" appends a key to the provider's vault list (up to 20, each shown as its last 4 characters with a ✕ to remove just that one); requests rotate between them and a key that hits its limit rests while the others serve. "Replace all" still swaps the whole list.
+- **Extra headers per provider** (`headers:` in `config.yaml` or the provider's detail panel), e.g. `HTTP-Referer`/`X-Title`; `Authorization`, `Content-Type`, `Host` and other framing headers are refused. **Quota:** `x-ratelimit-*` headers are read from every response and shown in the panel; a key whose request quota reaches 0 with a known reset rests until then.
+- **Catalog refresh:** `tools/sync_9router_catalog.py` regenerates `app/gateway/presets_extra.py` (new OpenAI-compatible providers + newer model lists) from the 9Router registry (MIT; data only, no code, no OAuth client ids).
+- **More:** 50 ready-made providers, RTK token saver toggle with savings counter, export/import of the router config (never includes keys; imported providers arrive disabled).
+- The privacy gate applies to every request: secrets or Offline mode keep cloud providers out, and the local Ollama stays as the plan B.
+
+### Formats and modalities (ported from 9router, MIT)
+
+The same Router speaks more than `chat/completions`. Everything below goes through the same privacy gate, access keys, limits, fallback and usage log; the **Roteador → Conexões** tab lists the addresses.
+
+| Route | Format | Typical client |
+|---|---|---|
+| `POST /v1/chat/completions` | OpenAI Chat | Cursor, Cline, Continue |
+| `POST /v1/messages` | Anthropic Messages (stream included) | Claude Code (`ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` = an access key) |
+| `POST /v1/responses` | OpenAI Responses API (stream, custom tools) | Codex CLI |
+| `POST /v1/embeddings` | OpenAI embeddings (cloud or local Ollama) | RAG tools |
+| `POST /v1/images/generations`, `/v1/audio/speech`, `/v1/audio/transcriptions` | OpenAI images / TTS / STT (upload up to 25 MB) | any OpenAI SDK |
+| `POST /v1/videos`, `GET /v1/videos/{id}`, `GET /v1/videos/{id}/content` | async video (ids look like `provider~id`) | providers with the OpenAI video API |
+| `POST /v1/search` | normalized web search (Brave, Tavily, Exa) | agents |
+
+- **Format translation** (`app/gateway/translator/`): OpenAI is the pivot; Claude, Gemini and Responses convert through it (request, full response and stream). Not ported on purpose: the "Claude Code cloaking" and Gemini CLI/Antigravity envelopes (they impersonate other clients to reuse their OAuth).
+- **Modalities** go to the provider you address as `provider/model` (or an alias). A provider only serves what its `modalities:` list allows (default: all that have a route). Audio and video go to the cloud, so Offline mode blocks them; text sent out (embedding input, prompts, search queries) goes through the DLP first.
+- **Search** is configured under `search:` in `config.yaml` (keys in env vars). Formats follow each service's public docs but were only tested against simulated responses, so run a test search after enabling.
+- **OAuth per provider** (`oauth:` in `config.yaml`): you register **your own** OAuth app; Hera does authorization-code + PKCE, device-code or client-credentials, keeps tokens in the local vault, refreshes them and never shows them. A provider uses it with `oauth: <name>` instead of `api_key_env`. No third-party client IDs are bundled.
+- **Not ported / removed:** combos (the planner already picks the engine and model per step; Hera's own were removed too), the MITM proxy and web-session/cookie providers.
 
 ## 🧭 Engines on/off & multi-agent plan
 
@@ -111,6 +138,17 @@ In the web panel you can switch each engine on or off and pick its default model
 
 - Nothing runs when the plan is generated: you approve it first. The plan is re-validated server-side (max steps, only enabled engines, no cycles).
 - The privacy gate still wins: in **100% Offline** mode, or if the goal contains a secret, every step runs on local Ollama regardless of the engine chosen. If Ollama is off, it fails closed.
+
+## 🎨 Brand & design system ("Peacock & Night")
+
+Hera's name comes from the goddess who set Argus's hundred eyes on the peacock's tail: the product *watches* every step (DLP, human approval, diff review, logs). The mark is an **H whose crossbar carries a golden peacock eye**; teal is the only action color, gold is reserved for the eye.
+
+<p align="center"><img src="docs/screenshots/painel-inicio.png" alt="Hera panel: Home" width="860"></p>
+
+- **Source of truth:** [`DESIGN.md`](DESIGN.md) — palette and roles, type, layout, components, accessibility rules and an agent guide, in the `DESIGN.md` format (see [awesome-claude-design](https://github.com/VoltAgent/awesome-claude-design)).
+- **Assets:** `web/static/brand/` (`hera-mark.svg`, `hera-logo.svg`, `hera-logo-light.svg`, `hera-mark-mono.svg`, `favicon.svg`); tokens and components in `web/static/hera-ui.css`.
+- **Panel layout:** Home · Work (Plan, History, Diff review) · Intelligence (Engines, Router, Arena & MCP) · Knowledge (Obsidian) · System (Hardware). Deep links (`#router/connections`), mobile drawer, keyboard focus and reduced-motion support.
+- After changing Tailwind classes in `web/index.html`: `python tools/ui/build_ui.py`. Static files are versioned (`?v=`) so an update never shows old CSS with a new page.
 
 ## 🖥️ Mission Control (Web & Desktop GUI)
 
@@ -128,7 +166,7 @@ python main.py gui
 ```
 
 ### 🌟 What you can do from Mission Control:
-1. **🎨 Task Studio:** Create coding/research tasks, specify acceptance criteria, set automated test commands, and assign specific AI models or let autonomous scoring route them.
+1. **💬 Plan (a conversation):** Describe what you want; the planner replies with a step-by-step plan you can edit (engine, model, instructions) before running. Every conversation keeps its history, can be filed under a **project** (with its own working folder), and accepts **images** (attach, paste or drag; PNG/JPEG/GIF/WebP up to 10 MB, checked by content). Claude Code and Antigravity read the image file, local Ollama vision models get it inline, the built-in router ignores it and says so.
 2. **🎛️ AI Engine & Model Management:**
    - Toggle **100% Offline Mode** for zero-cloud privacy.
    - Configure base URLs and select default models for Ollama, the built-in Router, Claude Code, and Antigravity.
@@ -157,7 +195,7 @@ flowchart TD
     
     subgraph Engines ["Decoupled AI Adapters"]
         Router -->|"Offline / DLP Secret"| Ollama["🦙 Ollama Adapter (Local GPU @ ~107 tps)"]
-        Router -->|"Cloud / Research"| HeraRouter["🌐 Built-in Router (cloud providers + combos)"]
+        Router -->|"Cloud / Research"| HeraRouter["🌐 Built-in Router (cloud providers)"]
         Router -->|"Refactor / Plan"| ClaudeCode["⚙️ Claude Code CLI (Headless -p)"]
         Router -->|"Autonomous Workspace"| Antigravity["🚀 Antigravity CLI (Headless agy -p)"]
     end
@@ -400,7 +438,7 @@ hera-multiagent/
 ├── adapters/
 │   ├── antigravity.py         # Antigravity CLI adapter (agy -p headless)
 │   ├── claude_code.py         # Claude Code CLI adapter (claude -p headless)
-│   ├── hera_router.py         # Built-in Router engine (cloud providers + combos, in-process)
+│   ├── hera_router.py         # Built-in Router engine (cloud providers, in-process)
 │   └── ollama.py              # Local Ollama adapter (port 11434, ~107 tps)
 ├── app/
 │   ├── auto_fix.py            # Autonomous self-healing retry loop
@@ -408,14 +446,14 @@ hera-multiagent/
 │   ├── config_manager.py      # Dynamic configuration manager (config.yaml)
 │   ├── coordinator.py         # Real-time terminal progress coordinator
 │   ├── dag_scheduler.py       # DAG engine (Kahn's topological sort + cancellation)
-│   ├── obsidian.py            # Obsidian Vault writer (execution notes & ADRs)
 │   ├── policy_engine.py       # Strict argv allowlist & zero-shell policy
 │   ├── privacy_guard.py       # Pre-flight DLP & credential leak prevention
 │   ├── router.py              # Privacy-first scoring matrix & fail-closed gate
 │   ├── server.py              # FastAPI REST server & WebSocket log streaming
 │   ├── state_store.py         # SQLite WAL persistence with atomic crash recovery
 │   ├── validator.py           # Objective test runner (create_subprocess_exec)
-│   ├── vault_memory.py        # Semantic memory, [[wikilinks]] & secret redaction
+│   ├── chat/                  # Plan conversations: api.py, conversations.py, uploads.py
+│   ├── vault/                 # Obsidian: obsidian.py (writer), memory.py (semantic memory), manager.py (vault editor)
 │   └── worktree_manager.py    # Isolated Git Worktrees for concurrent agents
 ├── config.yaml                # Editable configurations (offline mode, default models, URLs)
 ├── models/

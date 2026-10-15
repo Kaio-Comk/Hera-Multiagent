@@ -11,8 +11,8 @@ from models.task import AgentTask, AgentResult, TaskStatus
 from app.state_store import StateStore
 from app.coordinator import Coordinator
 from app.router import TaskRouter
-from app.obsidian import ObsidianVaultWriter
-from app.vault_memory import ObsidianMemoryManager
+from app.vault.obsidian import ObsidianVaultWriter
+from app.vault.memory import ObsidianMemoryManager
 from app.dag_scheduler import TaskDAG, DAGScheduler
 from app.worktree_manager import WorktreeManager
 from app.validator import TaskValidator
@@ -332,7 +332,7 @@ async def main():
         import webbrowser
         port = args.port
         url = f"http://127.0.0.1:{port}"
-        print(f"\n👑 [HERA] Servidor Web iniciando em {url}...")
+        print(f"\n[HERA] Servidor Web iniciando em {url}...")
         print("🔐 [HERA] API protegida por token. A interface web já o recebe sozinha; para ferramentas externas (/v1) use o conteúdo de data/.hera_token como Bearer (ou defina HERA_API_KEY).")
         if not args.no_browser:
             asyncio.get_event_loop().call_later(0.8, lambda: webbrowser.open(url))
@@ -354,9 +354,9 @@ async def main():
         thread.start()
         time.sleep(1.2)
 
-        print(f"👑 [HERA] Abrindo janela Desktop nativa...")
+        print("[HERA] Abrindo janela Desktop nativa...")
         webview.create_window(
-            title="👑 HERA Multiagent — Mission Control",
+            title="Hera · Orquestração local de IAs",
             url=url,
             width=1340,
             height=860,
@@ -370,7 +370,7 @@ def cli():
         asyncio.run(main())
     except KeyboardInterrupt:
         print()
-        print("👑 [HERA] Encerrado.")
+        print("[HERA] Encerrado.")
 
 
 if __name__ == "__main__":

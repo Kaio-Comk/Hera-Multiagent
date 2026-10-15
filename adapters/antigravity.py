@@ -1,6 +1,7 @@
 import os
+from adapters import images as images_mod
 from adapters.model_args import clean_model, model_args
-from adapters.cli_stream import AntigravityStream, run_streaming
+from adapters.cli_stream import AntigravityStream, run_streaming, _kill_tree
 from adapters.progress import STATUS, say
 from app.locations import find_agy_binary
 import shutil
@@ -23,8 +24,10 @@ class AntigravityAdapter:
     Especializado em desenvolvimento assistido, refatoração e testes automatizados.
     """
 
-    def __init__(self, binary_path: Optional[str] = None, timeout: float = 300.0):
+    def __init__(self, binary_path: Optional[str] = None, timeout: float = 300.0, auto_approve: bool = False):
         self.binary_path = binary_path or self._discover_binary()
+        # sem isso o `agy -p` nao tem quem aprove escrita/comandos; com isso aprova TUDO sem perguntar (escolha explicita do usuario)
+        self.auto_approve = bool(auto_approve)
         self.timeout = timeout
         self._active_processes: Dict[str, asyncio.subprocess.Process] = {}
         self._active_tasks: Dict[str, asyncio.Task] = {}
@@ -109,7 +112,7 @@ Instrução:
 """
         if task.acceptance_criteria:
             prompt += "\nCritérios de Aceite:\n" + "\n".join(f"- {c}" for c in task.acceptance_criteria)
-        return prompt
+        return prompt + images_mod.prompt_note(task.images)
 
     async def _execute_cli(self, task: AgentTask, handle: RunHandle) -> AgentResult:
         start_time = handle.start_time
@@ -118,7 +121,13 @@ Instrução:
 
         models, real = await self._discover_models()
         # o modelo escolhido agora vale; com a lista real do CLI, so passa o que ele conhece (senao usa o padrao dele)
-        cmd = [self.binary_path, *model_args(task.assigned_model, models if real else None), "-p", prompt, "--output-format", "stream-json"]
+        cmd = [self.binary_path, *model_args(task.assigned_model, models if real else None)]
+        for extra in dict.fromkeys([*task.extra_dirs, *images_mod.image_dirs(task.images)]):   # `--add-dir` e repetivel no agy
+            if os.path.isdir(extra):
+                cmd += ["--add-dir", extra]
+        if self.auto_approve:
+            cmd += ["--dangerously-skip-permissions"]
+        cmd += ["-p", prompt, "--output-format", "stream-json"]
 
         # Validação estrita de workspace
         if task.workspace and not os.path.isdir(task.workspace):
@@ -163,31 +172,23 @@ Instrução:
                 metadata=dict(parser.meta)
             )
 
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as exc:
             elapsed = time.time() - start_time
+            idle = type(exc).__name__ == "IdleTimeout"
             if task.id in self._active_processes:
-                p = self._active_processes[task.id]
-                try:
-                    if os.name == 'nt' and p.pid:
-                        subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
-                    else:
-                        p.kill()
-                except Exception:
-                    pass
+                _kill_tree(self._active_processes[task.id])
             return AgentResult(
                 task_id=task.id,
                 status=TaskStatus.FAILED,
-                summary=f"Timeout atingido ({timeout}s) no Antigravity",
-                error_message=f"Execução excedeu limite de {timeout} segundos",
+                summary=(f"Antigravity parado: {exc} (comando provavelmente travado)" if idle else f"Timeout atingido ({timeout}s) no Antigravity"),
+                error_message=(f"Sem saída do agente: {exc}. Um comando ficou preso (ex.: varredura recursiva de pasta enorme); o agente foi encerrado." if idle
+                               else f"Execução excedeu limite de {timeout} segundos"),
                 execution_time_seconds=round(elapsed, 2)
             )
         except asyncio.CancelledError:
             elapsed = time.time() - start_time
             if task.id in self._active_processes:
-                try:
-                    self._active_processes[task.id].kill()
-                except Exception:
-                    pass
+                _kill_tree(self._active_processes[task.id])
             return AgentResult(
                 task_id=task.id,
                 status=TaskStatus.CANCELLED,
@@ -237,10 +238,7 @@ Instrução:
         """Encerra o processo do Antigravity e a tarefa assíncrona."""
         proc = self._active_processes.get(handle.task_id)
         if proc:
-            try:
-                proc.kill()
-            except Exception:
-                pass
+            _kill_tree(proc)
         exec_task = self._active_tasks.get(handle.task_id)
         if exec_task and not exec_task.done():
             exec_task.cancel()

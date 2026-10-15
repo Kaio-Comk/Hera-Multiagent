@@ -6,8 +6,8 @@ de privacidade, aplicando concorrência controlada e limites estritos de seguran
 
 import asyncio
 import contextvars
+import dataclasses
 import logging
-import random
 import time
 from typing import List, Dict, Any, Optional
 import httpx
@@ -19,11 +19,13 @@ import uuid
 from app.gateway.schemas import (
     ChatCompletionRequest,
     ChatCompletionResponse,
+    ChatMessage,
 )
 from app.gateway.privacy import GatewayPrivacyManager, DataClassification
 from app.gateway.providers import (
     BaseGatewayAdapter,
     GatewayProviderError,
+    ModalityResponse,
 )
 from app.gateway.token_saver import RTKTokenSaver
 from app.gateway.sse import format_openai_sse_chunk, format_sse_done, format_sse_error, sse_stream_generator
@@ -34,7 +36,6 @@ from app.privacy_guard import PrivacyGuard
 # Quem esta chamando (chave de acesso de cliente) e o id da requisicao: preenchidos pelo endpoint /v1.
 CLIENT_NAME: contextvars.ContextVar = contextvars.ContextVar("hera_client", default=None)
 REQUEST_ID: contextvars.ContextVar = contextvars.ContextVar("hera_request_id", default=None)
-STRATEGIES = ("priority", "round_robin", "fastest", "least_used", "weighted")
 
 class TierRouter:
     """Roteador que seleciona e executa provedores em camadas com fallback seguro."""
@@ -59,14 +60,10 @@ class TierRouter:
         # Ordem de tentativa (config `gateway.default_tier_order`): antes era a ordem da lista de adaptadores.
         self.tier_order = list(tier_order or ["cloud_premium", "cloud_cheap", "cloud_free", "local"])
         self.adapters = adapters
-        # Combos: nome -> passos [{"provider": ..., "model": ...}] tentados em ordem (modelo `nome` no /v1).
-        self.combos: Dict[str, List[Dict[str, str]]] = {}
-        self.combo_strategies: Dict[str, str] = {}       # nome do combo -> priority | round_robin | fastest | least_used | weighted
-        self.aliases: Dict[str, str] = {}                # apelido -> combo, provedor/modelo ou modelo
+        self.aliases: Dict[str, str] = {}                # apelido -> provedor/modelo ou modelo
         self.priorities: Dict[str, int] = {}             # provedor -> prioridade dentro da camada (menor primeiro)
         self.pricing: Dict[str, Dict[str, float]] = {}   # "provedor" ou "provedor/modelo" -> {"in": US$/1M, "out": US$/1M}
         self.guard = ProviderGuard()                     # disjuntor + limites por provedor
-        self._rr: Dict[str, int] = {}
         self.rtk_stats = {"calls": 0, "saved_chars": 0}
         self.usage = None            # UsageLedger opcional: contagem de chamadas/tokens (sem conteudo)
         self.privacy_manager = privacy_manager or GatewayPrivacyManager()
@@ -125,31 +122,11 @@ class TierRouter:
             return 0.0
         return None
 
-    def _order_combo(self, name: str, steps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Ordem em que os passos do combo serao tentados, conforme a estrategia."""
-        strategy = self.combo_strategies.get(name, "priority")
-        ordered = list(steps)
-        if strategy == "round_robin" and ordered:
-            start = self._rr.get(name, 0) % len(ordered)
-            self._rr[name] = start + 1
-            ordered = ordered[start:] + ordered[:start]
-        elif strategy == "fastest" and self.usage is not None:
-            stats = self.usage.latency_stats()
-            ordered.sort(key=lambda st: stats.get(st["provider"], {}).get("avg_ms", 10 ** 9))
-        elif strategy == "least_used" and self.usage is not None:
-            ordered.sort(key=lambda st: self._today(st["provider"])["requests"])
-        elif strategy == "weighted" and len(ordered) > 1:
-            weights = [max(1, int(st.get("weight") or 1)) for st in ordered]
-            first = random.choices(range(len(ordered)), weights=weights)[0]  # nosec B311 - balanceamento, nao e segredo
-            ordered = [ordered[first]] + ordered[:first] + ordered[first + 1:]
-        paused = [st for st in ordered if self.guard.is_paused(st["provider"])]
-        return [st for st in ordered if st not in paused] + paused
-
     def _resolve_address(self, request: ChatCompletionRequest):
         """`provedor/modelo` (ex.: `groq/llama-3.3-70b-versatile`) fala direto com aquele provedor. So vale se o nome
-        inteiro nao for um combo nem um modelo declarado (OpenRouter tem modelos com `/` no proprio nome)."""
+        inteiro nao for um modelo declarado (OpenRouter tem modelos com `/` no proprio nome)."""
         model = request.model or ""
-        if "/" not in model or model in self.combos or model in self._claimed_models():
+        if "/" not in model or model in self._claimed_models():
             return None
         prefix, rest = model.split("/", 1)
         if rest and any(a.name == prefix for a in self.adapters):
@@ -173,20 +150,6 @@ class TierRouter:
             self.usage.record(adapter_name, model, ok, status, pt, ct, latency, stream, client=CLIENT_NAME.get(),
                               requested_model=requested or model, request_id=REQUEST_ID.get(), error=safe_error,
                               cost=self.price(adapter_name, model, pt, ct) if ok else None)
-
-    async def _try_combo(self, request: ChatCompletionRequest, steps: List[Dict[str, str]], attempt):
-        """Tenta cada passo do combo, em ordem, ate um funcionar. Bloqueio de privacidade (403) vale para
-        todos os passos e para na hora; qualquer outra falha passa ao proximo passo."""
-        last: Optional[GatewayProviderError] = None
-        for step in self._order_combo(request.model or "", steps):
-            step_request = request.model_copy(deep=True, update={"model": step["model"]})
-            try:
-                return await attempt(step_request, step["provider"])
-            except GatewayProviderError as exc:
-                if exc.status_code == 403:
-                    raise
-                last = exc
-        raise last or GatewayProviderError("O combo nao tem passos.", status_code=503, retryable=False)
 
     def _apply_token_saving_if_applicable(self, request: ChatCompletionRequest):
         """Aplica o RTK Token Saver exclusivamente a saídas de ferramentas (role='tool')."""
@@ -250,7 +213,7 @@ class TierRouter:
 
         # 2b. Só os provedores que atendem o MODELO pedido (a privacidade já foi aplicada acima),
         #     na ordem de camadas configurada.
-        if only_provider:                 # passo de combo: o provedor ja foi escolhido; a privacidade valeu acima
+        if only_provider:                 # `provedor/modelo`: o provedor ja foi escolhido; a privacidade valeu acima
             eligible_adapters = [a for a in eligible_adapters if a.name == only_provider]
             if not eligible_adapters:
                 raise GatewayProviderError(
@@ -274,10 +237,6 @@ class TierRouter:
         """Inspeciona o payload, filtra provedores elegíveis e executa com fallback pré-resposta."""
         if not only_provider:
             request = self._apply_alias(request)
-        combo = None if only_provider else self.combos.get(request.model or "")
-        if combo:
-            return await self._try_combo(request, combo, lambda req, prov: self._route_and_execute(
-                req, client, force_offline, enable_rtk, prov))
         address = None if only_provider else self._resolve_address(request)
         if address:
             return await self._route_and_execute(request.model_copy(update={"model": address[1]}), client,
@@ -320,6 +279,81 @@ class TierRouter:
             raise last_error
         raise GatewayProviderError("Falha desconhecida no roteamento de provedores.", status_code=500)
 
+    async def route_modality(self, kind: str, model: str, dlp_text: str, payload: Dict[str, Any],
+                             client: httpx.AsyncClient, files: Optional[Dict[str, Any]] = None,
+                             force_offline: Optional[bool] = None) -> ModalityResponse:
+        """Modalidades além do chat (embeddings, imagens, fala, transcrição). Mesma ordem de barreiras do chat:
+        privacidade/DLP sobre o TEXTO que vai para fora -> modelo (apelido, `provedor/modelo`) -> camadas -> limites,
+        com fallback antes da resposta. Quem escolhe o modelo é quem chama."""
+        token = REQUEST_ID.set(REQUEST_ID.get() or f"req-{uuid.uuid4().hex[:10]}")
+        try:
+            return await asyncio.wait_for(self._route_modality(kind, model, dlp_text, payload, client, files,
+                                                               force_offline), timeout=self.total_timeout_seconds)
+        except asyncio.TimeoutError:
+            raise GatewayProviderError(f"Requisição excedeu o prazo total de {self.total_timeout_seconds:.0f}s.",
+                                       status_code=504, retryable=False)
+        finally:
+            REQUEST_ID.reset(token)
+
+    async def _route_modality(self, kind, model, dlp_text, payload, client, files, force_offline) -> ModalityResponse:
+        # a sonda carrega só o texto que sairia da máquina, para o mesmo DLP do chat
+        probe = self._apply_alias(ChatCompletionRequest(model=model, messages=[ChatMessage(role="user", content=dlp_text or " ")]))
+        only = None
+        address = self._resolve_address(probe)
+        if address:
+            only, probe = address[0], probe.model_copy(update={"model": address[1]})
+        eligible = [a for a in self._select_adapters(probe, force_offline, False, only) if a.supports(kind)]
+        if not eligible:
+            raise GatewayProviderError(f"Nenhum provedor habilitado atende '{kind}' para o modelo '{probe.model}'.",
+                                       status_code=404, retryable=False)
+        body = {**payload, "model": probe.model}
+        last_error: Optional[Exception] = None
+        async with self.semaphore:
+            for i, adapter in enumerate(eligible):
+                last = i == len(eligible) - 1
+                blocked = self._blocked(adapter.name)
+                if blocked is not None:
+                    last_error = blocked
+                    if last:
+                        raise blocked
+                    continue
+                started = time.monotonic()
+                try:
+                    resp = await adapter.modality(kind, body, client, files)
+                except GatewayProviderError as e:
+                    self._record(adapter.name, probe.model, False, e.status_code, None, started, error=str(e), requested=model)
+                    last_error = e
+                    if not e.retryable or last:
+                        raise
+                    continue
+                except Exception as e:
+                    self._record(adapter.name, probe.model, False, 500, None, started, error=type(e).__name__, requested=model)
+                    last_error = e
+                    if last:
+                        raise GatewayProviderError(f"Falha inesperada no provedor {adapter.name}: {e}", status_code=500)
+                    continue
+                resp = dataclasses.replace(resp, provider=adapter.name)
+                tokens = self._tokens_of(resp)
+                self._record(adapter.name, probe.model, True, resp.status, None, started, requested=model,
+                             prompt_tokens=tokens, completion_tokens=0 if tokens is not None else None)
+                return resp
+        if last_error:
+            raise last_error
+        raise GatewayProviderError("Falha desconhecida no roteamento de provedores.", status_code=500)
+
+    @staticmethod
+    def _tokens_of(resp: ModalityResponse) -> Optional[int]:
+        """Tokens de entrada que o provedor informou (embeddings trazem `usage`); None se não houver."""
+        if not resp.media_type.endswith("json"):
+            return None
+        try:
+            import json as _json
+            usage = (_json.loads(resp.content).get("usage") or {})
+            value = usage.get("prompt_tokens", usage.get("total_tokens"))
+            return int(value) if isinstance(value, (int, float)) else None
+        except (ValueError, AttributeError, TypeError):
+            return None
+
     async def route_and_stream(
         self,
         request: ChatCompletionRequest,
@@ -332,10 +366,6 @@ class TierRouter:
         dado útil; falha aqui faz fallback (ou vira erro HTTP). Depois do primeiro byte NÃO há fallback."""
         if not only_provider:
             request = self._apply_alias(request)
-        combo = None if only_provider else self.combos.get(request.model or "")
-        if combo:
-            return await self._try_combo(request, combo, lambda req, prov: self.route_and_stream(
-                req, client, force_offline, enable_rtk, prov))
         address = None if only_provider else self._resolve_address(request)
         if address:
             return await self.route_and_stream(request.model_copy(update={"model": address[1]}), client,

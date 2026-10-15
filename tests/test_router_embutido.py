@@ -1,4 +1,4 @@
-"""Roteador embutido: combos com fallback, API de provedores (codigo humano, validacao), motor hera_router."""
+"""Roteador embutido: fallback entre provedores, API de provedores (codigo humano, validacao), motor hera_router."""
 import json
 
 import httpx
@@ -38,61 +38,55 @@ class Fake(BaseGatewayAdapter):
         return reply(request.model, f"de {self.name}")
 
 
-def req(model="meu-combo", text="oi", stream=False):
+def req(model="m1", text="oi", stream=False):
     return ChatCompletionRequest(model=model, stream=stream, messages=[ChatMessage(role="user", content=text)])
 
 
 def make_router(*adapters):
-    r = TierRouter(adapters=list(adapters))
-    r.combos = {"meu-combo": [{"provider": "a", "model": "ma"}, {"provider": "b", "model": "mb"}]}
-    return r
+    return TierRouter(adapters=list(adapters))
 
 
 CLIENT = httpx.AsyncClient()
 
 
 @pytest.mark.asyncio
-async def test_combo_cai_para_o_proximo_passo_com_o_modelo_do_passo():
-    a = Fake("a", models=("ma",), error=GatewayProviderError("429", status_code=429, retryable=True))
-    b = Fake("b", models=("mb",))
+async def test_fallback_cai_para_o_proximo_provedor_que_atende_o_modelo():
+    a = Fake("a", models=("m1",), error=GatewayProviderError("429", status_code=429, retryable=True))
+    b = Fake("b", models=("m1",))
     resp = await make_router(a, b).route_and_execute(req(), CLIENT)
-    assert resp.choices[0].message.content == "de b" and b.seen == ["mb"] and a.seen == ["ma"]
+    assert resp.choices[0].message.content == "de b" and a.seen == ["m1"] and b.seen == ["m1"]
 
 
 @pytest.mark.asyncio
-async def test_combo_passo_forcado_nao_vaza_para_outro_provedor():
-    a = Fake("a", models=("ma",), error=GatewayProviderError("fora do ar", status_code=500, retryable=True))
-    c = Fake("c", models=("mc",))                       # nao esta no combo: nunca pode ser usado
-    r = TierRouter(adapters=[a, c])
-    r.combos = {"meu-combo": [{"provider": "a", "model": "ma"}]}
+async def test_provedor_barra_modelo_nao_vaza_para_outro_provedor():
+    a = Fake("a", models=("m1",), error=GatewayProviderError("fora do ar", status_code=500, retryable=True))
+    c = Fake("c", models=("m1",))                       # atende o mesmo modelo, mas o pedido foi para `a/m1`: nunca e usado
     with pytest.raises(GatewayProviderError):
-        await r.route_and_execute(req(), CLIENT)
+        await make_router(a, c).route_and_execute(req("a/m1"), CLIENT)
     assert c.seen == []
 
 
 @pytest.mark.asyncio
-async def test_combo_com_segredo_pula_a_nuvem_e_termina_no_local():
+async def test_segredo_pula_a_nuvem_e_termina_no_local():
     secret = "sk-" + "abcdef0123456789" * 2
-    cloud = Fake("a", models=("ma",))
+    cloud = Fake("a", models=("q",))
     local = Fake("ollama", tier="local", local=True, models=("q",))
-    r = TierRouter(adapters=[cloud, local])
-    r.combos = {"meu-combo": [{"provider": "a", "model": "ma"}, {"provider": "ollama", "model": "q"}]}
-    resp = await r.route_and_execute(req(text=f"minha chave {secret}"), CLIENT)
+    resp = await make_router(cloud, local).route_and_execute(req("q", text=f"minha chave {secret}"), CLIENT)
     assert resp.choices[0].message.content == "de ollama" and cloud.seen == []
 
 
 @pytest.mark.asyncio
-async def test_combo_so_de_nuvem_com_segredo_e_bloqueado():
+async def test_so_nuvem_com_segredo_e_bloqueado():
     secret = "sk-" + "abcdef0123456789" * 2
-    r = make_router(Fake("a", models=("ma",)), Fake("b", models=("mb",)))
+    r = make_router(Fake("a", models=("m1",)), Fake("b", models=("m1",)))
     with pytest.raises(GatewayProviderError):
         await r.route_and_execute(req(text=f"chave {secret}"), CLIENT)
 
 
 @pytest.mark.asyncio
-async def test_combo_no_stream_tambem_tem_fallback():
-    a = Fake("a", models=("ma",), error=GatewayProviderError("429", status_code=429, retryable=True))
-    b = Fake("b", models=("mb",))
+async def test_stream_tambem_tem_fallback_antes_do_primeiro_byte():
+    a = Fake("a", models=("m1",), error=GatewayProviderError("429", status_code=429, retryable=True))
+    b = Fake("b", models=("m1",))
     gen = await make_router(a, b).route_and_stream(req(stream=True), CLIENT)
     body = "".join([chunk async for chunk in gen])
     assert "de b" in body and "[DONE]" in body
@@ -102,17 +96,17 @@ async def test_combo_no_stream_tambem_tem_fallback():
 @pytest.mark.asyncio
 async def test_motor_hera_router_sucesso_e_erro_sanitizado():
     async def ok(request):
-        assert request.model == "meu-combo"
+        assert request.model == "meu-apelido"
         return reply("mb", "resposta")
 
     async def boom(request):
         raise GatewayProviderError("falhou com sk-" + "abcdef0123456789" * 2, status_code=502)
 
-    task = AgentTask(id="t1", title="x", instruction="faz", assigned_model="meu-combo")
-    good = HeraRouterAdapter(call=ok, models=lambda: ["meu-combo"], has_cloud=lambda: True)
+    task = AgentTask(id="t1", title="x", instruction="faz", assigned_model="meu-apelido")
+    good = HeraRouterAdapter(call=ok, models=lambda: ["meu-apelido"], has_cloud=lambda: True)
     res = await good.collect(await good.submit(task))
     assert res.status == TaskStatus.SUCCEEDED and res.output_text == "resposta"
-    assert "meu-combo" in (await good.health_check()).available_models
+    assert "meu-apelido" in (await good.health_check()).available_models
 
     bad = HeraRouterAdapter(call=boom, models=lambda: [], has_cloud=lambda: True)
     res = await bad.collect(await bad.submit(task))
@@ -140,7 +134,6 @@ async def test_roteador_de_tarefas_prefere_hera_router_so_com_nuvem():
 def api(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "config_mgr", ConfigManager(config_path=str(tmp_path / "config.yaml")))
     monkeypatch.setattr(server.gateway_tier_router, "adapters", list(server.gateway_tier_router.adapters))
-    monkeypatch.setattr(server.gateway_tier_router, "combos", {})
     monkeypatch.setattr(server.router, "default_offline", False)
     monkeypatch.setenv("GROQ_API_KEY", "gsk_" + "x" * 30)
     return server
@@ -157,9 +150,7 @@ def code():
 @pytest.mark.asyncio
 async def test_api_adicionar_provedor_exige_codigo_humano(api):
     async with client() as c:
-        r = await c.post("/api/router/providers", json={"preset": "groq"})
-        assert r.status_code == 403 and r.json()["detail"]["error"] == "human_code_required"
-        r = await c.post("/api/router/providers", json={"preset": "groq", "human_code": code()})
+        r = await c.post("/api/router/providers", json={"preset": "groq"})       # sem codigo humano (14/10/2026)
         assert r.status_code == 200
         view = r.json()["provider"]
         assert view["enabled"] and view["active"] and view["keys_found"] == 1
@@ -200,28 +191,22 @@ async def test_api_provedor_rejeita_entradas_perigosas(api, patch):
 async def test_api_ligar_pede_codigo_e_desligar_nao(api):
     async with client() as c:
         await c.post("/api/router/providers", json={"preset": "groq", "enabled": False, "human_code": code()})
-        assert (await c.post("/api/router/providers/groq/enabled", json={"enabled": True})).status_code == 403
-        ok = await c.post("/api/router/providers/groq/enabled", json={"enabled": True, "human_code": code()})
+        ok = await c.post("/api/router/providers/groq/enabled", json={"enabled": True})
         assert ok.status_code == 200 and ok.json()["provider"]["active"] is True
         off = await c.post("/api/router/providers/groq/enabled", json={"enabled": False})
         assert off.status_code == 200 and off.json()["provider"]["active"] is False
 
 
 @pytest.mark.asyncio
-async def test_api_combos_validam_provedores_e_travam_exclusao(api):
+async def test_api_apaga_provedor_so_se_nenhum_apelido_aponta_para_ele(api):
     async with client() as c:
         await c.post("/api/router/providers", json={"preset": "groq", "human_code": code()})
-        good = {"combos": {"rapido": [{"provider": "groq", "model": "llama-3.3-70b-versatile"},
-                                      {"provider": "ollama", "model": "qwen2.5-coder:1.5b"}]}}
-        r = await c.put("/api/router/combos", json=good)
-        assert r.status_code == 200 and "rapido" in server.gateway_tier_router.combos
-        assert (await c.put("/api/router/combos", json={"combos": {"x1": [{"provider": "fantasma", "model": "m"}]}})).status_code == 400
-        assert (await c.put("/api/router/combos", json={"combos": {"default": [{"provider": "groq", "model": "m"}]}})).status_code == 400
-        assert (await c.put("/api/router/combos", json={"combos": {"groq": [{"provider": "groq", "model": "m"}]}})).status_code == 400
-        assert (await c.put("/api/router/combos", json={"combos": {"vazio": []}})).status_code == 400
-        assert (await c.delete("/api/router/providers/groq")).status_code == 409      # esta num combo
-        await c.put("/api/router/combos", json={"combos": {}})
-        assert (await c.delete("/api/router/providers/groq")).status_code == 200
+        r = await c.put("/api/router/settings", json={"aliases": {"rapido": "groq/llama-3.3-70b-versatile"}})
+        assert r.status_code == 200
+        blocked = await c.delete("/api/router/providers/groq")
+        assert blocked.status_code == 409 and "rapido" in blocked.json()["detail"]["message"]
+        await c.put("/api/router/settings", json={"aliases": {}})
+
 
 
 @pytest.mark.asyncio

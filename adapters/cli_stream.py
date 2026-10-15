@@ -162,16 +162,40 @@ def _kill_tree(proc) -> None:
         pass
 
 
+IDLE_LIMIT_SECONDS = 600.0      # agente sem NENHUMA saida por tanto tempo = comando travado (ex.: varredura de pasta gigante)
+
+
+class IdleTimeout(asyncio.TimeoutError):
+    """O agente ficou em silencio alem do limite: quase sempre um comando preso, nao trabalho em andamento."""
+
+
 async def run_streaming(cmd: List[str], cwd: Optional[str], timeout: float, parser,
-                        on_proc: Optional[Callable[[Any], None]] = None) -> Tuple[int, str, str]:
-    """Executa `cmd`, alimenta `parser` linha a linha e devolve (codigo, stdout_bruto, stderr). Levanta TimeoutError."""
+                        on_proc: Optional[Callable[[Any], None]] = None,
+                        idle_limit: float = IDLE_LIMIT_SECONDS, stdin_text: Optional[str] = None) -> Tuple[int, str, str]:
+    """Executa `cmd`, alimenta `parser` linha a linha e devolve (codigo, stdout_bruto, stderr). Levanta TimeoutError.
+    `stdin_text`: texto enviado pela entrada padrao (prompts grandes demais para a linha de comando)."""
     proc = await asyncio.create_subprocess_exec(*cmd, cwd=cwd, stdout=asyncio.subprocess.PIPE,
-                                                stderr=asyncio.subprocess.PIPE, limit=STREAM_LIMIT)
+                                                stderr=asyncio.subprocess.PIPE, limit=STREAM_LIMIT,
+                                                stdin=asyncio.subprocess.PIPE if stdin_text is not None else None)
     if on_proc:
         on_proc(proc)
+    if stdin_text is not None and proc.stdin is not None:
+        async def feed_stdin() -> None:
+            try:
+                proc.stdin.write(stdin_text.encode("utf-8"))
+                await proc.stdin.drain()
+            except (BrokenPipeError, ConnectionResetError):
+                pass                                   # o CLI fechou a entrada cedo: o resultado/erro vem pela saida
+            finally:
+                try:
+                    proc.stdin.close()
+                except Exception:       # noqa: BLE001
+                    pass
+        asyncio.ensure_future(feed_stdin())
     raw: List[str] = []
     raw_size = 0
     err_chunks: List[bytes] = []
+    last_output = [time.monotonic()]
 
     async def read_out() -> None:
         nonlocal raw_size
@@ -184,6 +208,7 @@ async def run_streaming(cmd: List[str], cwd: Optional[str], timeout: float, pars
                 continue
             if not chunk:
                 break
+            last_output[0] = time.monotonic()
             text = chunk.decode("utf-8", errors="replace").rstrip("\r\n")
             if raw_size < MAX_RAW:
                 raw.append(text)
@@ -203,7 +228,20 @@ async def run_streaming(cmd: List[str], cwd: Optional[str], timeout: float, pars
                 size += len(chunk)
 
     try:
-        await asyncio.wait_for(asyncio.gather(read_out(), read_err(), proc.wait()), timeout=timeout)
+        work = asyncio.ensure_future(asyncio.gather(read_out(), read_err(), proc.wait()))
+        deadline = time.monotonic() + timeout
+        try:
+            while not work.done():
+                await asyncio.wait({work}, timeout=5.0)
+                now = time.monotonic()
+                if now > deadline:
+                    raise asyncio.TimeoutError()
+                if idle_limit and now - last_output[0] > idle_limit:
+                    raise IdleTimeout(f"sem nenhuma saida ha {idle_limit / 60:.0f} min")
+            work.result()
+        finally:
+            if not work.done():
+                work.cancel()
     except (asyncio.TimeoutError, asyncio.CancelledError):
         _kill_tree(proc)                      # prazo estourou ou cancelaram: nao deixa o agente (e os filhos) rodando solto
         raise

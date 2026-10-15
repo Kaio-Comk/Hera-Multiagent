@@ -35,12 +35,21 @@ TOKEN_ENV = "HERA_API_KEY"
 ALLOWED_HOSTS_ENV = "HERA_ALLOWED_HOSTS"
 _MIN_TOKEN_LEN = 24
 
-DEFAULT_PUBLIC_PATHS = frozenset({"/", "/healthz", "/favicon.ico"})
+DEFAULT_PUBLIC_PATHS = frozenset({"/", "/healthz", "/favicon.ico", "/api/oauth/callback"})   # callback: valida o `state`
 DEFAULT_PUBLIC_PREFIXES = ("/static/",)        # CSS, fontes e bibliotecas da UI: arquivos publicos, sem dados
 DEFAULT_MAX_BODY_BYTES = 1 * 1024 * 1024                       # 1 MiB para a maioria das rotas
-DEFAULT_BODY_LIMITS: Dict[str, int] = {"/v1/chat/completions": 8 * 1024 * 1024}   # conversas longas
+DEFAULT_BODY_LIMITS: Dict[str, int] = {
+    "/v1/chat/completions": 8 * 1024 * 1024,      # conversas longas
+    "/v1/messages": 8 * 1024 * 1024,              # idem, no formato da Anthropic (Claude Code manda o contexto inteiro)
+    "/v1/responses": 8 * 1024 * 1024,             # idem, no formato da Responses API (Codex CLI)
+    "/v1/embeddings": 4 * 1024 * 1024,            # ate 2048 textos por chamada
+    "/v1/audio/transcriptions": 26 * 1024 * 1024,  # audio de ate 25 MB + campos do formulario
+}
+CHAT_ATTACHMENT_BODY_BYTES = 11 * 1024 * 1024                    # imagem de ate 10 MB + folga
 DEFAULT_RATE_LIMITS: Dict[str, Tuple[int, float]] = {
     "/v1/chat/completions": (60, 60.0),
+    "/v1/messages": (60, 60.0),
+    "/v1/responses": (60, 60.0),
     "/api/tasks/run": (20, 60.0),
     "/api/arena/run": (10, 60.0),
     "/api/ollama/pull": (5, 60.0),
@@ -117,6 +126,11 @@ class LocalSecurityMiddleware:
         from app.gateway.client_keys import CLIENT_PATHS
         return CLIENT_PATHS
 
+    @staticmethod
+    def is_client_path(path: str) -> bool:
+        from app.gateway.client_keys import is_client_path
+        return is_client_path(path)
+
     def _token_ok(self, supplied: Optional[str]) -> bool:
         return bool(supplied) and hmac.compare_digest(supplied.encode("utf-8"),
                                                       self.settings.token.encode("utf-8"))
@@ -188,7 +202,7 @@ class LocalSecurityMiddleware:
             supplied = self._supplied_token(headers, scope)
             client_key = None
             if not self._token_ok(supplied):
-                if self.client_keys is not None and scope["type"] == "http" and path in self.client_keys_paths():
+                if self.client_keys is not None and scope["type"] == "http" and self.is_client_path(path):
                     client_key = self.client_keys.authenticate(supplied)
                 if client_key is None:
                     return await self._deny(scope, receive, send, 401, "Token ausente ou invalido",
@@ -205,7 +219,11 @@ class LocalSecurityMiddleware:
 
         if scope["type"] == "http":
             if scope.get("method") in ("POST", "PUT", "PATCH", "DELETE"):
-                limit = self.settings.body_limits.get(path, self.settings.max_body_bytes)
+                limit = self.settings.body_limits.get(path)
+                if limit is None:
+                    limit = self.settings.max_body_bytes
+                    if path.startswith("/api/chat/conversations/") and path.endswith("/attachments"):
+                        limit = CHAT_ATTACHMENT_BODY_BYTES              # imagem enviada na conversa (o servidor valida o tipo e o tamanho)
                 length = headers.get("content-length", "")
                 if length.isdigit() and int(length) > limit:
                     return await self._deny(scope, receive, send, 413, f"Corpo maior que o limite de {limit} bytes")

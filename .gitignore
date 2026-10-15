@@ -38,3 +38,9 @@ config.yaml.local-backup
 # Token local da API (fase 1)
 data/.hera_*
 *.egg-info/
+
+# REA (MCP): dependencias npm instaladas localmente em tools/rea
+tools/rea/node_modules/
+
+# Dados locais do Hera: cofre de chaves, tokens, conversas, bancos, logs e uploads (NUNCA versionar)
+data/

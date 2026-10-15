@@ -23,17 +23,26 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "claude_code": {
             "enabled": True,
             "default_model": "sonnet",
-            "timeout": 300.0
+            "timeout": 300.0,
+            "permission_mode": "auto"      # modo automatico do Claude Code (aprova o comum, barra o arriscado); "" = nega toda escrita
         },
         "antigravity": {
             "enabled": True,
             "default_model": "default",    # "default" = o padrao do CLI; escolha um da lista no painel
-            "timeout": 300.0
+            "timeout": 300.0,
+            "auto_approve": True           # aprova TUDO sem perguntar (`--dangerously-skip-permissions`); false = o agy nega escritas
         },
-        # Roteador embutido do Hera (provedores de nuvem + combos com fallback).
+        # CLIs oficiais em modo não interativo: DESLIGADOS até você instalar e fazer login (ver o cartão no painel).
+        # auto_approve=false: o CLI só lê; true libera escrita/comandos sem perguntar (escolha explícita).
+        "codex":     {"enabled": False, "default_model": "default", "timeout": 300.0, "auto_approve": False},
+        "cursor":    {"enabled": False, "default_model": "default", "timeout": 300.0, "auto_approve": False},
+        "qoder":     {"enabled": False, "default_model": "default", "timeout": 300.0, "auto_approve": False},
+        "codebuddy": {"enabled": False, "default_model": "default", "timeout": 300.0, "auto_approve": False},
+        "kimi":      {"enabled": False, "default_model": "default", "timeout": 300.0, "auto_approve": False},
+        # Roteador embutido do Hera (provedores de nuvem com fallback entre eles).
         "hera_router": {
             "enabled": True,
-            "default_model": "default",   # "default" = o roteador escolhe; ou o nome de um combo
+            "default_model": "default",   # "default" = o roteador escolhe; ou um apelido / provedor/modelo
             "timeout": 120.0
         }
     },
@@ -51,6 +60,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # Provedores de nuvem do gateway (desligados por padrão). As CHAVES ficam em variáveis de ambiente
     # (api_key_env), nunca neste arquivo. Exemplos em config.example.yaml.
     "providers": {},
+    # Busca na web (POST /v1/search) e login OAuth por provedor: ver config.example.yaml. Sem esta entrada o
+    # carregador descartaria as seções do arquivo.
+    "search": {},
+    "oauth": {},
     "mcp": {
         # Executáveis permitidos para servidores MCP stdio (nome simples, sem caminho).
         "allowed_commands": ["python", "python3", "py"]
@@ -90,7 +103,8 @@ class ConfigManager:
             
             # Mesclagem defensiva com defaults
             merged = DEFAULT_CONFIG.copy()
-            for section in ("general", "engines", "feature_flags", "gateway", "mcp", "providers", "orchestration"):
+            for section in ("general", "engines", "feature_flags", "gateway", "mcp", "providers", "orchestration",
+                        "search", "oauth"):
                 if section in data and isinstance(data[section], dict):
                     merged[section] = {**merged.get(section, {}), **data[section]}
             # motores que nao existem mais (removidos do projeto) somem do config em vez de quebrar a UI
