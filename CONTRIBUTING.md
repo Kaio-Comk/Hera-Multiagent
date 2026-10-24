@@ -21,7 +21,7 @@ Thank you for your interest in contributing to **HERA Multiagent**! We welcome b
    pip install pytest pytest-asyncio httpx pydantic pyyaml
    ```
 4. **Run the Test Suite:**
-   All contributions must pass all 64 automated tests:
+   All contributions must pass the complete automated test suite (500+ tests across orchestration, adapters, and DAG scheduling):
    ```bash
    python -m pytest tests -v
    ```

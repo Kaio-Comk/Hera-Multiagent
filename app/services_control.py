@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import shutil
 import socket
-import subprocess  # nosec B404 - comandos fixos, sem shell
+import subprocess  # nosec B404
 import sys
 import time
 from pathlib import Path

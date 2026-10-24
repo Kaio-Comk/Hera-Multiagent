@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import subprocess  # nosec B404 - so para encerrar o processo que nos mesmos iniciamos
+import subprocess  # nosec B404
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 

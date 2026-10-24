@@ -22,7 +22,7 @@ FONTS = {"inter": ("400", "500", "600", "700", "800"), "jetbrains-mono": ("400",
 
 def run(cmd: list[str], cwd: Path) -> None:
     print("$", " ".join(cmd))
-    subprocess.run(cmd, cwd=cwd, check=True)  # nosec B603 - comandos fixos deste script, sem shell
+    subprocess.run(cmd, cwd=cwd, check=True)  # nosec B603
 
 
 def main() -> None:

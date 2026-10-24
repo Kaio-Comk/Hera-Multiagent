@@ -33,7 +33,7 @@ class UsageLedger:
             have = {row[1] for row in db.execute("PRAGMA table_info(usage)")}
             for name, kind in _COLUMNS.items():                       # migração de bancos antigos
                 if name not in have:
-                    db.execute(f"ALTER TABLE usage ADD COLUMN {name} {kind}")  # nosec B608 - nomes fixos acima
+                    db.execute(f"ALTER TABLE usage ADD COLUMN {name} {kind}")  # nosec B608
             db.execute("CREATE INDEX IF NOT EXISTS usage_ts ON usage(ts)")
             db.execute("CREATE INDEX IF NOT EXISTS usage_client_ts ON usage(client, ts)")
         self._since_prune = 0

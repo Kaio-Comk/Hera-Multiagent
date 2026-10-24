@@ -102,7 +102,9 @@ class ConversationStore:
             return db.execute(sql, tuple(args)).rowcount
 
     def _count(self, table: str, where: str = "1=1", args: Iterable[Any] = ()) -> int:
-        row = self._row(f"SELECT COUNT(*) AS n FROM {table} WHERE {where}", args)       # `table`/`where` vêm só do código
+        if table not in ("projects", "conversations", "messages", "attachments"):
+            raise ValueError(f"Tabela inválida: {table}")
+        row = self._row(f"SELECT COUNT(*) AS n FROM {table} WHERE {where}", args)  # nosec B608
         return int(row["n"]) if row else 0
 
     # ── projetos ───────────────────────────────────────────────────────────────
