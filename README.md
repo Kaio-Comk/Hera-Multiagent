@@ -201,7 +201,10 @@ flowchart TD
     end
 
     subgraph Execution ["Safe Execution & Validation"]
-        Engines --> Worktree["🌳 WorktreeManager (Git Isolated Branches)"]
+        Ollama --> Worktree["🌳 WorktreeManager (Git Isolated Branches)"]
+        HeraRouter --> Worktree
+        ClaudeCode --> Worktree
+        Antigravity --> Worktree
         Worktree --> Validator["🧪 TaskValidator (create_subprocess_exec, shell=False)"]
         Validator --> Policy["🛑 PolicyEngine (Strict Allowlist & Zero Metachars)"]
         Validator -->|"Test Failed"| AutoFix["🔁 AutoFixEngine (Traceback Reinjection)"]
