@@ -44,3 +44,6 @@ tools/rea/node_modules/
 
 # Dados locais do Hera: cofre de chaves, tokens, conversas, bancos, logs e uploads (NUNCA versionar)
 data/
+
+# REA vendor binaries
+tools/rea/vendor/

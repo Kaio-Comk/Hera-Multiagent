@@ -11,6 +11,7 @@ As ferramentas do REA nascem DESLIGADAS e com HITL (ver `McpCatalog.register_dis
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -18,6 +19,33 @@ from pathlib import Path
 
 REA_DIR = Path(__file__).resolve().parent / "rea"
 REA_ENTRY = REA_DIR / "node_modules" / "rea-agents" / "scripts" / "rea.mjs"
+VENDOR_DIR = REA_DIR / "vendor"
+DEFAULT_JAVA_HOME = Path(r"B:\Program Files\android-build\jdk-17.0.20.1+1")
+DEFAULT_ADB_DIR = Path(r"B:\Program Files\android-build\sdk\platform-tools")
+DEFAULT_JADX_JAR = VENDOR_DIR / "jadx-headless-mcp-0.7.1-all.jar"
+DEFAULT_APKTOOL_EXE = VENDOR_DIR / "apktool.exe"
+
+
+def build_env() -> dict[str, str]:
+    env = os.environ.copy()
+    if not env.get("JAVA_HOME") and DEFAULT_JAVA_HOME.is_dir():
+        env["JAVA_HOME"] = str(DEFAULT_JAVA_HOME)
+    if not env.get("REA_JADX_MCP_JAR") and DEFAULT_JADX_JAR.is_file():
+        env["REA_JADX_MCP_JAR"] = str(DEFAULT_JADX_JAR)
+    if not env.get("REA_APKTOOL_COMMAND") and DEFAULT_APKTOOL_EXE.is_file():
+        env["REA_APKTOOL_COMMAND"] = str(DEFAULT_APKTOOL_EXE)
+
+    extra_paths = [
+        str(DEFAULT_JAVA_HOME / "bin"),
+        str(DEFAULT_ADB_DIR),
+        str(VENDOR_DIR),
+    ]
+    current_path = env.get("PATH", "")
+    for p in reversed(extra_paths):
+        if Path(p).is_dir() and p.lower() not in current_path.lower():
+            current_path = f"{p};{current_path}"
+    env["PATH"] = current_path
+    return env
 
 
 def build_command() -> list[str]:
@@ -31,7 +59,7 @@ def build_command() -> list[str]:
 
 def main() -> int:
     try:
-        return subprocess.call(build_command())
+        return subprocess.call(build_command(), env=build_env())
     except KeyboardInterrupt:
         return 130
 
