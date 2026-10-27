@@ -297,6 +297,37 @@ async def test_api_executar_plano_emite_a_historia_completa(tmp_path, monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_motores_recebem_so_a_pasta_do_hera_e_nunca_a_raiz_do_cofre(tmp_path, monkeypatch):
+    """Ate 27/10/2026 os motores com acesso a arquivos (Antigravity, na nuvem) recebiam a RAIZ do Obsidian,
+    com as notas de outros projetos e as fichas de clientes do NetHub. Agora so a pasta do Hera (`vault_dir`)."""
+    cofre = tmp_path / "Cofre"
+    (cofre / ".obsidian").mkdir(parents=True)
+    (cofre / "Hera").mkdir()
+    (cofre / "NetHub" / "07 Clientes").mkdir(parents=True)
+    monkeypatch.setitem(server.cfg["general"], "vault_dir", str(cofre / "Hera"))
+    monkeypatch.setitem(server.cfg["general"], "vault_root", "")
+    monkeypatch.setattr(server, "CONSOLE", ConsoleBus(tmp_path / "runs"))
+    fakes = {"ollama": Talker("ollama")}
+    monkeypatch.setattr(server, "adapters", fakes)
+    monkeypatch.setattr(server.router, "adapters", fakes)
+    monkeypatch.setattr(server.router, "disabled", set())
+    monkeypatch.setattr(server.router, "default_offline", False)
+    vistos = []
+    original = server.orchestration.build_dag
+
+    def espiao(steps, run_id, workspace, extra_dirs, *a, **k):
+        vistos.append(list(extra_dirs))
+        return original(steps, run_id, workspace, extra_dirs, *a, **k)
+
+    monkeypatch.setattr(server.orchestration, "build_dag", espiao)
+    body = {"goal": "T", "steps": [{"id": "s1", "title": "F", "instruction": "fala", "engine": "ollama"}], "final_summary": False}
+    async with client() as c:
+        assert (await c.post("/api/orchestration/execute", json=body)).status_code == 200
+    assert vistos == [[str(cofre / "Hera")]]
+    assert all(str(cofre) != d and "Clientes" not in d for d in vistos[0])
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("pedir_resumo, chamadas", [(None, 1), (True, 1), (False, 0)])
 async def test_api_executar_resumo_final_e_opcional(tmp_path, monkeypatch, pedir_resumo, chamadas):
     """Quem ja e o planejador (o Claude da sessao) manda final_summary=False: o resumo automatico gastaria o

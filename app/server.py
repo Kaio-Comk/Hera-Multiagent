@@ -817,9 +817,11 @@ async def _start_run(goal: str, raw_steps: List[Dict[str, Any]], executors_req: 
             raise HTTPException(status_code=400, detail={"error": "project_dir_missing",
                                                          "message": f"A pasta do projeto nao existe: {resolved}"})
         workspace = str(resolved)
-    # o cofre do Obsidian (caminho vindo do config.yaml, nao da API) fica legivel para os motores que aceitam pastas extras
-    vault_root = find_vault_root(resolve_vault_dir(cfg["general"].get("vault_dir")), cfg["general"].get("vault_root"))
-    extra_dirs = [str(vault_root)] if vault_root.is_dir() and str(vault_root) != workspace else []
+    # So a pasta do HERA no Obsidian (`vault_dir`) fica legivel para os motores que aceitam pastas extras, NUNCA a raiz do
+    # cofre. Ate 27/10/2026 ia a raiz inteira: os motores de nuvem (Antigravity) recebiam junto as notas de outros
+    # projetos, inclusive `NetHub/07 Clientes` (fichas com dados pessoais de clientes) - exposicao que a LGPD nao permite.
+    agent_vault = Path(resolve_vault_dir(cfg["general"].get("vault_dir")))
+    extra_dirs = [str(agent_vault)] if agent_vault.is_dir() and str(agent_vault) != workspace else []
     for other in extra_project_dirs or []:                 # outras pastas do mesmo projeto (ex.: NetHub ES ao lado do BR)
         try:
             resolved_other = ensure_inside(other, _allowed_repo_roots())
