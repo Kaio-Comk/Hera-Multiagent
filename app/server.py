@@ -34,7 +34,7 @@ from app.validator import TaskValidator
 from app.auto_fix import AutoFixEngine
 from app.dag_scheduler import TaskDAG, DAGScheduler
 from app import orchestration
-from app.engine_profiles import build_catalog, filter_ollama_models
+from app.engine_profiles import build_catalog, filter_ollama_models, models_map_of
 from app.console_bus import ConsoleBus
 from app.runtime_state import resolve_db_path, merge_legacy_db, setup_file_logging
 from app.privacy_guard import PrivacyGuard
@@ -691,7 +691,7 @@ async def _plan_for(goal: str, executors_req: Optional[List[str]], context: str 
         raise HTTPException(status_code=400, detail={
             "error": "no_executor", "message": "Nenhum motor ligado esta no ar agora (confira Motores & IAs; o Ollama precisa ser iniciado)."})
     executors = [c["engine"] for c in catalog]
-    models_map = {c["engine"]: [m["id"] for m in c["models"]] for c in catalog}
+    models_map = models_map_of(catalog)          # lista COMPLETA (o catalogo mostra so 30)
     # o NOME do projeto da conversa (ex.: "NetHub") tambem aponta a pasta: o pedido ("ajude esse cliente...") quase nunca cita o projeto
     folders = orchestration.match_project_folders(f"{goal} {project_name}", [str(r) for r in _allowed_repo_roots()], str(ROOT_DIR))
     task = orchestration.build_planning_task(goal, catalog, ocfg["max_steps"], planner_engine,
@@ -799,7 +799,7 @@ async def _start_run(goal: str, raw_steps: List[Dict[str, Any]], executors_req: 
     ocfg = _orchestration_cfg()
     executors = _active_executors(executors_req)
     catalog, _down = await _engine_catalog(executors)
-    models_map = {c["engine"]: [m["id"] for m in c["models"]] for c in catalog}
+    models_map = models_map_of(catalog)          # lista COMPLETA (o catalogo mostra so 30)
     try:
         steps, warnings = orchestration.normalize_steps(raw_steps, executors, ocfg["max_steps"], models_map)
     except orchestration.PlanError as exc:

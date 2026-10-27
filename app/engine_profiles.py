@@ -113,11 +113,20 @@ def build_catalog(engines: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
     catalog = []
     for name, info in engines.items():
         profile = ENGINE_PROFILES.get(name, {"label": name, "files": False, "local": False, "cost": "?", "about": ""})
-        models = [m for m in dict.fromkeys(info.get("models") or []) if m and m != "default"][:30]
+        todos = [m for m in dict.fromkeys(info.get("models") or []) if m and m != "default"]
+        # `models` (ate 30) e o que o planejador LE; `all_models` e o que vale para VALIDAR um modelo escolhido.
+        # Ate 27/10/2026 a validacao usava a lista cortada: o Roteador com 39 modelos recusava os ultimos 9
+        # (os 4 da River, cadastrada por ultimo) como "nao existe no motor" e caia no padrao.
         catalog.append({"engine": name, "label": profile["label"], "files": profile["files"], "local": profile["local"],
                         "cost": profile["cost"], "about": profile["about"], "default": info.get("default") or "",
-                        "notes": list(info.get("notes") or []), "models": describe_models(name, models)})
+                        "notes": list(info.get("notes") or []), "models": describe_models(name, todos[:30]),
+                        "all_models": todos})
     return catalog
+
+
+def models_map_of(catalog: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+    """motor -> TODOS os modelos que ele lista (para validar o modelo de um passo)."""
+    return {c["engine"]: list(c.get("all_models") or [m["id"] for m in c["models"]]) for c in catalog}
 
 
 def catalog_text(catalog: List[Dict[str, Any]]) -> str:

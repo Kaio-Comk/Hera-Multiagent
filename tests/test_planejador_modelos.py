@@ -380,3 +380,17 @@ def test_prompt_traz_as_pastas_do_projeto_citado():
     assert "PASTAS DO PROJETO CITADO" in with_dirs and "- B:/NetHub BR" in with_dirs
     without = build_planning_prompt("x", _cat(), 8)
     assert "nenhuma pasta de projeto foi citada" in without and "PASTAS DO PROJETO CITADO" not in without
+
+
+def test_modelo_escolhido_alem_dos_30_mostrados_e_aceito():
+    """O planejador le no maximo 30 modelos por motor, mas um modelo escolhido de proposito vale contra a lista
+    COMPLETA. Ate 27/10/2026 o Roteador com 39 modelos recusava os ultimos 9 (os da River) e caia no padrao."""
+    from app.engine_profiles import models_map_of
+    modelos = [f"prov/modelo-{i:02d}" for i in range(39)]
+    cat = build_catalog({"hera_router": {"models": modelos, "default": "default"}})
+    assert len(cat[0]["models"]) == 30                       # o texto do planejador continua curto
+    mapa = models_map_of(cat)
+    assert mapa["hera_router"][-1] == "prov/modelo-38"
+    passos = [{"id": "a", "title": "t", "instruction": "x", "engine": "hera_router", "model": "prov/modelo-38"}]
+    steps, warnings = orchestration.normalize_steps(passos, ["hera_router"], 8, mapa)
+    assert steps[0]["model"] == "prov/modelo-38" and not any("nao existe" in w for w in warnings)
