@@ -353,6 +353,15 @@ def test_hitl_api_endpoints_integration(test_git_repo: Path, monkeypatch):
     # Fase 3: repo_path precisa estar numa raiz permitida; o repo de teste e temporario.
     import app.server as server_module
     monkeypatch.setattr(server_module, "_allowed_repo_roots", lambda: [server_module.ROOT_DIR, test_git_repo])
+    # O servico HITL do servidor grava a auditoria no cofre REAL do Obsidian. Ate 26/10/2026 cada rodada da suite
+    # deixava la uma nota "Merge Aprovado" de um merge que nao existiu (task-api-1). Aqui o gravador e falso.
+    auditorias = []
+
+    class _GravadorFalso:
+        def record_hitl_merge(self, **kwargs):
+            auditorias.append(kwargs)
+
+    monkeypatch.setattr(server_module.hitl_service, "obsidian_writer", _GravadorFalso())
     client = TestClient(app, base_url=TEST_BASE_URL, headers=AUTH_HEADERS)
     repo_path = str(test_git_repo)
 
@@ -397,6 +406,8 @@ def test_hitl_api_endpoints_integration(test_git_repo: Path, monkeypatch):
     })
     assert resp_approve.status_code == 200
     assert resp_approve.json()["success"] is True
+    # a auditoria foi pedida (ao gravador falso, nunca ao cofre real)
+    assert [a["task_id"] for a in auditorias] == ["task-api-1"]
 
     # 5. GET /api/hitl/worktrees
     resp_wt = client.get("/api/hitl/worktrees")
