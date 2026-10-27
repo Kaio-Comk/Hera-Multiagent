@@ -51,7 +51,7 @@ class RunReporter:
             pct = int((tok / max_tok) * 260)
             svg_bars.append(f"""
               <text x="10" y="{y_offset + 14}" fill="#94a3b8" font-size="12" font-family="sans-serif">{html.escape(eng)} ({tok:,} tok)</text>
-              <rect x="200" y="{y_offset}" width="{pct}" height="18" rx="4" fill="#6366f1" />
+              <rect x="200" y="{y_offset}" width="{pct}" height="18" rx="4" fill="#19b8a4" />
             """)
             y_offset += 32
 
@@ -112,7 +112,7 @@ class RunReporter:
       --border: #1f2937;
       --text: #f3f4f6;
       --text-muted: #94a3b8;
-      --primary: #6366f1;
+      --primary: #19b8a4;
     }}
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{
