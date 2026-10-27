@@ -83,6 +83,8 @@ def executar(arquivo: Path, maximo: int, limite_s: int) -> int:
             falhas += not ok
             texto = "".join(textos.get(sid, [])).strip()
             print(f"\n## {sid} [{e.get('engine')}/{e.get('model')}] {e.get('status')} em {e.get('seconds')}s")
+            if not ok:          # o motivo da falha vem na mensagem do step_end, nao no texto
+                print("MOTIVO:", (e.get("message") or e.get("text") or "?")[:400])
             print(texto[:maximo] + (" […]" if len(texto) > maximo else ""))
     fim = next(e for e in eventos if e.get("kind") == "plan_end")
     print(f"\n{fim.get('done')}/{fim.get('total')} passo(s) ok em {fim.get('seconds')}s")
