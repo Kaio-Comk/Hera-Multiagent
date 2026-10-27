@@ -49,7 +49,7 @@ def test_logo_tem_o_olho_dourado_e_o_h():
 
 
 def test_pagina_usa_favicon_e_marca_sem_coroa_nem_laranja():
-    assert '/static/brand/favicon.svg' in INDEX and '/static/brand/hera-mark.svg' in INDEX
+    assert '/static/brand/favicon.png' in INDEX and '/static/brand/hera-mark-192.png' in INDEX
     assert "👑" not in INDEX and "#e56a4a" not in INDEX.lower() and "#e56a4a" not in CSS.lower()
     assert "👑" not in (ROOT / "main.py").read_text(encoding="utf-8")
     assert "<title>Hera" in INDEX

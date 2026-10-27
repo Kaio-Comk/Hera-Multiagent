@@ -20,9 +20,11 @@
 
 | Arquivo | Uso |
 |---|---|
-| `web/static/brand/hera-mark.svg` | Símbolo (app, avatar, ícone de aba: `favicon.svg`) |
-| `web/static/brand/hera-logo.svg` | Símbolo + "HERA" para fundos **escuros** |
-| `web/static/brand/hera-logo-light.svg` | Idem para fundos **claros** |
+| `web/static/brand/hera-logo-original.jpg` | Logo oficial desde 27/10/2026 (garota com tiara e fone, "HERA"), arquivo original 2048 px |
+| `web/static/brand/hera-logo.png` | Logo completo 1024 px (README, divulgação) |
+| `web/static/brand/hera-mark-512.png`, `hera-mark-192.png` | Símbolo: só o rosto, cantos arredondados (cabeçalho do painel, avatar, apple-touch-icon) |
+| `web/static/brand/favicon.png`, `favicon.ico` | Ícone de aba (64 px; .ico com 16 a 64 px) |
+| `web/static/brand/hera-mark.svg`, `hera-logo.svg`, `hera-logo-light.svg`, `favicon.svg` | Marca ANTIGA (até 27/10/2026), mantida só como histórico |
 | `web/static/brand/hera-mark-mono.svg` | Uma cor (`currentColor`); usar **inline** no HTML |
 
 - **Construção:** quadrado de cantos arredondados (raio 25%) com gradiente teal→azul-petróleo; um **H** em traço grosso (tinta `#04201c`) cuja barra central carrega o **olho** (ouro `#e0a93f`, pupila escura). O H deve continuar legível: a barra aparece dos dois lados do olho.

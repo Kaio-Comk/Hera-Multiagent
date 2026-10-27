@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="web/static/brand/hera-mark.svg" alt="Hera" width="72" height="72">
+<img src="web/static/brand/hera-logo.png" alt="Hera" width="240" height="240">
 
 # HERA
 ### Local AI orchestration, under your control — Windows
