@@ -296,6 +296,36 @@ async def test_api_executar_plano_emite_a_historia_completa(tmp_path, monkeypatc
     assert (tmp_path / "runs" / f"{run_id}.jsonl").is_file()                              # ficou guardado em disco
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pedir_resumo, chamadas", [(None, 1), (True, 1), (False, 0)])
+async def test_api_executar_resumo_final_e_opcional(tmp_path, monkeypatch, pedir_resumo, chamadas):
+    """Quem ja e o planejador (o Claude da sessao) manda final_summary=False: o resumo automatico gastaria o
+    plano do Claude Code a toa. Sem o campo, continua como sempre (resume)."""
+    monkeypatch.setattr(server, "CONSOLE", ConsoleBus(tmp_path / "runs"))
+    fakes = {"ollama": Talker("ollama")}
+    monkeypatch.setattr(server, "adapters", fakes)
+    monkeypatch.setattr(server.router, "adapters", fakes)
+    monkeypatch.setattr(server.router, "disabled", set())
+    monkeypatch.setattr(server.router, "default_offline", False)
+    feitos = []
+
+    async def resumo_falso(goal, report, run_id):
+        feitos.append(run_id)
+        return "resumo"
+
+    monkeypatch.setattr(server, "_final_summary", resumo_falso)
+    body = {"goal": "Teste", "steps": [{"id": "s1", "title": "Falar", "instruction": "fala", "engine": "ollama"}]}
+    if pedir_resumo is not None:
+        body["final_summary"] = pedir_resumo
+    async with client() as c:
+        run_id = (await c.post("/api/orchestration/execute", json=body)).json()["run_id"]
+    for _ in range(80):
+        if any(e["kind"] == "plan_end" for e in server.CONSOLE.events(run=run_id)):
+            break
+        await asyncio.sleep(0.1)
+    assert len(feitos) == chamadas
+
+
 def test_pagina_tem_o_console_e_trata_os_eventos():
     html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
     for needle in ('id="hera-console"', 'id="hc-body"', "function hcAdd(", 'data.type === "console"', "hcInit();", "/api/console/runs"):

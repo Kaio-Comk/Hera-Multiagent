@@ -540,6 +540,9 @@ class PlanExecuteRequest(BaseModel):
     executors: Optional[List[ShortStr]] = Field(default=None, max_length=8)
     # Pasta do projeto onde os passos rodam (precisa estar em `general.allowed_repo_roots`); vazio = esta pasta do Hera.
     project_dir: Optional[Annotated[str, StringConstraints(max_length=500)]] = None
+    # Resumo final pelo planejador (padrao: sim). Quem chama ja e o planejador (ex.: o Claude da sessao do Kaio, que
+    # monta o plano e le os passos) manda False: o resumo automatico gastaria o plano do Claude Code a toa (26/10/2026).
+    final_summary: bool = True
 
 
 def _orchestration_cfg() -> Dict[str, Any]:
@@ -785,12 +788,13 @@ async def cancel_run(run_id: str):
 @app.post("/api/orchestration/execute")
 async def execute_plan(req: PlanExecuteRequest, background_tasks: BackgroundTasks):
     """Executa o plano (revalidado aqui: o corpo e nao confiavel) distribuindo os passos aos motores ligados."""
-    return await _start_run(req.goal, [s.model_dump() for s in req.steps], req.executors, req.project_dir, background_tasks)
+    return await _start_run(req.goal, [s.model_dump() for s in req.steps], req.executors, req.project_dir, background_tasks,
+                            final_summary=req.final_summary)
 
 
 async def _start_run(goal: str, raw_steps: List[Dict[str, Any]], executors_req: Optional[List[str]], project_dir: Optional[str],
                      background_tasks: BackgroundTasks, images: Optional[List[str]] = None, on_finish=None,
-                     extra_project_dirs: Optional[List[str]] = None) -> Dict[str, Any]:
+                     extra_project_dirs: Optional[List[str]] = None, final_summary: bool = True) -> Dict[str, Any]:
     """Valida e enfileira a execucao. `on_finish(report, error)` (async) e chamado ao terminar, para a conversa guardar o resultado."""
     ocfg = _orchestration_cfg()
     executors = _active_executors(executors_req)
@@ -850,7 +854,7 @@ async def _start_run(goal: str, raw_steps: List[Dict[str, Any]], executors_req: 
                              "plano %s passo %s ('%s') motor=%s modelo=%s status=%s%s", run_id, row["id"], row["title"],
                              row["engine"], row["model"], row["status"], f" erro={row['error']}" if row["error"] else "")
             ok_n = sum(1 for r in report if r["status"] == "SUCCEEDED")
-            final = await _final_summary(goal, report, run_id)
+            final = await _final_summary(goal, report, run_id) if final_summary else ""
             CONSOLE.emit("plan_end", f"{ok_n} de {len(report)} passo(s) deram certo.", run=run_id,
                          status="ok" if ok_n == len(report) else "problems", done=ok_n, total=len(report),
                          seconds=round(time.monotonic() - started, 1))
