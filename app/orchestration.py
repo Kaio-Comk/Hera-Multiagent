@@ -177,7 +177,7 @@ SYNTH_STEP_CHARS = 8000
 
 def build_synthesis_prompt(goal: str, report: List[Dict[str, Any]]) -> str:
     """Pedido ao planejador, DEPOIS do plano: sintetizar as saidas reduzidas deterministicamente (Anthropic CMA)."""
-    blocks = [ContextReducer.reduce_step_output_for_synthesis(r) for r in report]
+    blocks = [ContextReducer.reduce_step_output_for_synthesis(r, max_chars=SYNTH_STEP_CHARS) for r in report]
     return (
         "Voce e o PLANEJADOR. Um time de IAs terminou o plano abaixo. Leia TODAS as saidas e entregue ao usuario o RESUMO FINAL, "
         "em portugues, pronto para uso. NAO execute nada e NAO use ferramentas.\n"

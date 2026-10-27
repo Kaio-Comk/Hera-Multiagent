@@ -165,13 +165,13 @@ class ContextReducer:
         output_text = step_result.get("output_text", "")
         artifacts = step_result.get("artifacts", [])
 
-        # Se ja tem sumario conciso, prioriza-lo
-        body = summary.strip() if summary else ""
-        if not body and output_text:
-            # Reduzir texto bruto
-            body = output_text.strip()
-            if len(body) > max_chars:
-                body = body[:max_chars] + "\n[...saida resumida]"
+        # O RESULTADO do passo vem primeiro. Ate 27/10/2026 a ordem era `summary` antes de `output_text`, mas o
+        # `summary` dos motores e uma linha de status ("concluiu a tarefa com sucesso em 15s"): o resumo final
+        # recebia so isso e perdia o conteudo; e o `error` dos passos que falharam nem entrava.
+        error = step_result.get("error", "")
+        body = (output_text or summary or error or "(sem saida)").strip()
+        if len(body) > max_chars:
+            body = body[:max_chars] + "\n[...saida cortada]"
 
         art_text = f" | Artefatos: {', '.join(artifacts)}" if artifacts else ""
         return f"Passo {sid} ({title}) [{status}] via {engine}{art_text}:\n{body}"
