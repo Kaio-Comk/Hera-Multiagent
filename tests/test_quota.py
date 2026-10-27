@@ -115,3 +115,39 @@ def test_bloqueado_parcial_conta_como_bloqueio():
     for texto in ("BLOQUEADO: sem acesso", "BLOQUEADO (parcial): faltou limpar", "**BLOQUEADO** nao deu"):
         assert sched._is_blocked(R(output_text=texto))
     assert not sched._is_blocked(R(output_text="Tudo certo, nada bloqueado."))
+
+def test_parse_ratelimit_headers():
+    from app.quota import parse_ratelimit_headers
+    headers = {
+        "anthropic-ratelimit-requests-remaining": "15",
+        "anthropic-ratelimit-requests-limit": "50",
+        "anthropic-ratelimit-tokens-remaining": "25000",
+        "anthropic-ratelimit-tokens-limit": "100000",
+        "retry-after": "45"
+    }
+    parsed = parse_ratelimit_headers(headers)
+    assert parsed["remaining_requests"] == 15
+    assert parsed["limit_requests"] == 50
+    assert parsed["remaining_tokens"] == 25000
+    assert parsed["limit_tokens"] == 100000
+    assert parsed["reset_seconds"] == 45
+
+
+def test_quota_tracker_predictive_health():
+    q = QuotaTracker()
+    assert q.get_health_status("claude_code") == "healthy"
+
+    # 40% remanescente -> degraded
+    q.record_metrics("claude_code", {
+        "x-ratelimit-remaining-tokens": "40000",
+        "x-ratelimit-limit-tokens": "100000"
+    })
+    assert q.get_health_status("claude_code") == "degraded"
+
+    # 20% remanescente -> survival
+    q.record_metrics("claude_code", {
+        "x-ratelimit-remaining-tokens": "20000",
+        "x-ratelimit-limit-tokens": "100000"
+    })
+    assert q.get_health_status("claude_code") == "survival"
+

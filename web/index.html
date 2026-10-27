@@ -1820,6 +1820,107 @@
     // ---------- plano (cartão editável até o usuário mandar executar)
     function chatEngineModels(engine) { return ((globalHealth || {})[engine] || {}).available_models || []; }
 
+    
+    function renderVisualDAG(steps) {
+      if (!steps || steps.length === 0) return chEl("div");
+      const container = chEl("div", { class: "dag-visualizer p-3 my-2 bg-zinc-950/60 border border-zinc-800 rounded-lg overflow-x-auto" });
+      container.append(chEl("div", { class: "text-xs font-semibold text-zinc-400 mb-2 flex items-center gap-1.5" },
+        chIcon("network", "w-3.5 h-3.5 text-indigo-400"),
+        chEl("span", { text: "Grafo de Dependências (DAG)" })
+      ));
+
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      const nodeWidth = 140, nodeHeight = 44, gapX = 35;
+      const count = steps.length;
+      const totalW = Math.max(420, count * (nodeWidth + gapX) + 40);
+      const totalH = 88;
+      svg.setAttribute("width", "100%");
+      svg.setAttribute("height", totalH);
+      svg.setAttribute("viewBox", `0 0 ${totalW} ${totalH}`);
+      svg.style.minWidth = totalW + "px";
+
+      const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+      const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+      marker.setAttribute("id", "dag-arrow");
+      marker.setAttribute("markerWidth", "6");
+      marker.setAttribute("markerHeight", "6");
+      marker.setAttribute("refX", "6");
+      marker.setAttribute("refY", "3");
+      marker.setAttribute("orient", "auto");
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", "M 0 0 L 6 3 L 0 6 z");
+      path.setAttribute("fill", "#6366f1");
+      marker.appendChild(path);
+      defs.appendChild(marker);
+      svg.appendChild(defs);
+
+      const posMap = {};
+      steps.forEach((st, idx) => {
+        const x = 20 + idx * (nodeWidth + gapX);
+        const y = 22;
+        posMap[st.id || `s${idx+1}`] = { x, y, cx: x + nodeWidth / 2, cy: y + nodeHeight / 2 };
+      });
+
+      steps.forEach(st => {
+        const toId = st.id;
+        const toPos = posMap[toId];
+        (st.depends_on || []).forEach(fromId => {
+          const fromPos = posMap[fromId];
+          if (fromPos && toPos) {
+            const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            line.setAttribute("x1", fromPos.x + nodeWidth);
+            line.setAttribute("y1", fromPos.cy);
+            line.setAttribute("x2", toPos.x - 3);
+            line.setAttribute("y2", toPos.cy);
+            line.setAttribute("stroke", "#6366f1");
+            line.setAttribute("stroke-width", "2");
+            line.setAttribute("stroke-dasharray", "3 3");
+            line.setAttribute("marker-end", "url(#dag-arrow)");
+            svg.appendChild(line);
+          }
+        });
+      });
+
+      steps.forEach((st, idx) => {
+        const p = posMap[st.id || `s${idx+1}`];
+        const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rect.setAttribute("x", p.x);
+        rect.setAttribute("y", p.y);
+        rect.setAttribute("width", nodeWidth);
+        rect.setAttribute("height", nodeHeight);
+        rect.setAttribute("rx", "6");
+        rect.setAttribute("fill", "#18181b");
+        rect.setAttribute("stroke", "#3f3f46");
+        rect.setAttribute("stroke-width", "1.5");
+        g.appendChild(rect);
+
+        const txtTitle = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        txtTitle.setAttribute("x", p.x + 8);
+        txtTitle.setAttribute("y", p.y + 18);
+        txtTitle.setAttribute("fill", "#f4f4f5");
+        txtTitle.setAttribute("font-size", "11");
+        txtTitle.setAttribute("font-weight", "600");
+        const titleStr = st.title || st.name || `Passo ${idx+1}`;
+        txtTitle.textContent = titleStr.length > 18 ? titleStr.substring(0, 16) + '..' : titleStr;
+        g.appendChild(txtTitle);
+
+        const txtSub = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        txtSub.setAttribute("x", p.x + 8);
+        txtSub.setAttribute("y", p.y + 34);
+        txtSub.setAttribute("fill", "#a1a1aa");
+        txtSub.setAttribute("font-size", "9.5");
+        txtSub.textContent = (st.engine || "auto") + (st.model ? ` · ${st.model.substring(0, 10)}` : '');
+        g.appendChild(txtSub);
+
+        svg.appendChild(g);
+      });
+
+      container.appendChild(svg);
+      return container;
+    }
+
     function chatPlanEl(m) {
       const d = m.data || {};
       const status = d.status || "proposed";
@@ -1835,13 +1936,18 @@
         chEl("span", { class: "text-[11px] text-zinc-500", text: p.engine ? `por ${p.engine}${p.model ? " / " + p.model : ""}` : "" }),
         chEl("span", { class: "grow" }), chatBadge(label, tone)));
       (d.warnings || []).forEach(w => card.append(chEl("div", { class: "text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2", text: w })));
+      card.append(renderVisualDAG(steps));
       if (!editable) {
         // plano aprovado: o cartão "some" (fica só uma linha dobrada) e a tela mostra a conversa do que está acontecendo
         const folded = chEl("details", { class: "msg-card plan-folded", "data-mid": m.id },
           chEl("summary", { class: "flex flex-wrap items-center gap-2 cursor-pointer" },
             chIcon("circle-check", "w-4 h-4 text-emerald-400"),
             chEl("b", { class: "text-xs text-white", text: `Plano aprovado · ${steps.length} passo(s)` }),
-            chEl("span", { class: "text-[11px] text-zinc-500", text: "toque para ver os passos" })),
+            chEl("span", { class: "text-[11px] text-zinc-500", text: "toque para ver o grafo e passos" })),
+          renderVisualDAG(steps),
+          ...(d.run_id ? [chEl("div", { class: "flex items-center gap-2 p-2 mb-2 border-b border-zinc-800" },
+            chEl("a", { class: "btn btn-ghost btn-sm text-xs text-brand-300", href: "/api/console/runs/" + d.run_id + "/report", target: "_blank" },
+              chIcon("file-text", "w-3.5 h-3.5 mr-1"), "Abrir Relatório HTML Autocontido"))] : []),
           ...steps.map((st, i) => chatStepEl(m, d, steps, st, i, false)));
         const wrap = chEl("div", { class: "msg msg-ai" }, folded);
         if (status === "running") {

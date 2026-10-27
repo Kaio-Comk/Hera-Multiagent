@@ -1,0 +1,108 @@
+schema_version: 1
+
+defaults:
+  strategy: "balanced"
+  max_parallel_tasks: 2
+  max_plan_steps: 8
+
+quota_policies:
+  healthy:
+    threshold_min_pct: 60
+    action: "maintain_playbook"
+  degraded:
+    threshold_min_pct: 30
+    action: "downgrade_effort"
+    effort_override: "low"
+    worker_override: "gemini-2.5-flash"
+  survival:
+    threshold_min_pct: 0
+    action: "enforce_savings"
+    forced_playbook: "savings"
+
+strategies:
+  savings:
+    description: "Custo zero estrito: modelos locais (Ollama) e tier gratuito (Gemini Flash)"
+    preferred_tiers:
+      - "local"
+      - "free"
+    roles:
+      planner:
+        engine: "antigravity"
+        model: "gemini-2.5-flash"
+        fallback:
+          - "ollama"
+      scout:
+        engine: "ollama"
+        model: "qwen2.5-coder:7b"
+        fallback:
+          - "antigravity"
+      builder:
+        engine: "ollama"
+        model: "qwen2.5-coder:7b"
+        fallback:
+          - "antigravity"
+      reviewer:
+        engine: "antigravity"
+        model: "gemini-2.5-flash"
+        fallback:
+          - "ollama"
+
+  balanced:
+    description: "Equilibrio custo-qualidade: Fronteira para planejamento e Workers intermediarios"
+    preferred_tiers:
+      - "cloud_cheap"
+      - "free"
+      - "local"
+    roles:
+      planner:
+        engine: "antigravity"
+        model: "gemini-3.8-flash-high"
+        fallback:
+          - "claude_code"
+      scout:
+        engine: "antigravity"
+        model: "gemini-2.5-flash"
+        fallback:
+          - "ollama"
+      builder:
+        engine: "hera_router"
+        model: "deepseek-ai/DeepSeek-V4.1-Flash"
+        fallback:
+          - "antigravity"
+      reviewer:
+        engine: "antigravity"
+        model: "gemini-3.8-flash-high"
+        fallback:
+          - "ollama"
+
+  aggressive_quality:
+    description: "Precisao maxima: modelos de fronteira em todas as etapas criticas"
+    preferred_tiers:
+      - "frontier"
+      - "cloud_cheap"
+    roles:
+      planner:
+        engine: "claude_code"
+        model: "claude-3-7-sonnet"
+      scout:
+        engine: "antigravity"
+        model: "gemini-3.8-flash-high"
+      builder:
+        engine: "claude_code"
+        model: "claude-3-7-sonnet"
+      reviewer:
+        engine: "claude_code"
+        model: "claude-3-7-sonnet"
+
+  cascade:
+    description: "Escalonamento linear: tenta local primeiro, escala para flash, escala para fronteira se testes falharem"
+    fallback_strategy: "linear_escalation"
+    chain:
+      - engine: "ollama"
+        model: "qwen2.5-coder:7b"
+      - engine: "antigravity"
+        model: "gemini-2.5-flash"
+      - engine: "hera_router"
+        model: "deepseek-ai/DeepSeek-V4.1-Flash"
+      - engine: "claude_code"
+        model: "claude-3-7-sonnet"

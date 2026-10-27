@@ -647,6 +647,46 @@ async def console_run(run_id: str):
     return {"events": events}
 
 
+@app.get("/api/console/runs/{run_id}/report")
+async def console_run_report(run_id: str):
+    events = await asyncio.to_thread(CONSOLE.read_run, run_id)
+    if not events:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": "Execucao nao encontrada."})
+    from fastapi.responses import HTMLResponse
+    from app.reporter import RunReporter
+    steps_dict = {}
+    run_status = "SUCCEEDED"
+    for e in events:
+        s_id = e.get("step")
+        if s_id:
+            if s_id not in steps_dict:
+                steps_dict[s_id] = {
+                    "id": s_id,
+                    "title": e.get("title", s_id),
+                    "engine": e.get("engine", ""),
+                    "model": e.get("model", ""),
+                    "tokens": 0,
+                    "duration": 0.0,
+                    "status": "RUNNING"
+                }
+            if e.get("kind") == "step_end":
+                steps_dict[s_id]["status"] = e.get("status", "SUCCEEDED")
+                steps_dict[s_id]["tokens"] = e.get("tokens") or 0
+                steps_dict[s_id]["duration"] = e.get("duration") or 0.0
+                if e.get("status") == "FAILED":
+                    run_status = "FAILED"
+            if e.get("kind") == "text":
+                steps_dict[s_id]["output"] = (steps_dict[s_id].get("output", "") + e.get("text", ""))[-2000:]
+    run_data = {
+        "id": run_id,
+        "status": run_status,
+        "created_at": events[0].get("ts") if events else time.time(),
+        "steps": list(steps_dict.values())
+    }
+    html_content = RunReporter.generate_html(run_data)
+    return HTMLResponse(content=html_content)
+
+
 @app.get("/api/orchestration")
 async def get_orchestration():
     """Planejador escolhido, motores ligados e se o modo offline vai forcar tudo para o Ollama."""

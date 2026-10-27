@@ -248,3 +248,13 @@ async def test_api_executar_plano_rejeita_corpo_malformado(api):
         assert (await c.post("/api/orchestration/execute", json={"steps": too_many})).status_code == 422
         huge = [{"instruction": "x" * 10000}]
         assert (await c.post("/api/orchestration/execute", json={"steps": huge})).status_code == 422
+
+def test_command_allowed_fail_closed(monkeypatch):
+    from unittest.mock import MagicMock
+    mock_policy = MagicMock()
+    mock_policy.evaluate_command.side_effect = RuntimeError("Simulated policy crash")
+    monkeypatch.setattr(orchestration, "_POLICY", mock_policy)
+    allowed, reason = orchestration._command_allowed("rm -rf /")
+    assert allowed is False
+    assert "fail-closed" in reason.lower()
+

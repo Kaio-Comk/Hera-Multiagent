@@ -217,6 +217,11 @@ async def main():
     bench_parser.add_argument("--prompt", type=str, default=None, help="Prompt de teste para o benchmark")
 
     # Comando: web
+        # Comando: report
+    report_parser = subparsers.add_parser("report", help="Gerar relatorio HTML offline de uma execucao")
+    report_parser.add_argument("run_id", type=str, help="ID da execucao (ex: run-f08678e9)")
+    report_parser.add_argument("--out", type=str, default=None, help="Caminho do arquivo HTML de saida")
+
     web_parser = subparsers.add_parser("web", help="Iniciar interface Web no navegador")
     web_parser.add_argument("--port", type=int, default=8000, help="Porta do servidor HTTP (padrão: 8000)")
     web_parser.add_argument("--no-browser", action="store_true", help="Não abrir navegador automaticamente")
@@ -326,6 +331,47 @@ async def main():
 
     elif args.command == "benchmark":
         await orchestrator.run_benchmark(model=args.model, prompt=args.prompt)
+
+    elif args.command == "report":
+        from app.console_bus import ConsoleBus
+        from app.reporter import RunReporter
+        from app.security.data_dir import data_dir
+        bus = ConsoleBus(data_dir() / "runs")
+        events = bus.read_run(args.run_id)
+        if not events:
+            print(f"❌ Execucao {args.run_id} nao encontrada.")
+            sys.exit(1)
+        steps_dict = {}
+        run_status = "SUCCEEDED"
+        for e in events:
+            s_id = e.get("step")
+            if s_id:
+                if s_id not in steps_dict:
+                    steps_dict[s_id] = {
+                        "id": s_id,
+                        "title": e.get("title", s_id),
+                        "engine": e.get("engine", ""),
+                        "model": e.get("model", ""),
+                        "tokens": 0,
+                        "duration": 0.0,
+                        "status": "RUNNING"
+                    }
+                if e.get("kind") == "step_end":
+                    steps_dict[s_id]["status"] = e.get("status", "SUCCEEDED")
+                    steps_dict[s_id]["tokens"] = e.get("tokens") or 0
+                    steps_dict[s_id]["duration"] = e.get("duration") or 0.0
+                    if e.get("status") == "FAILED":
+                        run_status = "FAILED"
+                if e.get("kind") == "text":
+                    steps_dict[s_id]["output"] = (steps_dict[s_id].get("output", "") + e.get("text", ""))[-2000:]
+        run_data = {
+            "id": args.run_id,
+            "status": run_status,
+            "created_at": events[0].get("ts") if events else time.time(),
+            "steps": list(steps_dict.values())
+        }
+        out_path = RunReporter.save_report(run_data, args.out)
+        print(f"📊 Relatorio HTML gerado com sucesso: {out_path}")
 
     elif args.command == "web":
         import uvicorn

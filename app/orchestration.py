@@ -7,6 +7,8 @@ Fluxo (duas chamadas, para o humano ver o plano antes de gastar nada):
   3. `build_dag`            -> os passos viram tarefas; o roteador (DLP / modo offline) continua mandando.
 """
 from __future__ import annotations
+from models.plan_contract import PlanContractModel, PlanStepModel
+from app.context_reducer import ContextReducer
 
 import json
 import re
@@ -54,8 +56,8 @@ def _command_allowed(cmd: str) -> Tuple[bool, str]:
         _POLICY = PolicyEngine(str(Path(__file__).resolve().parent.parent / "policies" / "permissions.yaml"))
     try:
         return _POLICY.evaluate_command(cmd, workspace=None)
-    except Exception as exc:        # noqa: BLE001 - na duvida o comando fica e o validador decide
-        return True, str(exc)
+    except Exception as exc:        # fail-closed: erro na politica recusa o comando
+        return False, f"Falha na avaliacao de politica de seguranca (fail-closed): {exc}" 
 
 
 PLAN_STEP_TIMEOUT = 2700
@@ -174,13 +176,8 @@ SYNTH_STEP_CHARS = 8000
 
 
 def build_synthesis_prompt(goal: str, report: List[Dict[str, Any]]) -> str:
-    """Pedido ao planejador, DEPOIS do plano: ler a saida de todos os passos e entregar a resposta final ao usuario."""
-    blocks = []
-    for r in report:
-        body = (r.get("output_text") or r.get("summary") or r.get("error") or "(sem saida)").strip()
-        if len(body) > SYNTH_STEP_CHARS:
-            body = body[:SYNTH_STEP_CHARS] + "\n[...saida cortada]"
-        blocks.append(f"### Passo {r.get('id')}: {r.get('title')} [{r.get('status')}] ({r.get('engine')} {r.get('model')})\n{body}")
+    """Pedido ao planejador, DEPOIS do plano: sintetizar as saidas reduzidas deterministicamente (Anthropic CMA)."""
+    blocks = [ContextReducer.reduce_step_output_for_synthesis(r) for r in report]
     return (
         "Voce e o PLANEJADOR. Um time de IAs terminou o plano abaixo. Leia TODAS as saidas e entregue ao usuario o RESUMO FINAL, "
         "em portugues, pronto para uso. NAO execute nada e NAO use ferramentas.\n"
@@ -362,3 +359,8 @@ def fallback_single_step(goal: str) -> List[Dict[str, Any]]:
     """Se o planejador falhar, o objetivo inteiro vira um unico passo (o roteador escolhe o motor)."""
     text = clean_text(goal, MAX_INSTRUCTION_CHARS)
     return [{"id": "s1", "title": text[:60], "instruction": text, "type": "coding", "engine": "", "model": "", "reason": "", "depends_on": []}]
+
+
+def validate_plan_contract(steps: List[Dict[str, Any]], strategy: str = "balanced") -> PlanContractModel:
+    """Valida formalmente a lista de passos contra o contrato Pydantic PlanContractModel."""
+    return PlanContractModel.model_validate({"strategy": strategy, "steps": steps})
