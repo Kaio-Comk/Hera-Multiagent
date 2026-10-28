@@ -209,7 +209,7 @@ class DAGScheduler:
                             break
                         # o motor (assinatura) bateu no limite de uso: marca como esgotado e refaz o passo em outro motor
                         wait = seconds_until_reset(text)
-                        self.router.quota.mark(adapter.name, wait, text)
+                        self.router.registrar_limite(adapter.name, wait, text)
                         alt = self.router.fallback_adapter(task, adapter.name)
                         minutos = max(1, wait // 60)
                         if alt is None:

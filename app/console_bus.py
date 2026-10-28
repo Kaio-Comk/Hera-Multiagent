@@ -40,7 +40,17 @@ class ConsoleBus:
     # ------------------------------------------------------------------ escrita
     def emit(self, kind: str, text: str = "", *, run: Optional[str] = None, step: Optional[str] = None,
              **meta: Any) -> Dict[str, Any]:
-        clean = PrivacyGuard.sanitize_content(str(text).replace(chr(0), ""))[:MAX_TEXT] if text else ""   # PowerShell devolve UTF-16 (NULs)
+        clean = PrivacyGuard.sanitize_content(str(text).replace(chr(0), "")) if text else ""   # PowerShell devolve UTF-16 (NULs)
+        if kind == "text" and len(clean) > MAX_TEXT:
+            # Resposta longa de um passo: vira varios eventos em ordem, em vez de ser cortada em silencio
+            # (o plano.py junta os eventos do passo; antes ele entregava arquivos e codigo pela metade).
+            evento: Dict[str, Any] = {}
+            for i in range(0, len(clean), MAX_TEXT):
+                evento = self._emitir(kind, clean[i:i + MAX_TEXT], run, step, meta)
+            return evento
+        return self._emitir(kind, clean[:MAX_TEXT], run, step, meta)
+
+    def _emitir(self, kind: str, clean: str, run: Optional[str], step: Optional[str], meta: Dict[str, Any]) -> Dict[str, Any]:
         with self._lock:
             self._seq += 1
             event = {"seq": self._seq, "ts": time.time(), "kind": kind, "run": run, "step": step, "text": clean, **meta}
