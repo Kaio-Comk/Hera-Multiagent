@@ -80,6 +80,7 @@ class Sessao:
 def criar_resumidor(
     cliente: ClienteHera,
     maestro: Maestro | None = None,
+    sistema: str | None = None,
 ) -> Callable[[str], Awaitable[str]]:
     '''Cria funcao de resumo usando modelo leve do maestro ou modelo atual.'''
 
@@ -104,7 +105,7 @@ def criar_resumidor(
             msgs = [
                 {
                     'role': 'system',
-                    'content': 'Resuma em ate 12 linhas o trabalho abaixo, mantendo decisoes, arquivos tocados e pendencias.',
+                    'content': sistema or 'Resuma em ate 12 linhas o trabalho abaixo, mantendo decisoes, arquivos tocados e pendencias.',
                 },
                 {'role': 'user', 'content': texto},
             ]

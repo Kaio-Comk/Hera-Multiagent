@@ -88,7 +88,27 @@ def executar(arquivo: Path, maximo: int, limite_s: int) -> int:
             print(texto[:maximo] + (" […]" if len(texto) > maximo else ""))
     fim = next(e for e in eventos if e.get("kind") == "plan_end")
     print(f"\n{fim.get('done')}/{fim.get('total')} passo(s) ok em {fim.get('seconds')}s")
+    _aprender(plano, eventos, falhas == 0)
     return 0 if falhas == 0 else 1
+
+
+def _aprender(plano: dict, eventos: list, sucesso: bool) -> None:
+    """Registra a execucao para propor playbooks (so propoe; ativar exige `hera playbooks aprovar`)."""
+    try:
+        sys.path.insert(0, str(RAIZ))
+        from app.memory.playbooks_aprendidos import PlaybooksAprendidos
+        titulos = {s.get("id"): s.get("title", "") for s in plano.get("steps", [])}
+        tipos = sorted({s.get("type", "") for s in plano.get("steps", []) if s.get("type")})
+        passos = [{"engine": e.get("engine") or "", "model": e.get("model") or "", "titulo": titulos.get(e.get("step"), "")}
+                  for e in eventos if e.get("kind") == "step_end"]
+        if not passos:
+            return
+        pid = PlaybooksAprendidos(Path.home() / ".hera" / "playbooks_aprendidos.json").registrar(
+            plano.get("tipo_tarefa") or "+".join(tipos) or "geral", passos, sucesso)
+        if pid:
+            print(f"PLAYBOOK: proposta {pid} criada (3 execucoes iguais). Veja: python main.py playbooks list")
+    except Exception as exc:  # aprender nunca pode derrubar o plano
+        print(f"(playbooks: nao registrou: {exc})")
 
 
 def main() -> int:

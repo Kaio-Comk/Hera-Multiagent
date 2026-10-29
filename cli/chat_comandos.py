@@ -222,6 +222,7 @@ class Comandos:
         '/resume',
         '/listar',
         '/memory',
+        '/lembrar',
         '/skills',
         '/cost',
         '/instrucoes',
@@ -242,6 +243,7 @@ class Comandos:
         maestro: Any | None = None,
         janela: int = 32000,
         resumir: Any | None = None,
+        extrator: Any | None = None,
     ) -> None:
         self.cliente = cliente
         self.estado = estado
@@ -251,6 +253,8 @@ class Comandos:
         self.maestro = maestro
         self.janela = janela
         self.resumir = resumir
+        self.extrator = extrator
+        self._propostas: list[Any] = []
 
     def _obter_skills(self) -> list[Any]:
         if self._skills is not None:
@@ -308,6 +312,7 @@ class Comandos:
                     '/resume [ref] - Retoma uma conversa salva.',
                     '/listar - Lista conversas salvas.',
                     '/memory [consulta] - Consulta ou lista a memoria.',
+                    '/lembrar [sim [numeros]|nao] - Propoe notas da conversa para a memoria; so grava o que voce aprovar.',
                     '/skills - Mostra as skills disponiveis.',
                     '/cost - Mostra o custo da sessao.',
                     '/instrucoes - Lista os arquivos de instrucoes carregados.',
@@ -510,6 +515,52 @@ class Comandos:
                         escrever(f'{res.nome} [{res.tipo}] {res.trecho}\n')
                 finally:
                     index.close()
+                return None
+
+            if cmd == '/lembrar':
+                from app.memory.resumo import propor_resumo_async, salvar_aprovadas
+
+                pasta = self.pasta_memoria if self.pasta_memoria is not None else pasta_padrao()
+                palavras = arg.lower().split()
+                if palavras and palavras[0] in ('nao',):
+                    self._propostas = []
+                    escrever('Propostas descartadas.\n')
+                    return None
+                if palavras and palavras[0] in ('sim', 's'):
+                    if not self._propostas:
+                        escrever('Nao ha propostas. Use /lembrar primeiro.\n')
+                        return None
+                    escolhidas = {int(x) for x in palavras[1:] if x.isdigit()}
+                    pasta.mkdir(parents=True, exist_ok=True)
+                    numeradas = {id(p): i for i, p in enumerate(self._propostas, 1)}
+                    rel = salvar_aprovadas(
+                        MemoryStore(pasta),
+                        self._propostas,
+                        lambda p: not escolhidas or numeradas[id(p)] in escolhidas,
+                    )
+                    self._propostas = []
+                    escrever(
+                        f"Salvas: {', '.join(rel['salvas']) or 'nenhuma'}. "
+                        f"Puladas (ja existiam): {', '.join(rel['puladas']) or 'nenhuma'}.\n"
+                    )
+                    return None
+                if not sessao.mensagens:
+                    escrever('Nenhuma mensagem para resumir.\n')
+                    return None
+                from cli.chat_repl import criar_resumidor
+
+                chamar = self.extrator or criar_resumidor(
+                    self.cliente, self.maestro,
+                    sistema='Responda somente com JSON valido, sem texto fora do JSON.',
+                )
+                self._propostas = await propor_resumo_async(sessao.mensagens, chamar)
+                if not self._propostas:
+                    escrever('Nada duradouro para lembrar nesta conversa.\n')
+                    return None
+                escrever('Previa do que seria salvo na memoria (nada foi gravado):\n')
+                for i, p in enumerate(self._propostas, 1):
+                    escrever(f'{i}. {p.nome} [{p.tipo}] {p.descricao}\n   {p.corpo[:200]}\n')
+                escrever('Para gravar: /lembrar sim (todas) ou /lembrar sim 1 3. Para descartar: /lembrar nao.\n')
                 return None
 
             if cmd == '/skills':
