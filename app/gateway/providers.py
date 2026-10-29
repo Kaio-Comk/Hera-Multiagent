@@ -3,6 +3,7 @@
 Normaliza requisições e respostas entre Ollama local e provedores cloud compatíveis com OpenAI.
 """
 
+import asyncio
 import json
 import time
 import uuid
@@ -19,6 +20,8 @@ from app.gateway.schemas import (
 )
 from app.gateway.provider_policy import prefer_ipv4_loopback, validate_provider_url
 from app.gateway.key_manager import KeyManager, NoKeyAvailableError, parse_retry_after
+
+RETRY_5XX_DELAY = 2.0          # segundos antes de repetir um 502/503/504 (uma vez por chamada)
 
 _DURATION = __import__("re").compile(r"(\d+(?:\.\d+)?)(ms|h|m|s)")
 
@@ -336,7 +339,8 @@ class CloudOpenAIGatewayAdapter(BaseGatewayAdapter):
         url = f"{self.base_url}{path}"
         last_error: Optional[GatewayProviderError] = None
         prepare = getattr(self.key_manager, "prepare", None)      # OAuth: renova o token se estiver vencendo
-        for _ in range(max(1, len(self.key_manager))):
+        repetiu_5xx = False
+        for _ in range(max(1, len(self.key_manager)) + 1):          # +1: a repeticao de um 5xx passageiro
             if prepare is not None:
                 await prepare(client)
             try:
@@ -390,10 +394,16 @@ class CloudOpenAIGatewayAdapter(BaseGatewayAdapter):
                     f"Provedor {self.name} recusou a chave {lease.key_id} (HTTP {resp.status_code}); chave desativada",
                     status_code=resp.status_code, retryable=True)   # retryable: o roteador cai para o próximo provedor
                 continue
-            raise GatewayProviderError(
+            erro = GatewayProviderError(
                 f"Provedor {self.name} retornou HTTP {resp.status_code}",
                 status_code=resp.status_code,
                 retryable=resp.status_code in (500, 502, 503, 504))
+            if resp.status_code in (502, 503, 504) and not repetiu_5xx:
+                repetiu_5xx = True                       # sobrecarga passageira (River 503): uma nova tentativa
+                last_error = erro
+                await asyncio.sleep(RETRY_5XX_DELAY)
+                continue
+            raise erro
         raise last_error or GatewayProviderError(f"Falha desconhecida com {self.name}", status_code=502, retryable=True)
 
     def _payload(self, request: ChatCompletionRequest, stream: bool) -> Dict[str, Any]:

@@ -147,7 +147,8 @@ async def test_linhas_de_comentario_e_lixo_do_sse_sao_ignoradas():
 
 # ── pré-voo e fallback ─────────────────────────────────────────────────────────
 @pytest.mark.asyncio
-async def test_falha_antes_do_primeiro_dado_faz_fallback_para_o_proximo_provedor():
+async def test_falha_antes_do_primeiro_dado_faz_fallback_para_o_proximo_provedor(monkeypatch):
+    monkeypatch.setattr("app.gateway.providers.RETRY_5XX_DELAY", 0.0)
     log = []
 
     async def handler(r):
@@ -159,7 +160,7 @@ async def test_falha_antes_do_primeiro_dado_faz_fallback_para_o_proximo_provedor
     router = TierRouter(adapters=[cloud(), OllamaGatewayAdapter()])
     async with client_for(handler) as http:
         events = await collect(await router.route_and_stream(req("default"), http))
-    assert log == ["cloud", "ollama"] and text_of(events) == "do local"
+    assert log == ["cloud", "cloud", "ollama"] and text_of(events) == "do local"      # 503 repetido 1x antes do fallback
     assert router.telemetry.recent(1)[0]["attempts"] == 2 and router.telemetry.summary()["fallbacks"] == 1
 
 
