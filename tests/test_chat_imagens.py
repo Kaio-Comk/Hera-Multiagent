@@ -275,5 +275,5 @@ def test_dois_caminhos_sem_aspas_nao_se_misturam(tmp_path):
 
 
 def test_caminho_que_nao_e_imagem_fica_como_esta(tmp_path):
-    texto, imgs, avisos = extrair_imagens(r'abra C:\Users\x\notas.txt e C:\Users\y\z.png2', tmp_path)
-    assert imgs == [] and avisos == [] and texto == r'abra C:\Users\x\notas.txt e C:\Users\y\z.png2'
+    texto, imgs, avisos = extrair_imagens(r'abra C:\pasta\x\notas.txt e C:\pasta\y\z.png2', tmp_path)
+    assert imgs == [] and avisos == [] and texto == r'abra C:\pasta\x\notas.txt e C:\pasta\y\z.png2'
