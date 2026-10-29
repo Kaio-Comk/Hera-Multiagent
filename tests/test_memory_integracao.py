@@ -114,3 +114,52 @@ def test_valores_falsos_mantem_desligado(tmp_path: Path, valor: str) -> None:
     )
     assert out == ''
     assert not (pasta / '.indice.sqlite').exists()
+
+
+# ---- injecao nos passos do servidor/DAG (planos do Claude e painel) ------------------------------------------------
+
+def _pasta_com_nota(tmp_path):
+    pasta = tmp_path / 'mem'
+    MemoryStore(pasta).save('preferencia-testes', 'como testar', 'usuario', 'sempre escrever o teste antes do codigo')
+    return pasta
+
+
+def test_injeta_memoria_nos_passos_so_quando_ligado(tmp_path):
+    from app.memory.integracao import injetar_memoria_nos_passos
+    pasta = _pasta_com_nota(tmp_path)
+    passos = [{'id': 'a', 'instruction': 'preciso de testes para o modulo'}]
+    assert injetar_memoria_nos_passos(passos, environ={}, pasta=pasta) == 0
+    assert passos[0]['instruction'] == 'preciso de testes para o modulo'
+    assert injetar_memoria_nos_passos(passos, environ={'HERA_MEMORY_SNAPSHOT': '1'}, pasta=pasta) == 1
+    assert 'sempre escrever o teste antes do codigo' in passos[0]['instruction']
+    assert passos[0]['instruction'].endswith('preciso de testes para o modulo')      # a tarefa original fica inteira, no fim
+
+
+def test_injecao_respeita_o_limite_de_instrucao_e_preserva_a_tarefa(tmp_path):
+    from app.memory.integracao import injetar_memoria_nos_passos
+    pasta = _pasta_com_nota(tmp_path)
+    tarefa = 'testes ' + 'x' * 3900
+    passos = [{'id': 'a', 'instruction': tarefa}]
+    injetar_memoria_nos_passos(passos, environ={'HERA_MEMORY_SNAPSHOT': '1'}, pasta=pasta, max_total=4000)
+    assert len(passos[0]['instruction']) <= 4000 and passos[0]['instruction'].endswith(tarefa)
+
+
+def test_sem_espaco_para_a_memoria_nao_mexe_no_passo(tmp_path):
+    from app.memory.integracao import injetar_memoria_nos_passos
+    pasta = _pasta_com_nota(tmp_path)
+    tarefa = 'testes ' + 'x' * 3990
+    passos = [{'id': 'a', 'instruction': tarefa}]
+    assert injetar_memoria_nos_passos(passos, environ={'HERA_MEMORY_SNAPSHOT': '1'}, pasta=pasta, max_total=4000) == 0
+    assert passos[0]['instruction'] == tarefa
+
+
+def test_injecao_nunca_levanta_e_ignora_passos_estranhos(tmp_path):
+    from app.memory.integracao import injetar_memoria_nos_passos
+    passos = [{'id': 'a'}, 'texto', None, {'id': 'b', 'instruction': ''}]
+    assert injetar_memoria_nos_passos(passos, environ={'HERA_MEMORY_SNAPSHOT': '1'}, pasta=tmp_path / 'nao-existe') == 0
+
+
+def test_servidor_chama_a_injecao_depois_de_normalizar_os_passos():
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent / 'app' / 'server.py').read_text(encoding='utf-8')
+    assert src.index('orchestration.normalize_steps(raw_steps') < src.index('injetar_memoria_nos_passos(steps)')

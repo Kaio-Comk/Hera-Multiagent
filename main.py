@@ -21,7 +21,7 @@ from app.benchmark import LocalBenchmark
 from adapters.ollama import OllamaAdapter
 from adapters.claude_code import ClaudeCodeAdapter
 from adapters.antigravity import AntigravityAdapter
-from cli import memory_cmd, chat_cmd
+from cli import memory_cmd, chat_cmd, providers_cmd, skills_cmd
 from app.memory.integracao import contexto_da_memoria
 
 class MultiagentOrchestrator:
@@ -220,6 +220,12 @@ async def main():
     # Comando: chat (conversa continua no terminal, ver cli/chat_cmd.py)
     chat_cmd.registrar(subparsers)
 
+    # Comando: providers (conectar e gerir provedores de modelos no terminal, ver cli/providers_cmd.py)
+    providers_cmd.registrar(subparsers)
+
+    # Comando: skills (listar, importar do Claude e ver skills SKILL.md, ver cli/skills_cmd.py)
+    skills_cmd.registrar(subparsers)
+
     # Comando: list
     subparsers.add_parser("list", help="Listar histórico recente de tarefas no SQLite")
     subparsers.add_parser("approval-code", help="Mostrar o código de aprovação humana atual (HITL / MCP)")
@@ -252,6 +258,10 @@ async def main():
         sys.exit(memory_cmd.executar(args))
     if args.command == "chat":
         sys.exit(await chat_cmd.executar(args))
+    if args.command == "providers":
+        sys.exit(providers_cmd.executar(args))
+    if args.command == "skills":
+        sys.exit(skills_cmd.executar(args))
 
     orchestrator = MultiagentOrchestrator()
 

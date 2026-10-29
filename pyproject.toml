@@ -37,8 +37,12 @@ dev = [
 py-modules = ["main"]
 
 [tool.setuptools.packages.find]
-include = ["app*", "adapters*", "models*", "cli*"]
+include = ["app*", "adapters*", "models*", "cli*", "policies*", "web*"]
 namespaces = true
+
+[tool.setuptools.package-data]
+# politicas (yaml) e interface web (html/css/js/fontes/imagens) viajam dentro do pacote instalado
+"*" = ["*.yaml", "*.html", "*.css", "*.js", "*.woff2", "*.svg", "*.png", "*.jpg", "*.ico", "*.txt"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

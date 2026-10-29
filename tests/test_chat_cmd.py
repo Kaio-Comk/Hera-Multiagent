@@ -81,7 +81,7 @@ def test_garantir_servidor_sobe_na_terceira() -> None:
     )
     assert len(iniciados) == 1
     comando, cwd = iniciados[0]
-    assert comando[1:] == ['main.py', 'web', '--no-browser']
+    assert comando[1:] == ['-m', 'main', 'web', '--no-browser']      # como modulo: funciona instalado e no checkout
     assert cwd == raiz
 
 
@@ -187,7 +187,10 @@ def test_registrar_cria_subcomando() -> None:
     chat_cmd.registrar(subparsers)
 
     args = parser.parse_args(['chat'])
-    assert args.modelo == 'default'
+    assert args.modelo is None
+    assert args.sem_maestro is False
+    assert args.perfil is None
+    assert args.janela == 32000
     assert args.url == 'http://127.0.0.1:8000'
     assert args.func is chat_cmd.executar
 
@@ -280,3 +283,225 @@ async def test_conversa_nova_so_e_criada_no_primeiro_turno() -> None:
                             token_de=lambda r: 't', sessoes_de=lambda: falsas)
     assert falsas.criadas == 1
     assert falsas.turnos == [('c-nova-1', 'a', 'b'), ('c-nova-1', 'c', 'd')]
+
+
+# ---- agente de codigo -----------------------------------------------------------------------------------------------
+
+def test_registrar_aceita_agente_e_modo() -> None:
+    parser = argparse.ArgumentParser()
+    chat_cmd.registrar(parser.add_subparsers())
+
+    args_padrao = parser.parse_args(['chat'])
+    assert args_padrao.agente is False
+    assert args_padrao.modo == 'guarded'
+
+    args_agente = parser.parse_args(['chat', '--agente', '--modo', 'workspace'])
+    assert args_agente.agente is True
+    assert args_agente.modo == 'workspace'
+
+    args_ro = parser.parse_args(['chat', '--agente', '--modo', 'read-only'])
+    assert args_ro.agente is True
+    assert args_ro.modo == 'read-only'
+
+
+async def test_executar_sem_agente_passa_agente_cfg_none() -> None:
+    recebido: dict = {}
+
+    async def principal(*a, **kw):
+        recebido.update(kw)
+
+    args = argparse.Namespace(
+        url='http://127.0.0.1:8000',
+        modelo='default',
+        resume=None,
+        listar=False,
+        agente=False,
+        modo='guarded',
+    )
+    codigo = await chat_cmd.executar(
+        args,
+        raiz=Path('.'),
+        garantir=lambda u, r: True,
+        principal=principal,
+        token_de=lambda r: 't',
+    )
+    assert codigo == 0
+    assert recebido.get('agente_cfg') is None
+
+
+async def test_executar_com_agente_monta_config_agente(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    recebido: dict = {}
+
+    async def principal(*a, **kw):
+        recebido.update(kw)
+
+    args = argparse.Namespace(
+        url='http://127.0.0.1:8000',
+        modelo='default',
+        resume=None,
+        listar=False,
+        agente=True,
+        modo='workspace',
+    )
+    codigo = await chat_cmd.executar(
+        args,
+        raiz=Path('.'),
+        garantir=lambda u, r: True,
+        principal=principal,
+        token_de=lambda r: 't',
+    )
+    assert codigo == 0
+    cfg = recebido.get('agente_cfg')
+    assert cfg is not None
+    assert cfg.modo == 'workspace'
+    assert cfg.escrita.modo == 'workspace'
+    assert cfg.raiz.pasta == tmp_path.resolve()
+    assert 'ferramentas para ler antes de editar' in recebido.get('sistema', '')
+    assert 'executar_comando' in recebido.get('sistema', '')
+
+
+async def test_executar_com_agente_cfg_injetado() -> None:
+    from cli.chat_comandos import ConfigAgente
+
+    cfg_injetado = ConfigAgente(
+        raiz=Path('.'),
+        checkpoints=object(),
+        leitura=object(),
+        escrita=object(),
+        modo='read-only',
+    )
+    recebido: dict = {}
+
+    async def principal(*a, **kw):
+        recebido.update(kw)
+
+    args = argparse.Namespace(
+        url='http://127.0.0.1:8000',
+        modelo='default',
+        resume=None,
+        listar=False,
+        agente=False,
+        modo='guarded',
+    )
+    codigo = await chat_cmd.executar(
+        args,
+        raiz=Path('.'),
+        garantir=lambda u, r: True,
+        principal=principal,
+        token_de=lambda r: 't',
+        agente_cfg=cfg_injetado,
+    )
+    assert codigo == 0
+    assert recebido.get('agente_cfg') is cfg_injetado
+    assert 'ferramentas para ler antes de editar' in recebido.get('sistema', '')
+
+
+# ---- opcoes maestro e janela ----------------------------------------------------------------------------------------
+
+def test_registrar_opcoes_maestro_e_janela() -> None:
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers()
+    chat_cmd.registrar(subparsers)
+
+    args = parser.parse_args(
+        ['chat', '--modelo', 'gpt-4o', '--sem-maestro', '--perfil', 'economico', '--janela', '16000']
+    )
+    assert args.modelo == 'gpt-4o'
+    assert args.sem_maestro is True
+    assert args.perfil == 'economico'
+    assert args.janela == 16000
+
+
+async def test_executar_com_modelo_forcado_no_maestro() -> None:
+    recebido: dict = {}
+
+    async def principal(*a, **kw) -> None:
+        recebido.update(kw)
+
+    args = argparse.Namespace(
+        url='http://127.0.0.1:8000',
+        modelo='gpt-4o-mini',
+        sem_maestro=False,
+        perfil=None,
+        janela=32000,
+        resume=None,
+        listar=False,
+        agente=False,
+        modo='guarded',
+    )
+    codigo = await chat_cmd.executar(
+        args,
+        raiz=Path('.'),
+        garantir=lambda u, r: True,
+        principal=principal,
+        token_de=lambda r: 'tok',
+    )
+    assert codigo == 0
+    maestro = recebido.get('maestro')
+    assert maestro is not None
+    assert maestro.forcado == 'gpt-4o-mini'
+    assert maestro.ativo is True
+
+
+async def test_executar_com_sem_maestro() -> None:
+    recebido: dict = {}
+
+    async def principal(*a, **kw) -> None:
+        recebido.update(kw)
+
+    args = argparse.Namespace(
+        url='http://127.0.0.1:8000',
+        modelo=None,
+        sem_maestro=True,
+        perfil=None,
+        janela=32000,
+        resume=None,
+        listar=False,
+        agente=False,
+        modo='guarded',
+    )
+    codigo = await chat_cmd.executar(
+        args,
+        raiz=Path('.'),
+        garantir=lambda u, r: True,
+        principal=principal,
+        token_de=lambda r: 'tok',
+    )
+    assert codigo == 0
+    maestro = recebido.get('maestro')
+    assert maestro is not None
+    assert maestro.ativo is False
+
+
+async def test_executar_com_perfil_e_janela() -> None:
+    recebido: dict = {}
+
+    async def principal(*a, **kw) -> None:
+        recebido.update(kw)
+
+    args = argparse.Namespace(
+        url='http://127.0.0.1:8000',
+        modelo=None,
+        sem_maestro=False,
+        perfil='qualidade',
+        janela=16000,
+        resume=None,
+        listar=False,
+        agente=False,
+        modo='guarded',
+    )
+    codigo = await chat_cmd.executar(
+        args,
+        raiz=Path('.'),
+        garantir=lambda u, r: True,
+        principal=principal,
+        token_de=lambda r: 'tok',
+    )
+    assert codigo == 0
+    maestro = recebido.get('maestro')
+    assert maestro is not None
+    assert maestro.perfil == 'qualidade'
+    assert recebido.get('janela') == 16000

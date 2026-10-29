@@ -422,6 +422,14 @@ async def test_erro_400_nao_e_repetido(monkeypatch):
 
 
 def test_river_tem_prazo_para_modelo_que_pensa_antes_de_responder():
+    # O River e um provedor PRIVADO do dono (fica no config.yaml, que nao e versionado): sem ele (CI, outra maquina) nao ha o que checar.
+    import pathlib
     import yaml
-    cfg = yaml.safe_load(open("config.yaml", encoding="utf-8"))
-    assert cfg["providers"]["river"]["timeout"] >= 180      # GLM levou 55 s num modulo pequeno; 60 s estourava (ReadTimeout)
+    caminho = pathlib.Path("config.yaml")
+    if not caminho.exists():
+        pytest.skip("config.yaml local ausente")
+    cfg = yaml.safe_load(open(caminho, encoding="utf-8"))
+    river = (cfg.get("providers") or {}).get("river")
+    if river is None:
+        pytest.skip("provedor 'river' nao configurado nesta maquina")
+    assert river["timeout"] >= 180      # GLM levou 55 s num modulo pequeno; 60 s estourava (ReadTimeout)

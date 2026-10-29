@@ -6,7 +6,7 @@
 ### Local AI orchestration, under your control — Windows
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12%2B-blue.svg?logo=python&logoColor=white)](https://python.org)
-[![Tests](https://img.shields.io/badge/Tests-1048%20passing%20%7C%201%20skipped-success.svg?logo=pytest&logoColor=white)](https://github.com/Kaio-Comk/hera-multiagent)
+[![Tests](https://img.shields.io/badge/Tests-1973%20passing%20%7C%201%20skipped-success.svg?logo=pytest&logoColor=white)](https://github.com/Kaio-Comk/hera-multiagent)
 [![Architecture](https://img.shields.io/badge/Architecture-DAG%20%7C%20FastAPI%20%7C%20WebSockets-orange.svg)](https://github.com/Kaio-Comk/hera-multiagent)
 [![Interface](https://img.shields.io/badge/Interface-Web%20%7C%20Desktop%20GUI-blueviolet.svg)](https://github.com/Kaio-Comk/hera-multiagent)
 [![Gateway](https://img.shields.io/badge/Gateway-OpenAI%20%28%2Fv1%29%20%7C%20RTK%20Token%20Saver-green.svg)](https://github.com/Kaio-Comk/hera-multiagent)
@@ -359,7 +359,40 @@ An MCP server is **code**, so the flow is deliberately gated by the [human appro
 
 Servers are closed when Hera shuts down; `GET /api/mcp/servers` never returns env var values.
 
+## 💬 Terminal chat
+
+`hera chat` opens a continuous conversation in the terminal. If the local server is off, it starts it automatically.
+
+```text
+hera chat
+hera chat --agente
+hera chat --modo guarded
+hera chat --modelo gpt-4o-mini
+hera chat --perfil economico
+hera chat --resume
+hera chat --listar
+```
+
+The Maestro is on by default: it classifies each request as light, medium, or heavy using local rules and picks the model for that tier. You can force a model with `--modelo` or `/model nome`, return to automatic with `/model auto`, turn it off with `/maestro off`, and change the profile with `/perfil`.
+
+Useful commands: `/help`, `/clear`, `/model`, `/resume`, `/listar`, `/memory`, `/skills`, `/cost`, `/compact`, `/maestro`, `/perfil`, `/rollback`, `/checkpoints`, `/modo`, `/exit`.
+
+With `--agente`, the code agent shows diffs and asks for approval before applying changes. Checkpoints are stored in `~/.hera/checkpoints`, and `/rollback` undoes without deleting later edits.
+
+See the full guide: [docs/CHAT.en.md](docs/CHAT.en.md).
+
+---
+
 ## 🚀 Quickstart
+
+### Option A: install as a command (recommended for users)
+```powershell
+pipx install git+https://github.com/Kaio-Comk/Hera-Multiagent.git
+hera chat
+```
+Installed this way, Hera keeps its data (database, token, `config.yaml`) in `%USERPROFILE%\.hera`, never inside the package folder. Set `HERA_HOME` to move it. Upgrading the package does not touch your data. Windows only for now.
+
+### Option B: from source (for contributors)
 
 ### 1. Clone & Setup
 ```powershell

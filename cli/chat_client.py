@@ -23,7 +23,8 @@ def ler_token(raiz: Path, environ: Optional[Mapping[str, str]] = None) -> str:
     token = env.get('HERA_API_KEY', '')
     if token and token.strip():
         return token.strip()
-    caminho = Path(raiz) / 'data' / '.hera_token'
+    fixa = (env.get('HERA_DATA_DIR') or '').strip()      # a mesma pasta em que o servidor grava o token
+    caminho = (Path(fixa) if fixa else Path(raiz) / 'data') / '.hera_token'
     if caminho.is_file():
         conteudo = caminho.read_text(encoding='utf-8').strip()
         if conteudo:
@@ -57,6 +58,51 @@ class ClienteHera:
             transport=self._transporte,
             timeout=self._timeout,
         )
+
+    async def modelos(self) -> list[str]:
+        '''Obtem os identificadores de modelos disponiveis no servidor.'''
+        url = f'{self.base_url}/v1/models'
+        cabecalhos = {
+            'Authorization': f'Bearer {self.token}',
+        }
+        try:
+            async with self._montar_cliente() as cliente:
+                resposta = await cliente.get(url, headers=cabecalhos)
+                if resposta.status_code >= 400:
+                    raise ErroDoServidor(
+                        resposta.status_code, await self._ler_erro(resposta)
+                    )
+                dados = resposta.json()
+                itens = dados.get('data', []) if isinstance(dados, dict) else []
+                return [
+                    item['id']
+                    for item in itens
+                    if isinstance(item, dict) and 'id' in item
+                ]
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            raise ErroDoServidor(
+                0, f'Servidor do Hera fora do ar em {self.base_url}'
+            ) from exc
+
+    async def uso(self, dias: int = 1) -> dict:
+        '''Consulta as estatisticas de uso e custo do roteador.'''
+        url = f'{self.base_url}/api/router/usage?days={dias}'
+        cabecalhos = {
+            'X-Hera-Token': self.token,
+        }
+        try:
+            async with self._montar_cliente() as cliente:
+                resposta = await cliente.get(url, headers=cabecalhos)
+                if resposta.status_code >= 400:
+                    raise ErroDoServidor(
+                        resposta.status_code, await self._ler_erro(resposta)
+                    )
+                dados = resposta.json()
+                return dados if isinstance(dados, dict) else {}
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            raise ErroDoServidor(
+                0, f'Servidor do Hera fora do ar em {self.base_url}'
+            ) from exc
 
     async def conversar(self, mensagens: Iterable[dict]) -> AsyncIterator[str]:
         '''Envia mensagens e produz os pedacos de texto da resposta.'''

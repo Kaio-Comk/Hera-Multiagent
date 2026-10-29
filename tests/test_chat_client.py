@@ -153,3 +153,49 @@ def test_ler_token_ausente(tmp_path: Path) -> None:
         ler_token(tmp_path, environ={})
     assert info.value.status == 0
     assert 'Token do Hera nao encontrado' in info.value.mensagem
+
+
+# ---- testes de uso / custo ------------------------------------------------------------------------------------------
+
+async def test_uso_sucesso_envia_cabecalho_e_parametro() -> None:
+    capturado: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        capturado['url'] = str(request.url)
+        capturado['token'] = request.headers.get('X-Hera-Token')
+        return httpx.Response(200, json={'totals': {'requests': 5, 'tokens': 200, 'cost': 0.01}})
+
+    cliente = ClienteHera(
+        'http://teste:8000', 'meu-token',
+        transporte=httpx.MockTransport(handler),
+    )
+    dados = await cliente.uso(dias=7)
+    assert capturado['url'] == 'http://teste:8000/api/router/usage?days=7'
+    assert capturado['token'] == 'meu-token'
+    assert dados['totals']['requests'] == 5
+
+
+async def test_uso_erro_400_levanta_erro_do_servidor() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={'detail': 'sem permissao'})
+
+    cliente = ClienteHera(
+        'http://teste', 'tok', transporte=httpx.MockTransport(handler)
+    )
+    with pytest.raises(ErroDoServidor) as info:
+        await cliente.uso(1)
+    assert info.value.status == 403
+    assert info.value.mensagem == 'sem permissao'
+
+
+async def test_uso_erro_conexao_levanta_erro_do_servidor() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError('conexao recusada')
+
+    cliente = ClienteHera(
+        'http://teste', 'tok', transporte=httpx.MockTransport(handler)
+    )
+    with pytest.raises(ErroDoServidor) as info:
+        await cliente.uso(1)
+    assert info.value.status == 0
+    assert 'fora do ar' in info.value.mensagem

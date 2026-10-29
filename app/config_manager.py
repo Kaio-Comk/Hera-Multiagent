@@ -85,7 +85,8 @@ class ConfigManager:
         if config_path:
             self.config_path = Path(config_path)
         else:
-            self.config_path = Path(__file__).resolve().parent.parent / "config.yaml"
+            from app.paths import config_path as _config_path      # checkout => <projeto>/config.yaml; instalado => ~/.hera/config.yaml
+            self.config_path = _config_path()
         self._ensure_config()
 
     def _ensure_config(self):
