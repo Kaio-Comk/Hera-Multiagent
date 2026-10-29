@@ -268,8 +268,6 @@ async def executar(
         )
         estado.instrucoes = instrucoes
         total = len(instrucoes.fontes)
-        if total > 0:
-            print(f'Instrucoes carregadas: {total} arquivo(s)')
         for av in instrucoes.avisos:
             print(f'Aviso: {av}')
     except Exception as exc:

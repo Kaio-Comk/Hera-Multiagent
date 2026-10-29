@@ -436,7 +436,7 @@ async def test_principal_com_agente_cfg(
         agente_cfg=cfg,
     )
     saida = capsys.readouterr().out
-    assert 'Agente de código ligado (modo guarded)' in saida
+    assert 'modo guarded' in saida
     assert len(captura) == 1
     assert captura[0]['agente'] is not None
 

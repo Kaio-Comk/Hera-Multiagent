@@ -428,19 +428,36 @@ async def principal(
 ) -> None:
     '''Ponto de entrada interativo usando prompt_toolkit.'''
     from prompt_toolkit import PromptSession
+    from prompt_toolkit.formatted_text import ANSI
+    from prompt_toolkit.styles import Style
 
-    sessao_prompt = PromptSession()
+    from cli.chat_ui import Visual
+
+    visual = Visual()
+    sessao_prompt = PromptSession(style=Style.from_dict({'bottom-toolbar': 'noreverse'}))
+    modo_agente = getattr(agente_cfg, 'modo', None) if agente_cfg is not None else None
+    pasta_atual = str(Path.cwd())
+
+    def rodape() -> ANSI:
+        ativo = maestro is not None and getattr(maestro, 'ativo', True)
+        return ANSI(visual.rodape(modelo=modelo, modo=modo_agente or '', maestro=bool(ativo), pasta=pasta_atual))
 
     async def ler_linha() -> str:
-        return await sessao_prompt.prompt_async('> ')
+        if visual.pensando_visivel:
+            print(visual.apagar_linha(), end='', flush=True)
+        visual.novo_turno()
+        texto = await sessao_prompt.prompt_async(ANSI(visual.prompt()), bottom_toolbar=rodape)
+        if texto.strip() and not texto.lstrip().startswith('/'):
+            print(visual.marcar_pensando(), end='', flush=True)
+        return texto
 
     def escrever(texto: str) -> None:
-        print(texto, end='', flush=True)
+        print(visual.estilizar(texto), end='', flush=True)
 
     async def aprovar_interativo(p: Any) -> str:
         try:
             escolha = await sessao_prompt.prompt_async(
-                'Aplicar? [s]im / [n]ao / [t]odos (lembrar nesta sessão): '
+                ANSI(visual.aprovacao('Aplicar? [s]im / [n]ao / [t]odos (lembrar nesta sessão): '))
             )
         except (KeyboardInterrupt, EOFError):
             return 'nao'
@@ -549,8 +566,19 @@ async def principal(
             delegar=delegar_fn,
         )
         pasta = getattr(agente_cfg.raiz, 'pasta', agente_cfg.raiz)
-        print(f'Agente de código ligado (modo {agente_cfg.modo}) em {pasta}')
 
+    try:
+        from importlib.metadata import version as _versao
+        versao_hera = _versao('hera-multiagent')
+    except Exception:
+        versao_hera = ''
+    print(visual.banner(
+        versao=versao_hera, modelo=modelo, pasta=pasta_atual, modo=modo_agente or '',
+        maestro=bool(maestro is not None and getattr(maestro, 'ativo', True)),
+    ))
+    fontes = getattr(getattr(estado, 'instrucoes', None), 'fontes', None) if estado is not None else None
+    if fontes:
+        print(visual.estilizar(f'[{len(fontes)} arquivo(s) de instruções carregado(s)]\n'), end='')
     sessao = Sessao(modelo, sistema=sistema, agente=agente)
     if mensagens_iniciais:
         sessao.mensagens = list(mensagens_iniciais)
