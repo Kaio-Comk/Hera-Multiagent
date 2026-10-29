@@ -13,10 +13,10 @@ ORDEM: tuple[Peso, ...] = ('leve', 'medio', 'pesado')
 
 PREFERENCIAS_PADRAO: dict[str, list[str]] = {
     'leve': [
+        'deepseek-ai/DeepSeek-V4.1-Flash',  # River (credito com validade) e ~2 s; o Gemini lite chegou a 14-28 s em 29/10/2026
         'gemini-flash-lite-latest',
         'gpt-4o-mini',
         'agnes-2.5-flash',
-        'deepseek-ai/DeepSeek-V4.1-Flash',
     ],
     'medio': [
         'deepseek-ai/DeepSeek-V4.1-Flash',

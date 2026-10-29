@@ -41,6 +41,39 @@ The Maestro is on by default. It classifies each request as light, medium, or he
 
 You can force a model with `--modelo` or `/model nome`, return to automatic with `/model auto`, turn it off with `/maestro off`, and change the profile with `/perfil`.
 
+## Chat interface
+
+### Opening and input field
+- Opening: block mascot, "Hera vX", model (or "automatic model (maestro)"), current folder and a line with the loaded instruction files (e.g. ~/.hera/HERA.md).
+- The screen is cleared on open.
+- Input field pinned to the bottom of the screen between two rules, with dimmed placeholder: "Pergunte algo, / para comandos, @ para anexar arquivo".
+- On submit, the question stays in history with the ❯ symbol and the conversation continues right after the content.
+- Footer under the field: agent mode (yellow when on), "maestro" or the chosen model, and shortcuts (/ commands, @file, ctrl+c interrupts).
+
+### Responses and Markdown
+- While the model thinks: animated "✻ Pensando…" indicator; after 2 s it shows the seconds and "ctrl+c interrompe".
+- It disappears when the response starts; the input field disappears during the response and returns at the end.
+- The response appears line by line, with rendered Markdown: headings (#, ##) in colored bold without the symbols, bullet lists, **bold**, *italic*, `inline code` in gold.
+- Code blocks with the "╌╌ language" fence and "│" bar (no syntax highlighting), quotes "▎", links as "text (url)".
+- Tables stay as plain text.
+
+### Switching model and maestro
+- /model with no argument opens a selector: arrows navigate, type to filter, PageUp/PageDown/Home/End, Enter selects, Esc or Ctrl+C cancels.
+- A 10-item window with "above/below"; "auto" hands control back to the maestro.
+- /model <name> and /model auto still work.
+- Maestro status line: "⎿ maestro: faixa X -> modelo"; "(decidido pelo juiz)" when the judge decided.
+- It appears on the first message and when the model changes.
+- Maestro judge: only when the local rule is unsure; uses a fast model (DeepSeek-V4.1-Flash, then gemini-flash-lite, then agnes-2.5-flash); 8 s limit; on failure it rests 5 min.
+- The maestro light tier now starts with DeepSeek-V4.1-Flash (River), then gemini-flash-lite, gpt-4o-mini, agnes-2.5-flash.
+
+### Colors
+- NO_COLOR or non-terminal output turn off colors and screen effects (text comes out plain, without clearing the screen).
+
+### Instructions and memory
+- Global instructions: ~/.hera/HERA.md takes priority over ~/.claude/CLAUDE.md (which is only read if the global HERA.md does not exist).
+- Memory snapshot is ON by default (HERA_MEMORY_SNAPSHOT=0 turns it off).
+- Memory search reports a clear error (IndiceIndisponivel) when the index fails, ignores short/common words (up to 8 terms) and removes unreadable notes from the index.
+
 ## Commands
 
 ```text
