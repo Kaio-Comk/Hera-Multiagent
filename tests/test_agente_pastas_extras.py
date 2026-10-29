@@ -104,7 +104,25 @@ async def test_prompt_do_agente_proibe_contornar_a_pasta(monkeypatch: pytest.Mon
         recebido.update(kw)
 
     args = argparse.Namespace(
-        url='http://127.0.0.1:8000', modelo='default', resume=None, listar=False, agente=True, modo='guarded', pasta=[]
+        url='http://127.0.0.1:8000', modelo='default', resume=None, listar=False, agente=True, modo='guarded', pasta=[],
+        so_esta_pasta=True,
     )
     await chat_cmd.executar(args, raiz=Path('.'), garantir=lambda u, r: True, principal=principal, token_de=lambda r: 't')
     assert '/pasta CAMINHO' in recebido['sistema'] and 'nunca tente contornar' in recebido['sistema']
+
+
+async def test_prompt_do_acesso_total_manda_ler_direto_e_nao_pedir_pasta(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    recebido: dict = {}
+
+    async def principal(*a, **kw):
+        recebido.update(kw)
+
+    args = argparse.Namespace(
+        url='http://127.0.0.1:8000', modelo='default', resume=None, listar=False, agente=True, modo='guarded',
+        pasta=[], so_esta_pasta=False,
+    )
+    await chat_cmd.executar(args, raiz=Path('.'), garantir=lambda u, r: True, principal=principal, token_de=lambda r: 't')
+    sistema = recebido['sistema']
+    assert 'QUALQUER pasta deste PC' in sistema
+    assert '/pasta CAMINHO' not in sistema and 'nunca tente contornar' not in sistema

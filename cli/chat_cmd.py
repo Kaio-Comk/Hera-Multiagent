@@ -287,9 +287,20 @@ async def executar(
             'Use as ferramentas para ler antes de editar, faça edições pequenas, '
             'rode os testes do projeto com executar_comando e nunca peça ao usuário para colar o que você pode ler. '
             'Para varrer ou analisar muito código, use delegar_tarefa (faixa leve) e junte os resumos; edite você mesmo.'
-            ' Se um arquivo estiver fora da pasta de trabalho, peça ao usuário para liberar a leitura com /pasta CAMINHO e pare ali: '
-            'nunca tente contornar a pasta com executar_comando (type, dir, cd, powershell).'
         )
+        if getattr(getattr(cfg, 'raiz', None), 'acesso_total', False):
+            paragrafo += (
+                ' Você alcança QUALQUER pasta deste PC (o usuário liberou): quando o vault, uma nota ou o pedido apontar '
+                'um caminho absoluto (por exemplo B:\\Projetos\\NetHub\\NetHub BR), leia-o direto com ler_arquivo, '
+                'listar_pasta e buscar usando esse caminho absoluto; não peça permissão para ler nem diga que está fora '
+                'da pasta. Só arquivos com segredo (.env, chaves, sessões) são recusados. Gravar e rodar comandos pedem '
+                'aprovação do usuário.'
+            )
+        else:
+            paragrafo += (
+                ' Se um arquivo estiver fora da pasta de trabalho, peça ao usuário para liberar a leitura com /pasta CAMINHO e '
+                'pare ali: nunca tente contornar a pasta com executar_comando (type, dir, cd, powershell).'
+            )
         sistema = f'{sistema}\n\n{paragrafo}'.strip()
     else:
         sem_ferramentas = (
