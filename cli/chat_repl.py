@@ -242,7 +242,8 @@ async def rodar(
                 and getattr(maestro, 'ativo', True)
             )
             if deve_escrever:
-                escrever(f'[maestro: faixa {escolha.peso} -> {escolha.modelo}]\n')
+                por_juiz = ' (decidido pelo juiz)' if str(getattr(escolha, 'motivo', '')).startswith('juiz') else ''
+                escrever(f'[maestro: faixa {escolha.peso}{por_juiz} -> {escolha.modelo}]\n')
             primeira_vez = False
             modelo_anterior = escolha.modelo
 
@@ -631,6 +632,7 @@ async def principal(
         versao=versao_hera, modelo=modelo, pasta=pasta_atual, modo=modo_agente or '',
         maestro=bool(maestro is not None and getattr(maestro, 'ativo', True)),
         instrucoes=len(fontes or ()),
+        arquivos=tuple(getattr(f, 'caminho', '') for f in (fontes or ())),
     ))
     sessao = Sessao(modelo, sistema=sistema, agente=agente)
     if mensagens_iniciais:

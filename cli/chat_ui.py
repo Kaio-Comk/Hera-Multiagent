@@ -13,6 +13,8 @@ import shutil
 import sys
 import time
 
+from cli.chat_markdown import Renderizador
+
 # Constante de modulo usada para apagar a linha atual do terminal.
 APAGAR = '\r\x1b[2K'
 
@@ -76,6 +78,8 @@ class Visual:
         self.inicio_de_linha = True
         self.pensando_visivel = False
         self._pensando_desde = 0.0
+        self._md = Renderizador(self.cor)
+        self._buf = ''  # texto do assistente ainda sem a quebra de linha que completa a linha
 
     # ------------------------------------------------------------------
     # Auxiliares de cor
@@ -119,7 +123,7 @@ class Visual:
     # ------------------------------------------------------------------
     # Banner e reguas
     # ------------------------------------------------------------------
-    def banner(self, *, versao, modelo, pasta, modo, maestro, instrucoes: int = 0) -> str:
+    def banner(self, *, versao, modelo, pasta, modo, maestro, instrucoes: int = 0, arquivos: tuple = ()) -> str:
         '''Monta o banner do chat com o mascote e informacoes de contexto.'''
         linhas = []
         linha1 = self._pintar('Hera', '\x1b[1m')
@@ -136,7 +140,10 @@ class Visual:
             linhas.append(self._acento(MASCOTE[i]) + '  ' + texto + '\n')
         linhas.append('\n')
         if instrucoes > 0:
-            linhas.append('▏ ' + self._apagado(str(instrucoes) + ' arquivo(s) de instrucoes carregado(s)') + '\n')
+            texto = str(instrucoes) + ' arquivo(s) de instrucoes carregado(s)'
+            if arquivos:
+                texto += ': ' + ', '.join(arquivos)
+            linhas.append('▏ ' + self._apagado(texto) + '\n')
             linhas.append('\n')
         return ''.join(linhas)
 
@@ -182,6 +189,8 @@ class Visual:
         self.assistente_iniciado = False
         self.inicio_de_linha = True
         self.pensando_visivel = False
+        self._md.reiniciar()
+        self._buf = ''
 
     def marcar_pensando(self) -> str:
         '''Devolve o indicador de pensamento e marca que ele esta visivel.'''
@@ -209,8 +218,9 @@ class Visual:
             return ''
 
         # (a) Linha de status: comeca com '[' e termina com '\n'.
-        if (not pedaco[0].isspace() and pedaco.startswith('[')
-                and pedaco.endswith('\n')):
+        # So antes da resposta comecar: depois, uma linha de Markdown como '[link](url)' nao e status.
+        if (not pedaco[0].isspace() and pedaco.startswith('[') and pedaco.endswith('\n')
+                and not self.assistente_iniciado and not self._buf):
             interno = pedaco[1:-2] if len(pedaco) >= 3 else ''
             esperando = self.pensando_visivel
             prefixo = self._prefixo_apagar()
@@ -223,22 +233,38 @@ class Visual:
 
         # (b) Erro ou aviso.
         if pedaco.startswith('Erro ('):
+            antes = self._esvaziar()
             prefixo = self._prefixo_apagar()
-            return prefixo + self._erro(pedaco)
+            return antes + prefixo + self._erro(pedaco)
         if pedaco.startswith('Aviso:') or pedaco.startswith('Aviso '):
+            antes = self._esvaziar()
             prefixo = self._prefixo_apagar()
-            return prefixo + self._aviso(pedaco)
+            return antes + prefixo + self._aviso(pedaco)
 
-        # (c) Texto do assistente.
+        # (c) Texto do assistente: so sai linha completa, ja com o Markdown desenhado.
+        self._buf += pedaco
+        completas, quebra, self._buf = self._buf.rpartition('\n')
+        if not quebra:
+            return ''
+        return self._emitir(''.join(self._md.linha(linha) + '\n' for linha in completas.split('\n')))
+
+    def _emitir(self, texto: str) -> str:
+        '''Texto do assistente pronto para a tela: o primeiro trecho do turno apaga o Pensando e ganha o marcador.'''
+        if not texto:
+            return ''
         prefixo = ''
         if not self.assistente_iniciado:
-            prefixo = self._prefixo_apagar()
-            prefixo += self._acento('● ')
+            prefixo = self._prefixo_apagar() + self._acento('● ')
             self.assistente_iniciado = True
             self.inicio_de_linha = False
+        return prefixo + self._indentar(texto)
 
-        texto = self._indentar(pedaco)
-        return prefixo + texto
+    def _esvaziar(self) -> str:
+        '''Descarrega a linha do assistente que ficou pela metade (antes de uma linha de status, erro ou aviso).'''
+        if not self._buf:
+            return ''
+        resto, self._buf = self._buf, ''
+        return self._emitir(self._md.linha(resto) + '\n')
 
     def _indentar(self, pedaco: str) -> str:
         '''Indenta com dois espacos so as linhas que tem texto (linha em branco fica vazia).'''

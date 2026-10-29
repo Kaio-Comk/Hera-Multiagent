@@ -52,19 +52,18 @@ def test_estilizar_primeiro_pedaco_assistente():
     '''O primeiro pedaco do assistente ganha o marcador, o segundo nao.'''
     v = Visual(cor=False, largura=80)
     v.novo_turno()
-    primeiro = v.estilizar('ola')
-    segundo = v.estilizar(' mundo')
-    assert primeiro.startswith('● ')
-    assert not segundo.startswith('● ')
-    assert 'ola' in primeiro
-    assert ' mundo' in segundo
+    assert v.estilizar('ola') == ''  # linha incompleta: espera a quebra para desenhar
+    primeiro = v.estilizar(' mundo\n')
+    segundo = v.estilizar('outra\n')
+    assert primeiro == '● ola mundo\n'
+    assert segundo == '  outra\n'
 
 
 def test_estilizar_quebra_interna_indenta():
     '''Quebras internas do pedaco devem indentar as linhas seguintes.'''
     v = Visual(cor=False, largura=80)
     v.novo_turno()
-    saida = v.estilizar('linha1\nlinha2')
+    saida = v.estilizar('linha1\nlinha2\n')
     assert 'linha1\n  linha2' in saida
 
 
@@ -80,12 +79,12 @@ def test_apagar_so_com_pensando():
     '''APAGAR so aparece se marcar_pensando foi chamado.'''
     v = Visual(cor=True, largura=80)
     v.novo_turno()
-    sem_pensar = v.estilizar('ola')
+    sem_pensar = v.estilizar('ola\n')
     assert APAGAR not in sem_pensar
 
     v.novo_turno()
     v.marcar_pensando()
-    com_pensar = v.estilizar('ola')
+    com_pensar = v.estilizar('ola\n')
     assert APAGAR in com_pensar
 
 
@@ -94,7 +93,7 @@ def test_novo_turno_reinicia():
     v = Visual(cor=True, largura=80)
     v.novo_turno()
     v.marcar_pensando()
-    v.estilizar('ola')
+    v.estilizar('ola\n')
     assert v.assistente_iniciado is True
     assert v.pensando_visivel is False
 
@@ -196,7 +195,7 @@ def test_status_durante_a_espera_devolve_o_indicador():
     saida = v.estilizar('[maestro: faixa leve -> m]\n')
     assert saida.endswith('Pensando…\x1b[0m')
     assert v.pensando_visivel is True
-    assert 'Pensando' not in v.estilizar('Ola')  # a resposta apaga o indicador e ele nao volta
+    assert 'Pensando' not in v.estilizar('Ola\n')  # a resposta apaga o indicador e ele nao volta
     assert v.pensando_visivel is False
 
 
