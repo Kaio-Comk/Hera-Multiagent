@@ -21,7 +21,7 @@ from app.benchmark import LocalBenchmark
 from adapters.ollama import OllamaAdapter
 from adapters.claude_code import ClaudeCodeAdapter
 from adapters.antigravity import AntigravityAdapter
-from cli import memory_cmd, chat_cmd, providers_cmd, skills_cmd
+from cli import memory_cmd, chat_cmd, providers_cmd, skills_cmd, playbooks_cmd
 from app.memory.integracao import contexto_da_memoria
 
 class MultiagentOrchestrator:
@@ -216,6 +216,7 @@ async def main():
 
     # Comando: memory (notas de memoria em Markdown, ver cli/memory_cmd.py)
     memory_cmd.registrar(subparsers)
+    playbooks_cmd.registrar(subparsers)
 
     # Comando: chat (conversa continua no terminal, ver cli/chat_cmd.py)
     chat_cmd.registrar(subparsers)
@@ -256,6 +257,8 @@ async def main():
 
     if args.command == "memory":
         sys.exit(memory_cmd.executar(args))
+    if args.command == "playbooks":
+        sys.exit(playbooks_cmd.executar(args))
     if args.command == "chat":
         sys.exit(await chat_cmd.executar(args))
     if args.command == "providers":

@@ -1025,3 +1025,40 @@ async def test_sugestao_comando_goal() -> None:
 
     await cmd.executar('/goall', sessao, saida.append)
     assert any('Quis dizer /goal?' in s for s in saida)
+
+
+async def test_comando_lembrar_mostra_previa_e_so_grava_apos_aprovar(tmp_path: Path) -> None:
+    pasta = tmp_path / 'mem'
+
+    async def extrator(prompt: str) -> str:
+        return '{"notas":[{"nome":"gosta-de-pt","descricao":"Prefere portugues","tipo":"usuario","corpo":"Responder sempre em portugues"}]}'
+
+    cmd = Comandos(ClienteFalso(), EstadoChat(), pasta_memoria=pasta, extrator=extrator)
+    sessao = Sessao()
+    sessao.mensagens.append({'role': 'user', 'content': 'prefiro portugues'})
+    saida: list[str] = []
+    await cmd.executar('/lembrar', sessao, saida.append)
+    texto = ''.join(saida)
+    assert 'gosta-de-pt' in texto and 'nada foi gravado' in texto
+    assert not pasta.exists() or not any(pasta.glob('*.md'))
+    saida.clear()
+    await cmd.executar('/lembrar sim', sessao, saida.append)
+    assert 'Salvas: gosta-de-pt' in ''.join(saida)
+    assert (pasta / 'gosta-de-pt.md').exists()
+
+
+async def test_comando_lembrar_nao_descarta(tmp_path: Path) -> None:
+    pasta = tmp_path / 'mem'
+
+    async def extrator(prompt: str) -> str:
+        return '{"notas":[{"nome":"x-nota","descricao":"d","tipo":"projeto","corpo":"corpo"}]}'
+
+    cmd = Comandos(ClienteFalso(), EstadoChat(), pasta_memoria=pasta, extrator=extrator)
+    sessao = Sessao()
+    sessao.mensagens.append({'role': 'user', 'content': 'oi'})
+    await cmd.executar('/lembrar', sessao, lambda _t: None)
+    saida: list[str] = []
+    await cmd.executar('/lembrar nao', sessao, saida.append)
+    await cmd.executar('/lembrar sim', sessao, saida.append)
+    assert not (pasta / 'x-nota.md').exists()
+    assert 'Nao ha propostas' in ''.join(saida)

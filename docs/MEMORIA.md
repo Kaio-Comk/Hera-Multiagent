@@ -46,6 +46,11 @@ Para apagar toda a memória, basta apagar a pasta `~/.hera/memoria` (ou o diret�
 
 Nada sai do seu PC sem passar pelo filtro de segredos.
 
+## Como usar
+
+- No `hera chat`, `/lembrar` mostra uma previa das notas que seriam salvas (nada e gravado); `/lembrar sim` grava todas, `/lembrar sim 1 3` grava so as escolhidas e `/lembrar nao` descarta.
+- `python main.py playbooks list|aprovar|recusar|desativar` gerencia os playbooks aprendidos. `tools/plano.py` registra cada plano executado e propoe um playbook apos 3 execucoes iguais com sucesso.
+
 ## Estado atual
 
-O resumo de sessão (`app/memory/resumo.py`) e os playbooks aprendidos (`app/memory/playbooks_aprendidos.py`) já existem como bibliotecas testadas, mas o `hera chat` ainda não os chama sozinho: a ligação automática vem numa próxima versão.
+Resumo de sessao e playbooks estao ligados ao `hera chat` (`/lembrar`) e ao `tools/plano.py`. Ainda nao ha resumo automatico ao fechar o chat: a gravacao e sempre um pedido seu.

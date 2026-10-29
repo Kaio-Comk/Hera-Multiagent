@@ -46,6 +46,11 @@ To delete all memory, just delete the `~/.hera/memoria` folder (or the `HERA_MEM
 
 Nothing leaves your PC without passing through the secret filter.
 
+## How to use
+
+- In `hera chat`, `/lembrar` previews the notes that would be saved (nothing is written); `/lembrar sim` saves all, `/lembrar sim 1 3` saves only the chosen ones and `/lembrar nao` discards them.
+- `python main.py playbooks list|aprovar|recusar|desativar` manages learned playbooks. `tools/plano.py` records every executed plan and proposes a playbook after 3 identical successful runs.
+
 ## Current status
 
-Session summaries (`app/memory/resumo.py`) and learned playbooks (`app/memory/playbooks_aprendidos.py`) exist as tested libraries, but `hera chat` does not call them on its own yet: the automatic wiring comes in a later version.
+Session summaries and learned playbooks are wired to `hera chat` (`/lembrar`) and `tools/plano.py`. There is no automatic summary on chat exit: saving is always your explicit request.

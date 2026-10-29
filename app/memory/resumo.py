@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Callable
+from typing import Awaitable, Callable
 
 from app.memory.schema import TIPOS, validar_nome
 from app.memory.store import DuplicateNoteError, MemoryStore
@@ -86,6 +86,27 @@ def propor_resumo(
         cru = chamar_modelo(prompt)
     except Exception:
         return []
+    return interpretar_proposta(cru, max_notas)
+
+
+async def propor_resumo_async(
+    mensagens: list[dict],
+    chamar_modelo: Callable[[str], Awaitable[str]],
+    *,
+    max_notas: int = 5,
+    max_chars_conversa: int = 12000,
+) -> list[NotaProposta]:
+    """Igual a propor_resumo, para modelo assíncrono (usado pelo hera chat)."""
+    conversa = _montar_conversa(mensagens, max_chars_conversa)
+    try:
+        cru = await chamar_modelo(_PROMPT + conversa)
+    except Exception:
+        return []
+    return interpretar_proposta(cru, max_notas)
+
+
+def interpretar_proposta(cru: str, max_notas: int = 5) -> list[NotaProposta]:
+    """Lê a resposta crua do modelo e devolve só as notas válidas."""
     dados = _extrair_json(cru)
     if not isinstance(dados, dict):
         return []
