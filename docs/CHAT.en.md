@@ -26,6 +26,7 @@ hera chat --listar
 Main options:
 
 - `--agente`: code agent (already the default): reads, edits and runs commands in the current folder, with approval. `--sem-agente` turns it off and leaves chat only.
+- `--pasta CAMINHO`: opens another folder for agent READ access only (repeatable; in the chat, `/pasta CAMINHO`). Writing stays in the current folder; to edit another project, open the chat there.
 - `--modo read-only|guarded|workspace`: default is `guarded`.
 - `--modelo X`: forces a model.
 - `--sem-maestro`: disables the Maestro.

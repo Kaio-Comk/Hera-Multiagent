@@ -13,6 +13,12 @@ import shutil
 import sys
 import time
 
+from cli.chat_ferramenta_ui import (
+    colorir_diff,
+    eh_chamada_de_ferramenta,
+    formatar_chamada_de_ferramenta,
+    parece_diff,
+)
 from cli.chat_markdown import Renderizador
 
 # Constante de modulo usada para apagar a linha atual do terminal.
@@ -236,6 +242,23 @@ class Visual:
                 linha += self.pensando()
             return linha
 
+        # (b0) Chamada de ferramenta do agente ('-> ler_arquivo x') e diff: ficam fora do Markdown.
+        if eh_chamada_de_ferramenta(pedaco):
+            antes = self._esvaziar()
+            prefixo = self._prefixo_apagar()
+            linha = formatar_chamada_de_ferramenta(pedaco, self.cor)
+            self.inicio_de_linha = True
+            if self.cor:  # o agente vai chamar o modelo de novo: o indicador volta enquanto espera
+                self.pensando_visivel = True
+                self._pensando_desde = time.monotonic()
+                linha += self.pensando()
+            return prefixo + antes + linha
+        if parece_diff(pedaco):
+            antes = self._esvaziar()
+            prefixo = self._prefixo_apagar()
+            self.inicio_de_linha = True
+            return antes + prefixo + colorir_diff(pedaco, self.cor)
+
         # (b) Erro ou aviso.
         if pedaco.startswith('Erro ('):
             antes = self._esvaziar()
@@ -257,9 +280,9 @@ class Visual:
         '''Texto do assistente pronto para a tela: o primeiro trecho do turno apaga o Pensando e ganha o marcador.'''
         if not texto:
             return ''
-        prefixo = ''
+        prefixo = self._prefixo_apagar()  # apaga o 'Pensando' se ele estiver na tela (inclusive entre chamadas de ferramenta)
         if not self.assistente_iniciado:
-            prefixo = self._prefixo_apagar() + self._acento('● ')
+            prefixo += self._acento('● ')
             self.assistente_iniciado = True
             self.inicio_de_linha = False
         return prefixo + self._indentar(texto)

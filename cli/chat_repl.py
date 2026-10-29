@@ -589,23 +589,38 @@ async def principal(
             asyncio.ensure_future(animar_pensando())
         return texto
 
+    animando = False
+
     async def animar_pensando() -> None:
-        '''Atualiza o indicador a cada meio segundo (simbolo e tempo) ate a resposta comecar; para sozinho.'''
-        while visual.pensando_visivel:
-            await asyncio.sleep(0.5)
-            quadro = visual.tick_pensando()
-            if quadro:
-                print(quadro, end='', flush=True)
+        '''Atualiza o indicador a cada meio segundo (simbolo e tempo) enquanto ele estiver na tela; para sozinho.'''
+        nonlocal animando
+        if animando:
+            return
+        animando = True
+        try:
+            while visual.pensando_visivel:
+                await asyncio.sleep(0.5)
+                quadro = visual.tick_pensando()
+                if quadro:
+                    print(quadro, end='', flush=True)
+        finally:
+            animando = False
 
     def escrever(texto: str) -> None:
         print(visual.estilizar(texto), end='', flush=True)
+        if visual.pensando_visivel and not animando:  # o indicador voltou (entre chamadas de ferramenta): anima de novo
+            try:
+                asyncio.ensure_future(animar_pensando())
+            except RuntimeError:  # sem laco de eventos (testes sincronos)
+                pass
 
     async def aprovar_interativo(p: Any) -> str:
         if visual.pensando_visivel:  # o pedido de aprovacao nao pode dividir a linha com o indicador
             print(visual.apagar_linha(), end='', flush=True)
             visual.pensando_visivel = False
         try:
-            escolha = await sessao_prompt.prompt_async(
+            # Sessao propria: a principal guarda o texto-guia e o rodape do campo de entrada e os repetiria aqui.
+            escolha = await PromptSession().prompt_async(
                 ANSI(visual.aprovacao('Aplicar? [s]im / [n]ao / [t]odos (lembrar nesta sessão): '))
             )
         except (KeyboardInterrupt, EOFError):

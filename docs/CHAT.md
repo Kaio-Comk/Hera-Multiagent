@@ -26,6 +26,7 @@ hera chat --listar
 Opções principais:
 
 - `--agente`: agente de código (já é o padrão): lê, edita e roda comandos na pasta atual, com aprovação. `--sem-agente` desliga e deixa só a conversa.
+- `--pasta CAMINHO`: libera outra pasta só para leitura do agente (pode repetir; no chat, `/pasta CAMINHO`). Escrever continua só na pasta atual; para editar outro projeto, abra o chat nele.
 - `--modo read-only|guarded|workspace`: padrão `guarded`.
 - `--modelo X`: força um modelo.
 - `--sem-maestro`: desliga o Maestro.

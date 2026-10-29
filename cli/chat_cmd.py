@@ -235,6 +235,11 @@ async def executar(
     if cfg is None and getattr(args, 'agente', False):
         modo = getattr(args, 'modo', 'guarded')
         raiz_agente = Raiz(Path.cwd())
+        for extra in getattr(args, 'pasta', None) or []:
+            try:
+                raiz_agente.permitir_leitura(extra)
+            except Exception as exc:  # noqa: BLE001
+                print(f'Aviso: pasta {extra} nao liberada ({exc})')
         sha = hashlib.sha1(str(Path.cwd()).encode('utf-8')).hexdigest()[:12]
         pasta_checkpoints = Path.home() / '.hera' / 'checkpoints' / sha
         checkpoints = Checkpoints(pasta_checkpoints, raiz_agente)
@@ -383,6 +388,13 @@ def registrar(subparsers: Any) -> None:
         action='store_true',
         default=True,
         help='Agente de codigo (le, edita e roda comandos na pasta atual, com aprovacao); ja e o padrao',
+    )
+    parser.add_argument(
+        '--pasta',
+        action='append',
+        default=[],
+        metavar='CAMINHO',
+        help='Libera outra pasta so para LEITURA do agente (pode repetir); escrever segue so na pasta atual',
     )
     parser.add_argument(
         '--sem-agente',

@@ -227,6 +227,7 @@ class Comandos:
         '/cost',
         '/instrucoes',
         '/rollback',
+        '/pasta',
         '/checkpoints',
         '/modo',
         '/goal',
@@ -317,6 +318,7 @@ class Comandos:
                     '/cost - Mostra o custo da sessao.',
                     '/instrucoes - Lista os arquivos de instrucoes carregados.',
                     '/rollback [id] - Reverte alteracoes de arquivo feitas pelo agente.',
+                    '/pasta [caminho] - Libera outra pasta so para LEITURA do agente (sem argumento, lista as liberadas).',
                     '/checkpoints - Lista os ultimos checkpoints de arquivos.',
                     '/modo [read-only|guarded|workspace] - Exibe ou altera o modo do agente.',
                     '/goal [N] <objetivo> - Trabalha em turnos ate concluir o objetivo.',
@@ -621,6 +623,24 @@ class Comandos:
                 for av in avisos:
                     prefixo = '' if av.startswith('Aviso:') else 'Aviso: '
                     escrever(f'{prefixo}{av}\n')
+                return None
+
+            if cmd == '/pasta':
+                if self.agente_cfg is None:
+                    escrever('Agente desligado: nada para liberar (abra o chat sem --sem-agente).\n')
+                    return None
+                raiz = self.agente_cfg.raiz
+                if not arg:
+                    escrever(f'Pasta de trabalho (leitura e escrita): {raiz.pasta}\n')
+                    for extra in raiz.leitura_extra:
+                        escrever(f'Liberada so para leitura: {extra}\n')
+                    return None
+                try:
+                    liberada = raiz.permitir_leitura(arg.strip().strip('"'))
+                except Exception as exc:  # noqa: BLE001
+                    escrever(f'Nao foi possivel liberar a pasta: {exc}\n')
+                    return None
+                escrever(f'Liberada so para leitura: {liberada}. Para editar la, abra o chat nessa pasta.\n')
                 return None
 
             if cmd == '/rollback':

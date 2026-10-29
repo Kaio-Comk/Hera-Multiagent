@@ -42,9 +42,21 @@ class Raiz:
 
     def __init__(self, pasta: Path) -> None:
         self.pasta = Path(pasta).resolve()
+        self.leitura_extra: list[Path] = []   # pastas liberadas so para LEITURA (/pasta); escrever segue so na raiz
 
-    def resolver(self, caminho: str | Path) -> Path:
-        '''Resolve caminho relativo a raiz e exige que fique dentro dela.'''
+    def permitir_leitura(self, pasta: str | Path) -> Path:
+        '''Libera uma pasta extra SO para leitura (o usuario pediu: /pasta ou --pasta). Nunca libera pasta sensivel.'''
+        alvo = Path(pasta).expanduser().resolve()
+        if not alvo.is_dir():
+            raise CaminhoNegado('pasta inexistente')
+        if self.eh_sensivel(alvo):
+            raise CaminhoNegado('pasta sensivel')
+        if alvo != self.pasta and alvo not in self.leitura_extra:
+            self.leitura_extra.append(alvo)
+        return alvo
+
+    def resolver(self, caminho: str | Path, *, leitura: bool = False) -> Path:
+        '''Resolve caminho relativo a raiz e exige que fique dentro dela (para leitura, tambem dentro das pastas liberadas).'''
         if caminho is None:
             raise CaminhoNegado('caminho vazio')
         texto = str(caminho)
@@ -55,6 +67,8 @@ class Raiz:
             p = self.pasta / p
         resolvido = p.resolve()
         if resolvido != self.pasta and self.pasta not in resolvido.parents:
+            if leitura and any(resolvido == e or e in resolvido.parents for e in self.leitura_extra):
+                return resolvido
             raise CaminhoNegado('fora da pasta de trabalho')
         return resolvido
 
@@ -90,7 +104,7 @@ class Raiz:
 
     def exigir_leitura(self, caminho: str | Path) -> Path:
         '''Resolve e nega leitura de arquivos sensiveis.'''
-        resolvido = self.resolver(caminho)
+        resolvido = self.resolver(caminho, leitura=True)
         if self.eh_sensivel(resolvido):
             raise CaminhoNegado('arquivo sensivel')
         return resolvido
