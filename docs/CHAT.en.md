@@ -55,6 +55,7 @@ You can force a model with `--modelo` or `/model nome`, return to automatic with
 /cost
 /instrucoes
 /compact
+/goal [N] <goal>
 /maestro
 /perfil
 /rollback [id]
@@ -62,6 +63,10 @@ You can force a model with `--modelo` or `/model nome`, return to automatic with
 /modo
 /exit
 ```
+
+## Goals with /goal
+
+`/goal 5 make the test pass` makes the agent work in turns (at most N, default 5, hard cap 10) until a cheap judge says the goal is met, blocked, or the limit is reached. Every action still asks for your approval (`guarded` mode) and Ctrl+C interrupts. If the judge fails, the goal stops: without a judge there is no way to know when to stop.
 
 ## Attaching files with @
 

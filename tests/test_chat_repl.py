@@ -7,7 +7,7 @@ from typing import Any, Callable
 import pytest
 
 from cli.chat_client import ErroDoServidor
-from cli.chat_comandos import ComandoSkill
+from cli.chat_comandos import ComandoGoal, ComandoSkill, Comandos, EstadoChat
 from cli.chat_repl import Sessao, principal, rodar
 
 
@@ -957,3 +957,260 @@ async def test_falha_ao_expandir_anexos_envia_a_pergunta_original() -> None:
 
     await rodar(cliente, _leitor(['oi @a.py', '/exit']), lambda _t: None, anexos=anexos)
     assert cliente.chamadas[0][-1]['content'] == 'oi @a.py'
+
+
+# ---- testes do comando /goal no chat_repl --------------------------------------------------------------------------
+
+async def test_goal_termina_em_um_turno() -> None:
+    cliente = ClienteFalso([['codigo corrigido']])
+    saida: list[str] = []
+    estado = EstadoChat()
+    comandos = Comandos(cliente, estado)
+
+    async def juiz_feito(prompt: str) -> str:
+        assert 'Objetivo: consertar bug' in prompt
+        assert 'codigo corrigido' in prompt
+        return 'FEITO\nbug corrigido com sucesso'
+
+    sessao = await rodar(
+        cliente,
+        _leitor(['/goal consertar bug', '/exit']),
+        saida.append,
+        comandos=comandos,
+        julgar=juiz_feito,
+    )
+
+    texto_saida = ''.join(saida)
+    assert '[goal: turno 1 de 5]' in texto_saida
+    assert '[goal: feito - bug corrigido com sucesso]' in texto_saida
+    assert '[goal encerrado: feito em 1 turno(s) - bug corrigido com sucesso]' in texto_saida
+    assert len(cliente.chamadas) == 1
+    assert sessao.mensagens[-1] == {'role': 'assistant', 'content': 'codigo corrigido'}
+
+
+async def test_goal_continua_e_termina() -> None:
+    cliente = ClienteFalso([['primeiro passo feito'], ['segundo passo e conclusao']])
+    saida: list[str] = []
+    estado = EstadoChat()
+    comandos = Comandos(cliente, estado)
+
+    respostas_juiz = [
+        'CONTINUAR\nfaltam testes unitarios',
+        'FEITO\ntodos os testes passando',
+    ]
+
+    async def juiz_dinamico(prompt: str) -> str:
+        return respostas_juiz.pop(0)
+
+    sessao = await rodar(
+        cliente,
+        _leitor(['/goal 3 implementar autenticacao', '/exit']),
+        saida.append,
+        comandos=comandos,
+        julgar=juiz_dinamico,
+    )
+
+    texto_saida = ''.join(saida)
+    assert '[goal: turno 1 de 3]' in texto_saida
+    assert '[goal: continuar - faltam testes unitarios]' in texto_saida
+    assert '[goal: turno 2 de 3]' in texto_saida
+    assert '[goal: feito - todos os testes passando]' in texto_saida
+    assert '[goal encerrado: feito em 2 turno(s) - todos os testes passando]' in texto_saida
+    assert len(cliente.chamadas) == 2
+
+
+async def test_goal_atinge_teto_exato_de_chamadas() -> None:
+    cliente = ClienteFalso([['tentativa 1'], ['tentativa 2'], ['tentativa 3']])
+    saida: list[str] = []
+    estado = EstadoChat()
+    comandos = Comandos(cliente, estado)
+
+    async def juiz_sempre_continua(prompt: str) -> str:
+        return 'CONTINUAR\nainda faltam ajustes'
+
+    sessao = await rodar(
+        cliente,
+        _leitor(['/goal 2 refatorar tudo', '/exit']),
+        saida.append,
+        comandos=comandos,
+        julgar=juiz_sempre_continua,
+    )
+
+    texto_saida = ''.join(saida)
+    assert '[goal: turno 1 de 2]' in texto_saida
+    assert '[goal: turno 2 de 2]' in texto_saida
+    assert '[goal: turno 3 de 2]' not in texto_saida
+    assert '[goal encerrado: limite em 2 turno(s) - limite de turnos atingido]' in texto_saida
+    assert len(cliente.chamadas) == 2
+
+
+async def test_goal_juiz_que_falha() -> None:
+    cliente = ClienteFalso([['primeira tentativa']])
+    saida: list[str] = []
+    estado = EstadoChat()
+    comandos = Comandos(cliente, estado)
+
+    async def juiz_quebrado(prompt: str) -> str:
+        raise RuntimeError('servico do juiz offline')
+
+    sessao = await rodar(
+        cliente,
+        _leitor(['/goal 3 tarefa com falha no juiz', '/exit']),
+        saida.append,
+        comandos=comandos,
+        julgar=juiz_quebrado,
+    )
+
+    texto_saida = ''.join(saida)
+    assert '[goal: turno 1 de 3]' in texto_saida
+    assert '[goal encerrado: erro em 1 turno(s) - RuntimeError: servico do juiz offline]' in texto_saida
+    assert len(cliente.chamadas) == 1
+
+
+async def test_goal_turno_interrompido_encerra_o_goal() -> None:
+    cliente = ClienteFalso([asyncio.CancelledError(), ['nao deve rodar']])
+    saida: list[str] = []
+    estado = EstadoChat()
+    comandos = Comandos(cliente, estado)
+
+    async def juiz(prompt: str) -> str:
+        return 'FEITO\nok'
+
+    sessao = await rodar(
+        cliente,
+        _leitor(['/goal 3 tarefa longa interrompida', '/exit']),
+        saida.append,
+        comandos=comandos,
+        julgar=juiz,
+    )
+
+    texto_saida = ''.join(saida)
+    assert '[goal: turno 1 de 3]' in texto_saida
+    assert '\n[interrompido]\n' in texto_saida
+    assert '[goal encerrado: erro em 1 turno(s) - RuntimeError: interrompido]' in texto_saida
+    assert len(cliente.chamadas) == 1
+
+
+async def test_goal_cada_turno_chega_ao_ao_turno() -> None:
+    cliente = ClienteFalso([['passo 1 feito'], ['passo 2 feito']])
+    saida: list[str] = []
+    estado = EstadoChat()
+    comandos = Comandos(cliente, estado)
+    turnos_gravados: list[tuple[str, str]] = []
+
+    respostas_juiz = [
+        'CONTINUAR\npendencia do passo 1',
+        'FEITO\ntudo finalizado',
+    ]
+
+    async def juiz(prompt: str) -> str:
+        return respostas_juiz.pop(0)
+
+    await rodar(
+        cliente,
+        _leitor(['/goal 2 executar em duas etapas', '/exit']),
+        saida.append,
+        comandos=comandos,
+        julgar=juiz,
+        ao_turno=lambda u, a: turnos_gravados.append((u, a)),
+    )
+
+    assert len(turnos_gravados) == 2
+    assert 'Objetivo: executar em duas etapas' in turnos_gravados[0][0]
+    assert turnos_gravados[0][1] == 'passo 1 feito'
+    assert 'Continue o objetivo: executar em duas etapas' in turnos_gravados[1][0]
+    assert 'Pendencia apontada: pendencia do passo 1' in turnos_gravados[1][0]
+    assert turnos_gravados[1][1] == 'passo 2 feito'
+
+
+async def test_goal_historico_recebe_prompts_do_goal() -> None:
+    cliente = ClienteFalso([['resposta turno 1'], ['resposta turno 2']])
+    saida: list[str] = []
+    estado = EstadoChat()
+    comandos = Comandos(cliente, estado)
+
+    respostas_juiz = [
+        'CONTINUAR\najustar detalhes',
+        'FEITO\npronto',
+    ]
+
+    async def juiz(prompt: str) -> str:
+        return respostas_juiz.pop(0)
+
+    sessao = await rodar(
+        cliente,
+        _leitor(['/goal 2 objetivo historico', '/exit']),
+        saida.append,
+        comandos=comandos,
+        julgar=juiz,
+    )
+
+    assert len(sessao.mensagens) == 4
+    assert sessao.mensagens[0]['role'] == 'user'
+    assert 'Objetivo: objetivo historico' in sessao.mensagens[0]['content']
+    assert sessao.mensagens[1]['role'] == 'assistant'
+    assert sessao.mensagens[1]['content'] == 'resposta turno 1'
+    assert sessao.mensagens[2]['role'] == 'user'
+    assert 'Continue o objetivo: objetivo historico' in sessao.mensagens[2]['content']
+    assert sessao.mensagens[3]['role'] == 'assistant'
+    assert sessao.mensagens[3]['content'] == 'resposta turno 2'
+
+
+async def test_goal_aprovacao_continua_sendo_pedida_no_modo_agente() -> None:
+    class AgenteComAprovacao:
+        def __init__(self, respostas: list[str]) -> None:
+            self.respostas = list(respostas)
+            self.aprovacoes_pedidas: list[str] = []
+
+        async def aprovar(self, acao: str) -> str:
+            self.aprovacoes_pedidas.append(acao)
+            return 'sim'
+
+        async def turno(self, historico: list[dict], sistema: Any = '') -> str:
+            await self.aprovar('escrever_arquivo')
+            return self.respostas.pop(0) if self.respostas else ''
+
+    agente = AgenteComAprovacao(['alteracao realizada'])
+    cliente = ClienteFalso([])
+    saida: list[str] = []
+    estado = EstadoChat()
+    comandos = Comandos(cliente, estado)
+
+    async def juiz(prompt: str) -> str:
+        return 'FEITO\nalteracao conferida'
+
+    sessao = await rodar(
+        cliente,
+        _leitor(['/goal 2 modificar arquivo com agente', '/exit']),
+        saida.append,
+        comandos=comandos,
+        agente=agente,  # type: ignore[arg-type]
+        julgar=juiz,
+    )
+
+    assert agente.aprovacoes_pedidas == ['escrever_arquivo']
+    texto_saida = ''.join(saida)
+    assert '[goal encerrado: feito em 1 turno(s) - alteracao conferida]' in texto_saida
+    assert sessao.mensagens[-1]['content'] == 'alteracao realizada'
+
+
+async def test_goal_com_juiz_padrao_do_cliente() -> None:
+    cliente = ClienteFalso([['codigo pronto'], ['FEITO\n', 'tudo certo']])
+    saida: list[str] = []
+    estado = EstadoChat()
+    comandos = Comandos(cliente, estado)
+
+    sessao = await rodar(
+        cliente,
+        _leitor(['/goal testar juiz padrao', '/exit']),
+        saida.append,
+        comandos=comandos,
+    )
+
+    assert len(cliente.chamadas) == 2
+    assert cliente.chamadas[1][0] == {
+        'role': 'system',
+        'content': 'Voce e um juiz objetivo e conservador.',
+    }
+    texto_saida = ''.join(saida)
+    assert '[goal encerrado: feito em 1 turno(s) - tudo certo]' in texto_saida

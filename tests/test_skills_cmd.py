@@ -156,3 +156,16 @@ def test_import_resume_avisos_quando_sao_muitos(tmp_path: Path) -> None:
     avisos_impressos = [l for l in linhas if l.startswith('aviso ')]
     assert len(avisos_impressos) <= 10
     assert any('mais 40' in l for l in linhas)
+
+
+def test_list_mostra_se_a_skill_e_do_projeto_ou_do_usuario_sem_caminhos_duplicados(tmp_path: Path) -> None:
+    cwd = tmp_path / 'proj'
+    home = tmp_path / 'home'
+    _criar_skill(cwd / '.hera' / 'skills', 'local', 'So deste projeto')
+    _criar_skill(home / '.hera' / 'skills', 'global', 'Do usuario')
+    linhas: list[str] = []
+    skills_cmd.executar(_args(acao='list'), saida=linhas.append, cwd=cwd, home=home)
+    por_nome = {l.split(' | ')[0]: l for l in linhas if ' | ' in l}
+    assert por_nome['local'].endswith(' | projeto'), por_nome['local']
+    assert por_nome['global'].endswith(' | usuario'), por_nome['global']
+    assert str(tmp_path) not in '\n'.join(linhas)

@@ -5,7 +5,13 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
 from cli.chat_client import ClienteHera, ErroDoServidor
-from cli.chat_comandos import ComandoSkill, Comandos, ConfigAgente, EstadoChat
+from cli.chat_comandos import (
+    ComandoGoal,
+    ComandoSkill,
+    Comandos,
+    ConfigAgente,
+    EstadoChat,
+)
 from cli.chat_ferramentas import conversar_com_ferramentas
 from cli.interrupcao import InterruptorSigint
 
@@ -46,6 +52,14 @@ try:
 except ImportError:
     compactar_fn = None  # type: ignore[assignment]
     estimar_tokens = None  # type: ignore[assignment]
+
+try:
+    from app.goal import perseguir_objetivo
+except ImportError:
+    try:
+        from goal import perseguir_objetivo  # type: ignore[no-redef]
+    except ImportError:
+        perseguir_objetivo = Any  # type: ignore[misc,assignment]
 
 
 class Sessao:
@@ -104,6 +118,47 @@ def criar_resumidor(
     return resumir
 
 
+def criar_juiz(
+    cliente: ClienteHera,
+    maestro: Maestro | None = None,
+) -> Callable[[str], Awaitable[str]]:
+    '''Cria funcao de juiz usando modelo leve do maestro ou modelo atual.'''
+
+    async def julgar(prompt: str) -> str:
+        modelo_orig = getattr(cliente, 'modelo', 'default')
+        modelo_leve = modelo_orig
+        if maestro is not None:
+            try:
+                disp = await maestro._disponiveis()
+                m = escolher_modelo(
+                    'leve',
+                    disp,
+                    maestro._prefs_efetivas(),
+                    indisponiveis=maestro._indisponiveis_ativos(),
+                )
+                if m:
+                    modelo_leve = m
+            except Exception:
+                modelo_leve = modelo_orig
+        cliente.modelo = modelo_leve
+        try:
+            msgs = [
+                {
+                    'role': 'system',
+                    'content': 'Voce e um juiz objetivo e conservador.',
+                },
+                {'role': 'user', 'content': prompt},
+            ]
+            partes: list[str] = []
+            async for pedaco in cliente.conversar(msgs):
+                partes.append(pedaco)
+            return ''.join(partes)
+        finally:
+            cliente.modelo = modelo_orig
+
+    return julgar
+
+
 async def rodar(
     cliente: ClienteHera,
     ler_linha: Callable[[], Awaitable[str]],
@@ -119,6 +174,7 @@ async def rodar(
     janela: int = 32000,
     resumir: Optional[Callable[[str], Awaitable[str]]] = None,
     anexos: Optional[Callable[[str], tuple]] = None,
+    julgar: Optional[Callable[[str], Awaitable[str]]] = None,
 ) -> Sessao:
     '''Executa o laco de conversa ate o usuario encerrar.'''
     if interruptor is None:
@@ -143,36 +199,14 @@ async def rodar(
         sessao.agente = agente
 
     resumidor_efetivo = resumir or criar_resumidor(cliente, maestro)
+    if julgar is None:
+        julgar = criar_juiz(cliente, maestro)
+
     primeira_vez = True
     modelo_anterior: str | None = None
 
-    while True:
-        try:
-            linha = await ler_linha()
-        except EOFError:
-            break
-        except KeyboardInterrupt:
-            break
-
-        texto = linha.strip()
-        if not texto:
-            continue
-
-        if comandos is not None and texto.startswith('/'):
-            resultado = await comandos.executar(texto, sessao, escrever)
-            if resultado == 'sair':
-                break
-            if isinstance(resultado, ComandoSkill):
-                texto = resultado.texto
-            elif hasattr(resultado, 'texto') and not isinstance(resultado, str):
-                texto = resultado.texto
-            elif hasattr(resultado, 'texto_usuario'):
-                texto = resultado.texto_usuario
-            else:
-                continue
-
-        if texto in ('/exit', '/quit', '/sair'):
-            break
+    async def executar_turno(texto: str) -> str:
+        nonlocal primeira_vez, modelo_anterior
 
         # Contexto de memoria por turno: executado em thread e nunca derruba o turno
         memoria = ''
@@ -207,15 +241,16 @@ async def rodar(
             modelo_anterior = escolha.modelo
 
         texto_modelo = texto
-        if anexos is not None:           # '@arquivo' na pergunta: o MODELO recebe o conteudo; o historico gravado guarda o que o usuario digitou
+        if anexos is not None:  # '@arquivo' na pergunta: o MODELO recebe o conteudo; o historico gravado guarda o que o usuario digitou
             try:
                 texto_modelo, avisos_anexos, lista_anexos = anexos(texto)
                 for aviso in avisos_anexos:
                     escrever(f'[anexos: {aviso}]\n')
                 if lista_anexos:
                     from cli.chat_anexos import resumo_anexos
+
                     escrever(resumo_anexos(lista_anexos) + '\n')
-            except Exception:            # noqa: BLE001 - anexar e conveniencia: na duvida, segue com a pergunta original
+            except Exception:  # noqa: BLE001 - anexar e conveniencia: na duvida, segue com a pergunta original
                 texto_modelo = texto
         sessao.mensagens.append({'role': 'user', 'content': texto_modelo})
 
@@ -290,7 +325,7 @@ async def rodar(
                 except ErroDoServidor as erro2:
                     escrever(f'Erro ({erro2.status}): {erro2.mensagem}\n')
                     sessao.mensagens.pop()
-                    continue
+                    raise RuntimeError(erro2.mensagem)
                 except asyncio.CancelledError:
                     atual = asyncio.current_task()
                     if atual is not None and atual.cancelling():
@@ -300,7 +335,7 @@ async def rodar(
             else:
                 escrever(f'Erro ({erro.status}): {erro.mensagem}\n')
                 sessao.mensagens.pop()
-                continue
+                raise RuntimeError(erro.mensagem)
         except asyncio.CancelledError:
             atual = asyncio.current_task()
             if atual is not None and atual.cancelling():
@@ -317,11 +352,58 @@ async def rodar(
                 salvar(texto, resposta)
             else:
                 sessao.mensagens.pop()
-            continue
+            raise RuntimeError('interrompido')
 
         escrever('\n')
         sessao.mensagens.append({'role': 'assistant', 'content': resposta})
         salvar(texto, resposta)
+        return resposta
+
+    while True:
+        try:
+            linha = await ler_linha()
+        except EOFError:
+            break
+        except KeyboardInterrupt:
+            break
+
+        texto = linha.strip()
+        if not texto:
+            continue
+
+        if comandos is not None and texto.startswith('/'):
+            resultado = await comandos.executar(texto, sessao, escrever)
+            if resultado == 'sair':
+                break
+            if isinstance(resultado, ComandoSkill):
+                texto = resultado.texto
+            elif isinstance(resultado, ComandoGoal):
+                cmd = resultado
+                res = await perseguir_objetivo(
+                    cmd.objetivo,
+                    turno=executar_turno,
+                    julgar=julgar,
+                    max_turnos=cmd.max_turnos,
+                    escrever=escrever,
+                )
+                escrever(
+                    f'[goal encerrado: {res.estado} em {res.turnos} turno(s) - {res.motivo}]\n'
+                )
+                continue
+            elif hasattr(resultado, 'texto') and not isinstance(resultado, str):
+                texto = resultado.texto
+            elif hasattr(resultado, 'texto_usuario'):
+                texto = resultado.texto_usuario
+            else:
+                continue
+
+        if texto in ('/exit', '/quit', '/sair'):
+            break
+
+        try:
+            await executar_turno(texto)
+        except RuntimeError:
+            continue
 
     return sessao
 
@@ -341,6 +423,7 @@ async def principal(
     janela: int = 32000,
     resumir: Optional[Callable[[str], Awaitable[str]]] = None,
     cliente: Optional[ClienteHera] = None,
+    julgar: Optional[Callable[[str], Awaitable[str]]] = None,
 ) -> None:
     '''Ponto de entrada interativo usando prompt_toolkit.'''
     from prompt_toolkit import PromptSession
@@ -518,4 +601,5 @@ async def principal(
         janela=janela,
         resumir=resumir_fn,
         anexos=anexos_fn,
+        julgar=julgar,
     )

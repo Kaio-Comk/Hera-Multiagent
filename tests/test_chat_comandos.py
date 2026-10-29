@@ -7,7 +7,14 @@ from typing import Any
 import pytest
 
 from cli.chat_client import ErroDoServidor
-from cli.chat_comandos import ComandoSkill, Comandos, ConfigAgente, EstadoChat, formatar_uso
+from cli.chat_comandos import (
+    ComandoGoal,
+    ComandoSkill,
+    Comandos,
+    ConfigAgente,
+    EstadoChat,
+    formatar_uso,
+)
 from cli.chat_repl import Sessao, rodar
 
 try:
@@ -162,6 +169,7 @@ async def test_comando_help() -> None:
         '/rollback',
         '/checkpoints',
         '/modo',
+        '/goal',
     ]:
         assert esperado in texto
 
@@ -930,3 +938,90 @@ async def test_sugestoes_comandos_maestro_perfil_compact() -> None:
     saida.clear()
     await cmd.executar('/compac', sessao, saida.append)
     assert any('Quis dizer /compact?' in s for s in saida)
+
+
+# ---- testes do comando /goal ---------------------------------------------------------------------------------------
+
+async def test_comando_goal_com_objetivo_padrao() -> None:
+    saida: list[str] = []
+    estado = EstadoChat()
+    cliente = ClienteFalso()
+    sessao = Sessao()
+    cmd = Comandos(cliente, estado)
+
+    res = await cmd.executar('/goal refatorar modulo auth', sessao, saida.append)
+    assert isinstance(res, ComandoGoal)
+    assert res.objetivo == 'refatorar modulo auth'
+    assert res.max_turnos == 5
+    assert saida == []
+
+
+async def test_comando_goal_com_n_e_objetivo() -> None:
+    saida: list[str] = []
+    estado = EstadoChat()
+    cliente = ClienteFalso()
+    sessao = Sessao()
+    cmd = Comandos(cliente, estado)
+
+    res = await cmd.executar('/goal 3 refatorar modulo auth', sessao, saida.append)
+    assert isinstance(res, ComandoGoal)
+    assert res.objetivo == 'refatorar modulo auth'
+    assert res.max_turnos == 3
+    assert saida == []
+
+    res1 = await cmd.executar('/goal 1 consertar bug', sessao, saida.append)
+    assert isinstance(res1, ComandoGoal)
+    assert res1.max_turnos == 1
+
+    res10 = await cmd.executar('/goal 10 migrar banco', sessao, saida.append)
+    assert isinstance(res10, ComandoGoal)
+    assert res10.max_turnos == 10
+
+
+async def test_comando_goal_sem_argumento_mostra_uso() -> None:
+    saida: list[str] = []
+    estado = EstadoChat()
+    cliente = ClienteFalso()
+    sessao = Sessao()
+    cmd = Comandos(cliente, estado)
+
+    res = await cmd.executar('/goal', sessao, saida.append)
+    assert res is None
+    texto = ''.join(saida)
+    assert (
+        '/goal [N] <objetivo>: o agente trabalha em turnos (no maximo N, padrao 5) ate um juiz dizer que acabou; cada acao continua pedindo sua aprovacao; Ctrl+C interrompe'
+        in texto
+    )
+
+
+async def test_comando_goal_n_invalido_mostra_uso() -> None:
+    saida: list[str] = []
+    estado = EstadoChat()
+    cliente = ClienteFalso()
+    sessao = Sessao()
+    cmd = Comandos(cliente, estado)
+    msg_esperada = (
+        '/goal [N] <objetivo>: o agente trabalha em turnos (no maximo N, padrao 5) ate um juiz dizer que acabou; cada acao continua pedindo sua aprovacao; Ctrl+C interrompe'
+    )
+
+    for cmd_invalido in [
+        '/goal 0 fazer algo',
+        '/goal 11 fazer algo',
+        '/goal -1 fazer algo',
+        '/goal 5',
+    ]:
+        saida.clear()
+        res = await cmd.executar(cmd_invalido, sessao, saida.append)
+        assert res is None
+        assert msg_esperada in ''.join(saida)
+
+
+async def test_sugestao_comando_goal() -> None:
+    saida: list[str] = []
+    estado = EstadoChat()
+    cliente = ClienteFalso()
+    sessao = Sessao()
+    cmd = Comandos(cliente, estado)
+
+    await cmd.executar('/goall', sessao, saida.append)
+    assert any('Quis dizer /goal?' in s for s in saida)

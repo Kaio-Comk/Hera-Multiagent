@@ -48,13 +48,14 @@ def _descricao_curta(descricao: str, limite: int = 60) -> str:
     return texto[: limite - 3] + '...'
 
 
-def _listar(skills: Sequence[Skill], saida: Callable[[str], None]) -> int:
-    '''Imprime a lista de skills.'''
+def _listar(skills: Sequence[Skill], saida: Callable[[str], None], pasta_projeto: Path | None = None) -> int:
+    '''Imprime a lista de skills; a ultima coluna diz se a skill e do projeto (./.hera/skills) ou do usuario (~/.hera/skills).'''
     if not skills:
         saida('Nenhuma skill. Importe as do Claude com: hera skills import')
         return 0
     for skill in skills:
-        saida(f'{skill.nome} | {_descricao_curta(skill.descricao)} | {skill.origem}-{skill.pasta}')
+        do_projeto = pasta_projeto is not None and Path(skill.pasta).parent == Path(pasta_projeto)
+        saida(f'{skill.nome} | {_descricao_curta(skill.descricao)} | {"projeto" if do_projeto else "usuario"}')
         for aviso in skill.avisos:
             saida(f'  aviso: {aviso}')
     return 0
@@ -117,7 +118,7 @@ def executar(
 
     acao = getattr(args, 'acao', None)
     if acao == 'list':
-        return _listar(skills, saida)
+        return _listar(skills, saida, pasta_projeto=pastas[0])
     if acao == 'import':
         return _importar(args, saida, base_home)
     if acao == 'show':

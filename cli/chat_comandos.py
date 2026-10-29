@@ -6,6 +6,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 try:
+    from app.goal import MAX_TURNOS_PADRAO
+except ImportError:
+    try:
+        from goal import MAX_TURNOS_PADRAO  # type: ignore[no-redef]
+    except ImportError:
+        MAX_TURNOS_PADRAO = 5
+
+try:
     from cli.memory_cmd import pasta_padrao
 except ImportError:
     try:
@@ -86,6 +94,14 @@ class ComandoSkill:
     '''Sinaliza execucao de uma skill para virar turno do usuario.'''
 
     texto: str
+
+
+@dataclass(frozen=True)
+class ComandoGoal:
+    '''Sinaliza execucao de um objetivo autonomo com teto de turnos.'''
+
+    objetivo: str
+    max_turnos: int = MAX_TURNOS_PADRAO
 
 
 class EstadoChat:
@@ -212,6 +228,7 @@ class Comandos:
         '/rollback',
         '/checkpoints',
         '/modo',
+        '/goal',
     ]
 
     def __init__(
@@ -264,7 +281,7 @@ class Comandos:
         sessao: Sessao,
         escrever: Callable[[str], None],
     ) -> Any:
-        '''Executa um comando de barra. Devolve sair, ComandoSkill ou None.'''
+        '''Executa um comando de barra. Devolve sair, ComandoSkill, ComandoGoal ou None.'''
         try:
             texto = linha.strip()
             if not texto:
@@ -297,6 +314,7 @@ class Comandos:
                     '/rollback [id] - Reverte alteracoes de arquivo feitas pelo agente.',
                     '/checkpoints - Lista os ultimos checkpoints de arquivos.',
                     '/modo [read-only|guarded|workspace] - Exibe ou altera o modo do agente.',
+                    '/goal [N] <objetivo> - Trabalha em turnos ate concluir o objetivo.',
                 ]
                 for item in linhas:
                     escrever(f'{item}\n')
@@ -589,6 +607,29 @@ class Comandos:
                 self.agente_cfg.modo = novo_modo
                 escrever(f'Modo alterado para {novo_modo}.\n')
                 return None
+
+            if cmd == '/goal':
+                uso_goal = (
+                    '/goal [N] <objetivo>: o agente trabalha em turnos '
+                    '(no maximo N, padrao 5) ate um juiz dizer que acabou; '
+                    'cada acao continua pedindo sua aprovacao; Ctrl+C interrompe'
+                )
+                if not arg:
+                    escrever(f'{uso_goal}\n')
+                    return None
+
+                partes_arg = arg.split(maxsplit=1)
+                try:
+                    n = int(partes_arg[0])
+                    if n < 1 or n > 10:
+                        escrever(f'{uso_goal}\n')
+                        return None
+                    if len(partes_arg) < 2 or not partes_arg[1].strip():
+                        escrever(f'{uso_goal}\n')
+                        return None
+                    return ComandoGoal(partes_arg[1].strip(), n)
+                except ValueError:
+                    return ComandoGoal(arg, MAX_TURNOS_PADRAO)
 
             # Linha /nome que case com uma skill vira comando de skill
             nome_candidato = cmd.lstrip('/')

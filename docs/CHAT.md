@@ -55,6 +55,7 @@ Você pode forçar um modelo com `--modelo` ou `/model nome`, voltar ao automát
 /cost
 /instrucoes
 /compact
+/goal [N] <objetivo>
 /maestro
 /perfil
 /rollback [id]
@@ -62,6 +63,10 @@ Você pode forçar um modelo com `--modelo` ou `/model nome`, voltar ao automát
 /modo
 /exit
 ```
+
+## Objetivos com /goal
+
+`/goal 5 faça o teste passar` faz o agente trabalhar em turnos (no máximo N, padrão 5, teto 10) até um juiz barato dizer que o objetivo foi cumprido, que está bloqueado ou que o limite acabou. Cada ação continua pedindo a sua aprovação (modo `guarded`) e Ctrl+C interrompe. Se o juiz falhar, o goal para: sem juiz não há como saber quando parar.
 
 ## Anexar arquivos com @
 
