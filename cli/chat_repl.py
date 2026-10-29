@@ -587,6 +587,7 @@ async def principal(
     except Exception:
         versao_hera = ''
     fontes = getattr(getattr(estado, 'instrucoes', None), 'fontes', None) if estado is not None else None
+    print(visual.limpar_tela(), end='')
     print(visual.banner(
         versao=versao_hera, modelo=modelo, pasta=pasta_atual, modo=modo_agente or '',
         maestro=bool(maestro is not None and getattr(maestro, 'ativo', True)),

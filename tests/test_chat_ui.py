@@ -177,3 +177,8 @@ def test_banner_mascote_com_cor():
     v = Visual(cor=True, largura=80)
     t = v.banner(versao='1.0', modelo='m', pasta='/p', modo='', maestro=False)
     assert '38;5;37' in t
+
+
+def test_limpar_tela_so_com_cor():
+    assert Visual(cor=False).limpar_tela() == ''
+    assert Visual(cor=True).limpar_tela() == '\x1b[2J\x1b[H'
