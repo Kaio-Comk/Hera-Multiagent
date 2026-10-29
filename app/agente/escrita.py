@@ -149,6 +149,13 @@ def _git_bloqueado(args: tuple[str, ...]) -> bool:
     return sub in ('push', 'clean') or (sub == 'reset' and '--hard' in resto)
 
 
+def _sem_aspas(arg: str) -> str:
+    """Tira as aspas externas do argumento: sem isso o programa recebe as aspas como parte do nome (cannot change to ...)."""
+    if len(arg) >= 2 and arg[0] == arg[-1] and arg[0] in ('"', "'"):
+        return arg[1:-1]
+    return arg
+
+
 def _sem_git_C(args: tuple[str, ...]) -> tuple[str, ...]:
     """'git -C <pasta> status' so muda a pasta: avalia como 'git status'. So o -C MAIUSCULO (o -c minusculo injeta config e nao passa)."""
     if len(args) >= 4 and args[0].lower() == 'git':
@@ -162,7 +169,7 @@ def _sem_git_C(args: tuple[str, ...]) -> tuple[str, ...]:
 def classificar_comando(texto: str) -> tuple[str, tuple[str, ...]]:
     """Classifica um comando em bloqueado, leitura ou normal."""
     try:
-        args = tuple(shlex.split(texto, posix=False))
+        args = tuple(_sem_aspas(a) for a in shlex.split(texto, posix=False))   # posix=False deixa as aspas no argumento
     except ValueError:
         return 'bloqueado', ()
     if not args:
@@ -355,7 +362,7 @@ class Escrita:
     def precisa_aprovacao(self, p: Pendencia) -> bool:
         """Indica se a pendencia exige aprovacao explicita."""
         if p.tipo == 'comando':
-            classe, _ = classificar_comando(' '.join(p.comando or ()))
+            classe, _ = classificar_comando(subprocess.list2cmdline(list(p.comando or ())))   # recoloca as aspas dos argumentos com espaco
             if classe == 'leitura':
                 return False
             if self.modo == 'auto' and classe == 'normal' and _seguro_no_auto(tuple(a.lower() for a in (p.comando or ()))):
