@@ -24,7 +24,7 @@ Search uses FTS5, so it finds words and excerpts quickly, without leaving your P
 
 ## Snapshot
 
-The snapshot is opt-in: it only happens with `HERA_MEMORY_SNAPSHOT=1`. It respects a token limit, so it does not grow without control.
+The snapshot is on by default (it only reads notes if the memory folder exists); `HERA_MEMORY_SNAPSHOT=0` turns it off. It respects a token limit, so it does not grow without control.
 
 ## Secret filter
 

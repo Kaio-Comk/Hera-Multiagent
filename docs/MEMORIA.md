@@ -24,7 +24,7 @@ A busca usa FTS5, então encontra por palavras e trechos com rapidez, sem sair d
 
 ## Snapshot
 
-O snapshot é opt-in: só acontece com `HERA_MEMORY_SNAPSHOT=1`. Ele respeita um limite de tokens, para não crescer sem controle.
+O snapshot vem ligado por padrão (só lê notas se a pasta de memória existir); `HERA_MEMORY_SNAPSHOT=0` desliga. Ele respeita um limite de tokens, para não crescer sem controle.
 
 ## Filtro de segredos
 

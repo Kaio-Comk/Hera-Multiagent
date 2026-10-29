@@ -12,13 +12,13 @@ from app.privacy_guard import PrivacyGuard
 
 logger = logging.getLogger(__name__)
 
-_VERDADEIROS = {'1', 'true', 'sim', 'on'}
+_DESLIGADOS = {'0', 'false', 'nao', 'off'}
 
 
 def _opt_in(environ: Mapping[str, str] | None) -> bool:
     env = os.environ if environ is None else environ
     valor = env.get('HERA_MEMORY_SNAPSHOT', '')
-    return valor.strip().lower() in _VERDADEIROS
+    return valor.strip().lower() not in _DESLIGADOS
 
 
 def contexto_da_memoria(
@@ -27,7 +27,7 @@ def contexto_da_memoria(
     environ: Mapping[str, str] | None = None,
     pasta: Path | None = None,
 ) -> str:
-    '''Devolve o snapshot da memoria sanitizado, se opt-in estiver ligado.'''
+    '''Devolve o snapshot da memoria sanitizado, salvo se HERA_MEMORY_SNAPSHOT=0.'''
     if not instrucao or not instrucao.strip():
         return ''
     if not _opt_in(environ):
@@ -56,7 +56,7 @@ def injetar_memoria_nos_passos(
 ) -> int:
     '''Antepoe o snapshot da memoria a instrucao de cada passo de um plano (servidor/DAG). Devolve quantos passos receberam.
 
-    Opt-in (HERA_MEMORY_SNAPSHOT). A tarefa original fica INTEIRA no fim; se nao sobrar espaco ate `max_total`, a memoria
+    Ligado por padrao; HERA_MEMORY_SNAPSHOT=0 desliga. A tarefa original fica INTEIRA no fim; se nao sobrar espaco ate `max_total`, a memoria
     e cortada, e abaixo de 200 caracteres uteis o passo nao e alterado. Nunca levanta: memoria e conveniencia.
     '''
     injetados = 0

@@ -119,7 +119,7 @@ hera memory forget <name>
 hera memory export
 ```
 
-With `HERA_MEMORY_SNAPSHOT=1` (also applied to the start of every step of plans run by the server: web panel and Claude plans, within the 4,000-character instruction limit), relevant notes are injected on each question. Conversations are saved in SQLite and can be resumed.
+By default (turn off with `HERA_MEMORY_SNAPSHOT=0`; also applied to the start of every step of plans run by the server: web panel and Claude plans, within the 4,000-character instruction limit), relevant notes are injected on each question. Conversations are saved in SQLite and can be resumed.
 
 ## Providers and cost
 

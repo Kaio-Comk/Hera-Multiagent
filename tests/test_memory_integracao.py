@@ -15,11 +15,11 @@ def _preparar(pasta: Path, nome: str = 'nota', corpo: str = 'conteudo relevante'
     store.save(nome, 'descricao', 'projeto', corpo)
 
 
-def test_desligado_por_padrao_nao_cria_indice(tmp_path: Path) -> None:
+def test_desligado_com_zero_nao_cria_indice(tmp_path: Path) -> None:
     pasta = tmp_path / 'mem'
     pasta.mkdir()
     _preparar(pasta)
-    out = contexto_da_memoria('pergunta', environ={}, pasta=pasta)
+    out = contexto_da_memoria('pergunta', environ={'HERA_MEMORY_SNAPSHOT': '0'}, pasta=pasta)
     assert out == ''
     assert not (pasta / '.indice.sqlite').exists()
 
@@ -124,13 +124,13 @@ def _pasta_com_nota(tmp_path):
     return pasta
 
 
-def test_injeta_memoria_nos_passos_so_quando_ligado(tmp_path):
+def test_injeta_memoria_nos_passos_ligado_por_padrao_e_desligavel(tmp_path):
     from app.memory.integracao import injetar_memoria_nos_passos
     pasta = _pasta_com_nota(tmp_path)
     passos = [{'id': 'a', 'instruction': 'preciso de testes para o modulo'}]
-    assert injetar_memoria_nos_passos(passos, environ={}, pasta=pasta) == 0
+    assert injetar_memoria_nos_passos(passos, environ={'HERA_MEMORY_SNAPSHOT': 'off'}, pasta=pasta) == 0
     assert passos[0]['instruction'] == 'preciso de testes para o modulo'
-    assert injetar_memoria_nos_passos(passos, environ={'HERA_MEMORY_SNAPSHOT': '1'}, pasta=pasta) == 1
+    assert injetar_memoria_nos_passos(passos, environ={}, pasta=pasta) == 1
     assert 'sempre escrever o teste antes do codigo' in passos[0]['instruction']
     assert passos[0]['instruction'].endswith('preciso de testes para o modulo')      # a tarefa original fica inteira, no fim
 
@@ -163,3 +163,10 @@ def test_servidor_chama_a_injecao_depois_de_normalizar_os_passos():
     import pathlib
     src = (pathlib.Path(__file__).resolve().parent.parent / 'app' / 'server.py').read_text(encoding='utf-8')
     assert src.index('orchestration.normalize_steps(raw_steps') < src.index('injetar_memoria_nos_passos(steps)')
+
+
+def test_ligado_por_padrao_sem_variavel(tmp_path: Path) -> None:
+    pasta = tmp_path / 'mem'
+    pasta.mkdir()
+    _preparar(pasta, nome='preferencia-testes', corpo='sempre escrever o teste antes do codigo')
+    assert 'preferencia-testes' in contexto_da_memoria('testes antes do codigo', environ={}, pasta=pasta)

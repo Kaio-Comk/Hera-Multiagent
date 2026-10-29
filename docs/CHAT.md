@@ -119,7 +119,7 @@ hera memory forget <nome>
 hera memory export
 ```
 
-Com `HERA_MEMORY_SNAPSHOT=1`, notas relevantes são injetadas a cada pergunta e também no começo de cada passo dos planos executados pelo servidor (painel web e planos do Claude), sem ultrapassar o limite de 4.000 caracteres da instrução. As conversas ficam salvas em SQLite e podem ser retomadas.
+Por padrão (desligue com `HERA_MEMORY_SNAPSHOT=0`), notas relevantes são injetadas a cada pergunta e também no começo de cada passo dos planos executados pelo servidor (painel web e planos do Claude), sem ultrapassar o limite de 4.000 caracteres da instrução. As conversas ficam salvas em SQLite e podem ser retomadas.
 
 ## Provedores e custo
 

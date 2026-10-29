@@ -130,7 +130,7 @@ class MultiagentOrchestrator:
         if context_block:
             final_instruction = f"{context_block}\n{instruction}"
             self._print_feedback("🧠 **[MEMÓRIA]** Contexto relevante injetado a partir do Obsidian Vault.")
-        # Memoria do Hera (notas em Markdown): opt-in por HERA_MEMORY_SNAPSHOT=1, ja sanitizada de segredos.
+        # Memoria do Hera (notas em Markdown): ligada por padrao (HERA_MEMORY_SNAPSHOT=0 desliga), ja sanitizada de segredos.
         memoria = contexto_da_memoria(instruction)
         if memoria:
             final_instruction = f"{memoria}\n{final_instruction}"

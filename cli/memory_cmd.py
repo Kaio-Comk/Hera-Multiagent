@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 from typing import Callable, Iterable
 
-from app.memory.index import MemoryIndex
+from app.memory.index import IndiceIndisponivel, MemoryIndex
 from app.memory.schema import TIPOS
 from app.memory.store import DuplicateNoteError, MemoryStore
 
@@ -199,5 +199,7 @@ def executar(
         return _erro(saida, f'Acao desconhecida: {acao}')
     except ValueError as exc:
         return _erro(saida, f'Erro: {exc}')
+    except IndiceIndisponivel as exc:
+        return _erro(saida, f'Indice da memoria indisponivel: {exc}')
     finally:
         index.close()

@@ -36,7 +36,7 @@ async def test_snapshot_entra_na_instrucao_quando_ligado(tmp_path, monkeypatch):
 async def test_instrucao_intacta_quando_desligado(tmp_path, monkeypatch):
     MemoryStore(tmp_path).save("preferencia-testes", "como testar", "usuario", "sempre escrever o teste antes do codigo")
     monkeypatch.setenv("HERA_MEMORY_DIR", str(tmp_path))
-    monkeypatch.delenv("HERA_MEMORY_SNAPSHOT", raising=False)
+    monkeypatch.setenv("HERA_MEMORY_SNAPSHOT", "0")
     capturado: list = []
     await _orquestrador(capturado).execute_task("t", "preciso de testes para o modulo", save_to_obsidian=False)
     assert capturado == ["preciso de testes para o modulo"]
