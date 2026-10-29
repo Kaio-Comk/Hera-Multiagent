@@ -2563,7 +2563,7 @@ async def claude_auth_login(body: ClaudeLoginBody):
     args = [binary, "auth", "login", f"--{body.mode}"]
     if sys.platform != "win32":
         return {"started": False, "command": " ".join(args), "message": "Rode este comando no terminal."}
-    subprocess.Popen(args, creationflags=subprocess.CREATE_NEW_CONSOLE, close_fds=True)      # noqa: S603 - args fixos, sem shell
+    subprocess.Popen(args, creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0), close_fds=True)      # noqa: S603 - args fixos, sem shell
     _CLAUDE_STATUS_CACHE["value"] = None
     return {"started": True, "message": "Uma janela do Claude Code abriu. Conclua o login no navegador."}
 

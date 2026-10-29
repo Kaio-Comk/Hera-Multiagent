@@ -1,5 +1,6 @@
 """Fase 3: validacao de entrada da API (tarefas, HITL e /api/config)."""
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -44,7 +45,9 @@ def test_tarefa_valida_continua_sendo_enfileirada(monkeypatch):
 
 # ── HITL: caminhos ─────────────────────────────────────────────────────────────
 def test_proposta_com_repo_fora_das_raizes_permitidas_e_recusada(tmp_path):
-    for path in (str(tmp_path), "C:\\", "..\\..\\outro", str(Path(server.ROOT_DIR).parent)):
+    # Em Linux/macOS 'C:\' e '..\..\x' sao nomes de arquivo comuns (nao caminhos): cada plataforma testa as suas formas.
+    fora = ("C:\\", "..\\..\\outro") if sys.platform == "win32" else ("/", "../../outro")
+    for path in (str(tmp_path), *fora, str(Path(server.ROOT_DIR).parent)):
         r = client.post("/api/hitl/proposals", json={"task_id": "t", "repo_path": path,
                                                      "feature_branch": "hera/x", "target_branch": "master"})
         assert r.status_code == 400, path
@@ -53,9 +56,11 @@ def test_proposta_com_repo_fora_das_raizes_permitidas_e_recusada(tmp_path):
 
 def test_proposta_com_worktree_ou_allowed_paths_inseguros_e_recusada():
     base = {"task_id": "t", "feature_branch": "hera/x", "target_branch": "master"}
-    r = client.post("/api/hitl/proposals", json={**base, "worktree_path": "C:\\Windows\\Temp"})
+    windows = sys.platform == "win32"
+    r = client.post("/api/hitl/proposals", json={**base, "worktree_path": "C:\\Windows\\Temp" if windows else "/etc/hera-tmp"})
     assert r.status_code == 400 and r.json()["detail"]["error"] == "path_not_allowed"
-    for bad in (["..\\x"], ["/etc"], ["C:\\x"], ["a/../../b"], [""]):
+    ruins = (["..\\x"], ["/etc"], ["C:\\x"], ["a/../../b"], [""]) if windows else (["../x"], ["/etc"], ["a/../../b"], [""])
+    for bad in ruins:
         r = client.post("/api/hitl/proposals", json={**base, "allowed_paths": bad})
         assert r.status_code == 400, bad
 
