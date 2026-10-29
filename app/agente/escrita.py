@@ -164,12 +164,15 @@ class Escrita:
         except Exception:
             return None
 
-    def _dentro(self, path: Path) -> bool:
+    def _na_pasta(self, path: Path) -> bool:
         try:
             path.relative_to(self.raiz.pasta)
             return True
         except ValueError:
             return False
+
+    def _dentro(self, path: Path) -> bool:
+        return True if self.raiz.acesso_total else self._na_pasta(path)
 
     def _bloqueio_modo(self) -> Resultado | None:
         if self.modo == 'read-only':
@@ -291,7 +294,9 @@ class Escrita:
             chave = (p.comando or (), str(self.raiz.pasta))
             return chave not in self._lembrados
         if self.modo == 'workspace':
-            return False
+            # grava sem perguntar so dentro da pasta de trabalho; em qualquer outro lugar do PC, sempre pergunta
+            alvo = getattr(p, 'alvo', None)
+            return bool(self.raiz.acesso_total and alvo is not None and not self._na_pasta(Path(alvo).resolve()))
         return True
 
     def lembrar(self, p: Pendencia) -> None:

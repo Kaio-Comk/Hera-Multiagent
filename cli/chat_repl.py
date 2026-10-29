@@ -553,6 +553,8 @@ async def principal(
     visual = Visual()
     sessao_prompt = PromptSession(style=Style.from_dict({'bottom-toolbar': 'noreverse'}))
     modo_agente = getattr(agente_cfg, 'modo', None) if agente_cfg is not None else None
+    if modo_agente and getattr(getattr(agente_cfg, 'raiz', None), 'acesso_total', False):
+        modo_agente = f'{modo_agente} · todo o PC'
     pasta_atual = str(Path.cwd())
 
     def rodape() -> ANSI:

@@ -37,11 +37,22 @@ _PASTAS_SENSIVEIS = ('.git', '.ssh', '.aws', '.gnupg', '.kube', '.docker')
 _PASTAS_SENSIVEIS_NA_RAIZ = ('appdata',)
 
 
+def _em_appdata(partes: tuple[str, ...]) -> bool:
+    '''True se o caminho esta em AppData (perfis de navegador, credenciais...), exceto dentro de uma pasta Temp.'''
+    minusculas = [x.lower() for x in partes]
+    if 'appdata' not in minusculas:
+        return False
+    return 'temp' not in minusculas[minusculas.index('appdata') + 1:]
+
+
 class Raiz:
     '''Raiz de trabalho do agente; todo acesso fica confinado a ela.'''
 
-    def __init__(self, pasta: Path) -> None:
+    def __init__(self, pasta: Path, *, acesso_total: bool = False) -> None:
         self.pasta = Path(pasta).resolve()
+        # acesso_total: o agente alcanca qualquer pasta do PC (a pasta atual continua sendo a "casa": cwd dos comandos,
+        # unica onde o modo workspace grava sem perguntar). Arquivos com segredo seguem sempre recusados.
+        self.acesso_total = acesso_total
         self.leitura_extra: list[Path] = []   # pastas liberadas so para LEITURA (/pasta); escrever segue so na raiz
 
     def permitir_leitura(self, pasta: str | Path) -> Path:
@@ -66,10 +77,15 @@ class Raiz:
         if not p.is_absolute():
             p = self.pasta / p
         resolvido = p.resolve()
+        if self.acesso_total:
+            return resolvido
         if resolvido != self.pasta and self.pasta not in resolvido.parents:
             if leitura and any(resolvido == e or e in resolvido.parents for e in self.leitura_extra):
                 return resolvido
-            raise CaminhoNegado('fora da pasta de trabalho')
+            raise CaminhoNegado(
+                'fora da pasta de trabalho. Peca ao usuario para liberar a leitura com /pasta CAMINHO; '
+                'nao tente contornar com executar_comando'
+            )
         return resolvido
 
     def relativo(self, caminho: str | Path) -> str:
@@ -99,7 +115,8 @@ class Raiz:
         try:
             relativas = p.resolve().relative_to(self.pasta).parts
         except (ValueError, OSError):
-            relativas = ()
+            # fora da pasta de trabalho: com acesso total, o AppData de qualquer usuario continua protegido
+            return self.acesso_total and _em_appdata(p.parts)
         return any(parte.lower() in _PASTAS_SENSIVEIS_NA_RAIZ for parte in relativas)
 
     def exigir_leitura(self, caminho: str | Path) -> Path:

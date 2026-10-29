@@ -26,7 +26,7 @@ hera chat --listar
 Opções principais:
 
 - `--agente`: agente de código (já é o padrão): lê, edita e roda comandos na pasta atual, com aprovação. `--sem-agente` desliga e deixa só a conversa.
-- `--pasta CAMINHO`: libera outra pasta só para leitura do agente (pode repetir; no chat, `/pasta CAMINHO`). Escrever continua só na pasta atual; para editar outro projeto, abra o chat nele.
+- `--so-esta-pasta`: confina o agente à pasta atual (por padrão ele alcança todo o PC). Com ele, `--pasta CAMINHO` (ou `/pasta CAMINHO` no chat) libera outra pasta só para leitura.
 - `--modo read-only|guarded|workspace`: padrão `guarded`.
 - `--modelo X`: força um modelo.
 - `--sem-maestro`: desliga o Maestro.
@@ -135,7 +135,7 @@ O `hera skills import` copia as skills de `~/.claude/skills` sem alterar as orig
 
 ## Agente de código e segurança
 
-O agente vem ligado por padrão (modo `guarded`: pede aprovação antes de gravar ou rodar). Ele só enxerga a pasta em que o chat foi aberto; arquivos sensíveis (`.env`, chaves, sessões, credenciais, `AppData`) são sempre recusados. Ferramentas disponíveis: `ler_arquivo`, `listar_pasta`, `buscar`, `editar_arquivo`, `escrever_arquivo`, `executar_comando`, `usar_skill` e `delegar_tarefa`.
+O agente vem ligado por padrão (modo `guarded`: pede aprovação antes de gravar ou rodar). Ele alcança qualquer pasta do PC (a pasta em que o chat foi aberto é só a pasta de partida dos comandos e a única onde o modo `workspace` grava sem perguntar); gravar fora dela e rodar comandos sempre pedem aprovação. Arquivos sensíveis (`.env`, chaves, sessões, credenciais, `AppData`) são sempre recusados. Para confinar o agente à pasta atual, use `--so-esta-pasta`. Ferramentas disponíveis: `ler_arquivo`, `listar_pasta`, `buscar`, `editar_arquivo`, `escrever_arquivo`, `executar_comando`, `usar_skill` e `delegar_tarefa`.
 
 A `delegar_tarefa` chama sub-agentes: ajudantes de contexto limpo, num modelo mais barato (faixa leve, médio ou pesado), que **só leem** o projeto e devolvem um resumo. Até 3 rodam em paralelo; não editam, não executam comandos e não criam outros sub-agentes. Quem edita é sempre o agente principal, com a sua aprovação.
 

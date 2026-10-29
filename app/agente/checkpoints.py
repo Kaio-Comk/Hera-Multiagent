@@ -38,6 +38,7 @@ class Checkpoints:
     def __init__(self, pasta_dados: Path, raiz: Path) -> None:
         self.pasta_dados = Path(pasta_dados)
         self.raiz = Path(getattr(raiz, 'pasta', raiz)).resolve()      # aceita Path ou o objeto Raiz
+        self.permitir_externos = bool(getattr(raiz, 'acesso_total', False))   # so com acesso total ha alvo fora da raiz
         self.pasta_dados.mkdir(parents=True, exist_ok=True)
         self.blobs = self.pasta_dados / 'blobs'
         self.blobs.mkdir(parents=True, exist_ok=True)
@@ -51,10 +52,22 @@ class Checkpoints:
         try:
             rel = p.relative_to(self.raiz)
         except ValueError:
-            raise ValueError(f'alvo fora da raiz: {alvo}')
+            if not self.permitir_externos:
+                raise ValueError(f'alvo fora da raiz: {alvo}')
+            # fora da pasta de trabalho (acesso total): '@ext/B/Projetos/x' (unidade) ou '@ext//pasta/x' (posix)
+            posix = p.as_posix()
+            if len(posix) > 1 and posix[1] == ':':
+                return f'@ext/{posix[0]}{posix[2:]}'
+            return f'@ext/{posix}'
         return rel.as_posix()
 
     def _abs(self, rel: str) -> Path:
+        if rel.startswith('@ext/') and self.permitir_externos:
+            resto = rel[5:]
+            if resto.startswith('/'):
+                return Path(resto)
+            unidade, _, caminho = resto.partition('/')
+            return Path(f'{unidade}:/{caminho}')
         p = (self.raiz / rel).resolve()
         try:
             p.relative_to(self.raiz)

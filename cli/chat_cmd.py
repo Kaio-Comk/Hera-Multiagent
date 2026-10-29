@@ -234,7 +234,7 @@ async def executar(
     cfg = agente_cfg
     if cfg is None and getattr(args, 'agente', False):
         modo = getattr(args, 'modo', 'guarded')
-        raiz_agente = Raiz(Path.cwd())
+        raiz_agente = Raiz(Path.cwd(), acesso_total=not getattr(args, 'so_esta_pasta', False))
         for extra in getattr(args, 'pasta', None) or []:
             try:
                 raiz_agente.permitir_leitura(extra)
@@ -287,6 +287,8 @@ async def executar(
             'Use as ferramentas para ler antes de editar, faça edições pequenas, '
             'rode os testes do projeto com executar_comando e nunca peça ao usuário para colar o que você pode ler. '
             'Para varrer ou analisar muito código, use delegar_tarefa (faixa leve) e junte os resumos; edite você mesmo.'
+            ' Se um arquivo estiver fora da pasta de trabalho, peça ao usuário para liberar a leitura com /pasta CAMINHO e pare ali: '
+            'nunca tente contornar a pasta com executar_comando (type, dir, cd, powershell).'
         )
         sistema = f'{sistema}\n\n{paragrafo}'.strip()
     else:
@@ -388,6 +390,12 @@ def registrar(subparsers: Any) -> None:
         action='store_true',
         default=True,
         help='Agente de codigo (le, edita e roda comandos na pasta atual, com aprovacao); ja e o padrao',
+    )
+    parser.add_argument(
+        '--so-esta-pasta',
+        dest='so_esta_pasta',
+        action='store_true',
+        help='Confina o agente a pasta atual (por padrao ele alcanca todo o PC, sempre com aprovacao para gravar e rodar)',
     )
     parser.add_argument(
         '--pasta',
