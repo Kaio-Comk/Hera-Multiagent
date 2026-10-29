@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hera-multiagent"
-version = "1.0.0"
+version = "1.1.0"
 description = "Hera Multiagent — The Sovereign Local AI Orchestrator for Windows (Ollama, Claude Code, Antigravity, Roteador embutido, Obsidian)"
 authors = [{ name = "Kaio Lima" }]
 readme = "README.md"
