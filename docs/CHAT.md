@@ -101,6 +101,17 @@ Você pode forçar um modelo com `--modelo` ou `/model nome`, voltar ao automát
 
 `/goal 5 faça o teste passar` faz o agente trabalhar em turnos (no máximo N, padrão 5, teto 10) até um juiz barato dizer que o objetivo foi cumprido, que está bloqueado ou que o limite acabou. Cada ação continua pedindo a sua aprovação (modo `guarded`) e Ctrl+C interrompe. Se o juiz falhar, o goal para: sem juiz não há como saber quando parar.
 
+## Imagens
+
+O `hera chat` lê imagens (prints, fotos, capturas de erro):
+
+- `@print.png` ou `@"minha pasta/print.png"` anexa um arquivo; caminhos relativos partem da pasta atual.
+- Arrastar o arquivo para o terminal cola o caminho completo (com ou sem aspas), e isso também vale.
+- `@clip` anexa a imagem que está na área de transferência (por exemplo, depois de `Win+Shift+S`). Só no Windows.
+- Formatos: PNG, JPEG, GIF e WebP, até 4 imagens por mensagem e 5 MB cada. O formato é conferido pelo conteúdo do arquivo, não pela extensão.
+- O maestro escolhe sozinho um modelo que enxerga imagens (DeepSeek-V4.1-Flash, depois gemini-flash-lite e o Nemotron VL). Com um modelo forçado por você que não enxerga, o chat só avisa.
+- A imagem vai para o modelo escolhido (inclusive para provedores na nuvem): não anexe telas com senhas ou dados pessoais. O histórico salvo guarda só o texto `[imagem: nome]`, não os pixels.
+
 ## Anexar arquivos com @
 
 Escreva `@arquivo`, `@pasta/x.py` ou `@x.py:10-30` na pergunta e o conteúdo vai junto para o modelo (até 5 anexos por mensagem). Pastas viram uma listagem. Caminhos fora da pasta de trabalho e arquivos sensíveis (`.env`, chaves) são recusados com aviso, e chaves dentro do conteúdo são mascaradas. O histórico gravado guarda o que você digitou, sem o conteúdo anexado.

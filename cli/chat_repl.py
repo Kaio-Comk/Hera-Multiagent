@@ -211,6 +211,7 @@ async def rodar(
     janela: int = 32000,
     resumir: Optional[Callable[[str], Awaitable[str]]] = None,
     anexos: Optional[Callable[[str], tuple]] = None,
+    imagens: Optional[Callable[[str], tuple]] = None,
     julgar: Optional[Callable[[str], Awaitable[str]]] = None,
 ) -> Sessao:
     '''Executa o laco de conversa ate o usuario encerrar.'''
@@ -272,6 +273,16 @@ async def rodar(
     async def executar_turno(texto: str) -> str:
         nonlocal primeira_vez, modelo_anterior
 
+        # Imagens citadas na pergunta (@print.png, caminho arrastado, @clip): lidas antes de tudo; no texto fica '[imagem: nome]'.
+        lista_imagens: list = []
+        if imagens is not None:
+            try:
+                texto, lista_imagens, avisos_imagens = imagens(texto)
+                for aviso in avisos_imagens:
+                    escrever(f'[imagens: {aviso}]\n')
+            except Exception:  # noqa: BLE001 - imagem e conveniencia: na duvida, segue so com o texto
+                lista_imagens = []
+
         # Contexto de memoria por turno: executado em thread e nunca derruba o turno
         memoria = ''
         try:
@@ -305,6 +316,25 @@ async def rodar(
             primeira_vez = False
             modelo_anterior = escolha.modelo
 
+        if lista_imagens:
+            from cli.chat_imagens import escolher_modelo_visao, modelo_enxerga
+
+            escrever('[imagem: ' + ', '.join(f'{i.nome} ({max(1, round(i.tamanho_kb))} KB)' for i in lista_imagens) + ']\n')
+            if not modelo_enxerga(str(getattr(cliente, 'modelo', ''))):
+                novo = None
+                if maestro is not None and getattr(maestro, 'ativo', True) and not getattr(escolha, 'forcada', False):
+                    try:
+                        novo = escolher_modelo_visao(await maestro._disponiveis(), maestro._indisponiveis_ativos())
+                    except Exception:  # noqa: BLE001
+                        novo = None
+                if novo:
+                    cliente.modelo = novo
+                    sessao.modelo = novo
+                    modelo_anterior = novo
+                    escrever(f'[maestro: imagem -> {novo}]\n')
+                else:
+                    escrever(f'Aviso: o modelo {cliente.modelo} pode nao enxergar imagens.\n')
+
         texto_modelo = texto
         if anexos is not None:  # '@arquivo' na pergunta: o MODELO recebe o conteudo; o historico gravado guarda o que o usuario digitou
             try:
@@ -317,7 +347,12 @@ async def rodar(
                     escrever(resumo_anexos(lista_anexos) + '\n')
             except Exception:  # noqa: BLE001 - anexar e conveniencia: na duvida, segue com a pergunta original
                 texto_modelo = texto
-        sessao.mensagens.append({'role': 'user', 'content': texto_modelo})
+        if lista_imagens:
+            from cli.chat_imagens import montar_conteudo
+
+            sessao.mensagens.append({'role': 'user', 'content': montar_conteudo(texto_modelo, lista_imagens)})
+        else:
+            sessao.mensagens.append({'role': 'user', 'content': texto_modelo})
 
         # Compactacao antes do envio
         if compactar_fn is not None and estimar_tokens is not None:
@@ -739,6 +774,13 @@ async def principal(
     def anexos_fn(texto_usuario: str):
         return expandir_anexos(texto_usuario, raiz_anexos)
 
+    from cli.chat_imagens import extrair_imagens, imagem_da_area_de_transferencia
+
+    def imagens_fn(texto_usuario: str):
+        return extrair_imagens(
+            texto_usuario, Path.cwd(), exportar_clipboard=imagem_da_area_de_transferencia
+        )
+
     await rodar(
         cliente,
         ler_linha,
@@ -751,5 +793,6 @@ async def principal(
         janela=janela,
         resumir=resumir_fn,
         anexos=anexos_fn,
+        imagens=imagens_fn,
         julgar=julgar,
     )

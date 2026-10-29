@@ -61,7 +61,9 @@ def _montar_conversa(mensagens: list[dict], max_chars: int) -> str:
         role = str(msg.get('role', ''))
         content = msg.get('content', '')
         if not isinstance(content, str):
-            content = str(content)
+            from app.imagens import texto_de_conteudo
+
+            content = texto_de_conteudo(content)
         content = PrivacyGuard.sanitize_content(content)
         linha = f'{role}: {content}'
         if total + len(linha) > max_chars and linhas:

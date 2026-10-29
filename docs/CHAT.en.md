@@ -101,6 +101,17 @@ You can force a model with `--modelo` or `/model nome`, return to automatic with
 
 `/goal 5 make the test pass` makes the agent work in turns (at most N, default 5, hard cap 10) until a cheap judge says the goal is met, blocked, or the limit is reached. Every action still asks for your approval (`guarded` mode) and Ctrl+C interrupts. If the judge fails, the goal stops: without a judge there is no way to know when to stop.
 
+## Images
+
+`hera chat` can read images (screenshots, photos, error captures):
+
+- `@print.png` or `@"my folder/print.png"` attaches a file; relative paths start at the current folder.
+- Dragging the file into the terminal pastes its full path (quoted or not), which also works.
+- `@clip` attaches the image on the clipboard (for example after `Win+Shift+S`). Windows only.
+- Formats: PNG, JPEG, GIF and WebP, up to 4 images per message and 5 MB each. The format is checked from the file contents, not the extension.
+- The maestro picks a vision-capable model on its own (DeepSeek-V4.1-Flash, then gemini-flash-lite and Nemotron VL). If you force a model that cannot see images, the chat only warns you.
+- The image goes to the chosen model (including cloud providers): do not attach screens with passwords or personal data. The saved history keeps only the text `[imagem: name]`, not the pixels.
+
 ## Attaching files with @
 
 Write `@file`, `@folder/x.py`, or `@x.py:10-30` in your message and the content is sent to the model along with it (up to 5 attachments per message). Folders become a listing. Paths outside the working folder and sensitive files (`.env`, keys) are refused with a warning, and keys inside the content are masked. The saved history keeps what you typed, not the attached content.

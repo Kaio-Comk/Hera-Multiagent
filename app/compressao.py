@@ -6,6 +6,8 @@ import math
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Iterable, Sequence
 
+from app.imagens import TOKENS_POR_IMAGEM, contar_imagens
+
 Mensagem = dict[str, Any]
 Resumidor = Callable[[str], Awaitable[str]]
 
@@ -16,7 +18,9 @@ def _texto_content(msg: Mensagem) -> str:
         return ''
     if isinstance(c, str):
         return c
-    return str(c)
+    from app.imagens import texto_de_conteudo
+
+    return texto_de_conteudo(c)
 
 
 def _tokens_texto(texto: str) -> int:
@@ -30,6 +34,7 @@ def estimar_tokens(mensagens: Sequence[Mensagem]) -> int:
     for msg in mensagens:
         total += 4
         total += _tokens_texto(_texto_content(msg))
+        total += TOKENS_POR_IMAGEM * contar_imagens(msg.get('content'))
         tcs = msg.get('tool_calls')
         if tcs:
             try:
