@@ -97,7 +97,7 @@ class Leitura:
     def listar_pasta(self, caminho: str = '.') -> Resultado:
         '''Lista entradas de uma pasta, ocultando pastas ruidosas.'''
         try:
-            alvo = self.raiz.resolver(caminho)
+            alvo = self.raiz.resolver(caminho, leitura=True)
         except CaminhoNegado as exc:
             return Resultado(False, str(exc))
         if not alvo.exists():
@@ -132,7 +132,7 @@ class Leitura:
         except re.error as exc:
             return Resultado(False, f'regex invalida: {exc}')
         try:
-            base = self.raiz.resolver(caminho)
+            base = self.raiz.resolver(caminho, leitura=True)
         except CaminhoNegado as exc:
             return Resultado(False, str(exc))
         if not base.exists():

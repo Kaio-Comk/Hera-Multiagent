@@ -25,7 +25,8 @@ hera chat --listar
 
 Opções principais:
 
-- `--agente`: ativa o agente de código.
+- `--agente`: agente de código (já é o padrão): lê, edita e roda comandos na pasta atual, com aprovação. `--sem-agente` desliga e deixa só a conversa.
+- `--so-esta-pasta`: confina o agente à pasta atual (por padrão ele alcança todo o PC). Com ele, `--pasta CAMINHO` (ou `/pasta CAMINHO` no chat) libera outra pasta só para leitura.
 - `--modo read-only|guarded|workspace`: padrão `guarded`.
 - `--modelo X`: força um modelo.
 - `--sem-maestro`: desliga o Maestro.
@@ -101,6 +102,17 @@ Você pode forçar um modelo com `--modelo` ou `/model nome`, voltar ao automát
 
 `/goal 5 faça o teste passar` faz o agente trabalhar em turnos (no máximo N, padrão 5, teto 10) até um juiz barato dizer que o objetivo foi cumprido, que está bloqueado ou que o limite acabou. Cada ação continua pedindo a sua aprovação (modo `guarded`) e Ctrl+C interrompe. Se o juiz falhar, o goal para: sem juiz não há como saber quando parar.
 
+## Imagens
+
+O `hera chat` lê imagens (prints, fotos, capturas de erro):
+
+- `@print.png` ou `@"minha pasta/print.png"` anexa um arquivo; caminhos relativos partem da pasta atual.
+- Arrastar o arquivo para o terminal cola o caminho completo (com ou sem aspas), e isso também vale.
+- `@clip` anexa a imagem que está na área de transferência (por exemplo, depois de `Win+Shift+S`). Só no Windows.
+- Formatos: PNG, JPEG, GIF e WebP, até 4 imagens por mensagem e 5 MB cada. O formato é conferido pelo conteúdo do arquivo, não pela extensão.
+- O maestro escolhe sozinho um modelo que enxerga imagens (DeepSeek-V4.1-Flash, depois gemini-flash-lite e o Nemotron VL). Com um modelo forçado por você que não enxerga, o chat só avisa.
+- A imagem vai para o modelo escolhido (inclusive para provedores na nuvem): não anexe telas com senhas ou dados pessoais. O histórico salvo guarda só o texto `[imagem: nome]`, não os pixels.
+
 ## Anexar arquivos com @
 
 Escreva `@arquivo`, `@pasta/x.py` ou `@x.py:10-30` na pergunta e o conteúdo vai junto para o modelo (até 5 anexos por mensagem). Pastas viram uma listagem. Caminhos fora da pasta de trabalho e arquivos sensíveis (`.env`, chaves) são recusados com aviso, e chaves dentro do conteúdo são mascaradas. O histórico gravado guarda o que você digitou, sem o conteúdo anexado.
@@ -123,7 +135,7 @@ O `hera skills import` copia as skills de `~/.claude/skills` sem alterar as orig
 
 ## Agente de código e segurança
 
-Com `--agente`, ficam disponíveis as ferramentas: `ler_arquivo`, `listar_pasta`, `buscar`, `editar_arquivo`, `escrever_arquivo`, `executar_comando`, `usar_skill` e `delegar_tarefa`.
+O agente vem ligado por padrão (modo `guarded`: pede aprovação antes de gravar ou rodar). Ele alcança qualquer pasta do PC (a pasta em que o chat foi aberto é só a pasta de partida dos comandos e a única onde o modo `workspace` grava sem perguntar); gravar fora dela e rodar comandos sempre pedem aprovação. Arquivos sensíveis (`.env`, chaves, sessões, credenciais, `AppData`) são sempre recusados. Para confinar o agente à pasta atual, use `--so-esta-pasta`. Ferramentas disponíveis: `ler_arquivo`, `listar_pasta`, `buscar`, `editar_arquivo`, `escrever_arquivo`, `executar_comando`, `usar_skill` e `delegar_tarefa`.
 
 A `delegar_tarefa` chama sub-agentes: ajudantes de contexto limpo, num modelo mais barato (faixa leve, médio ou pesado), que **só leem** o projeto e devolvem um resumo. Até 3 rodam em paralelo; não editam, não executam comandos e não criam outros sub-agentes. Quem edita é sempre o agente principal, com a sua aprovação.
 
@@ -138,6 +150,14 @@ Regras de execução:
 - Nunca lê `.env`, chaves ou `.git`.
 
 Checkpoints automáticos ficam em `~/.hera/checkpoints`. O `/rollback` desfaz sem apagar o que você editou depois.
+
+### Modos do agente (Shift+Tab)
+
+`Shift+Tab` alterna o modo no campo de entrada; o rodapé mostra qual está ativo (também `/modo <nome>` ou `--modo` ao abrir):
+
+- **aprovação manual** (`guarded`): pergunta antes de gravar e antes de rodar comandos (`--modo guarded`).
+- **auto mode** (`auto`, padrão, em amarelo): grava sem perguntar em qualquer pasta do PC (menos as do sistema, como `C:\Windows` e `Program Files`) e roda sem perguntar só verificações do projeto (`pytest`, `python -m pytest`, `python -m unittest`, `npm test`, `npm run test`, `npm run lint`, `node --check`, `ruff check`). Continuam pedindo aprovação: gravar em pastas do sistema, build, instalar pacotes, `git commit` e qualquer outro comando. O que é bloqueado (`git push`, apagar em massa, `curl`, `powershell`, encadear comandos) continua bloqueado. O diff aparece sempre, e `/rollback` desfaz.
+- **somente leitura** (`read-only`): o agente só lê e analisa; nada é gravado nem executado.
 
 ## Memória
 

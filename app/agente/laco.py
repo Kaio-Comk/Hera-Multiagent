@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from typing import Any, AsyncIterator, Awaitable, Callable, Iterable, Sequence
 
 from cli.chat_ferramentas import (
@@ -176,7 +177,7 @@ class Agente:
         *,
         aprovar: Aprovar,
         escrever: Escrever,
-        max_passos: int = 15,
+        max_passos: int | None = None,
         max_chamadas_por_passo: int = 8,
         skills: Any = None,
         delegar: Delegar | None = None,
@@ -186,6 +187,11 @@ class Agente:
         self.escrita = escrita
         self.aprovar = aprovar
         self.escrever = escrever
+        if max_passos is None:  # investigar um bug passa de 15 chamadas ao modelo com folga: padrao 40, ajustavel
+            try:
+                max_passos = max(1, int(os.environ.get('HERA_MAX_PASSOS', '40')))
+            except ValueError:
+                max_passos = 40
         self.max_passos = max_passos
         self.max_chamadas_por_passo = max_chamadas_por_passo
         self.skills = skills
@@ -281,7 +287,26 @@ class Agente:
                     resultado = resultados[i]
                 msgs.append(mensagem_resultado(ch, resultado))
 
-        return texto_turno + f'\n[limite de {self.max_passos} passos atingido]'
+        # Limite de passos: uma ultima chamada SEM ferramentas para ele dizer o que achou e o que falta, em vez de sumir.
+        aviso = f'\n[limite de {self.max_passos} passos atingido; escreva "continue" para seguir]\n'
+        self.escrever(aviso)
+        final_msgs = list(msgs) + [
+            {
+                'role': 'user',
+                'content': (
+                    'Voce atingiu o limite de passos deste pedido. Sem usar ferramentas, resuma em poucas linhas: '
+                    'o que descobriu (arquivos e linhas), qual e a causa provavel e o que falta para concluir.'
+                ),
+            }
+        ]
+        try:
+            async for ev in self.conversar(final_msgs, []):
+                if ev.tipo == 'texto' and ev.texto:
+                    texto_turno += ev.texto
+                    self.escrever(ev.texto)
+        except Exception:  # noqa: BLE001 - o resumo e cortesia: se falhar, o aviso de limite ja foi dado
+            pass
+        return texto_turno + aviso
 
     def _usar_skill(self, nome: str) -> str:
         if not self.skills:

@@ -234,7 +234,12 @@ async def executar(
     cfg = agente_cfg
     if cfg is None and getattr(args, 'agente', False):
         modo = getattr(args, 'modo', 'guarded')
-        raiz_agente = Raiz(Path.cwd())
+        raiz_agente = Raiz(Path.cwd(), acesso_total=not getattr(args, 'so_esta_pasta', False))
+        for extra in getattr(args, 'pasta', None) or []:
+            try:
+                raiz_agente.permitir_leitura(extra)
+            except Exception as exc:  # noqa: BLE001
+                print(f'Aviso: pasta {extra} nao liberada ({exc})')
         sha = hashlib.sha1(str(Path.cwd()).encode('utf-8')).hexdigest()[:12]
         pasta_checkpoints = Path.home() / '.hera' / 'checkpoints' / sha
         checkpoints = Checkpoints(pasta_checkpoints, raiz_agente)
@@ -253,7 +258,9 @@ async def executar(
 
     catalogo = ''
     try:
-        catalogo = catalogo_para_prompt(skills)
+        # O catalogo manda o modelo "ler a skill" com a ferramenta de leitura: so existe no modo agente.
+        # Sem agente, as skills continuam valendo pelos comandos /nome.
+        catalogo = catalogo_para_prompt(skills) if cfg is not None else ''
     except Exception:
         catalogo = ''
 
@@ -281,7 +288,29 @@ async def executar(
             'rode os testes do projeto com executar_comando e nunca peça ao usuário para colar o que você pode ler. '
             'Para varrer ou analisar muito código, use delegar_tarefa (faixa leve) e junte os resumos; edite você mesmo.'
         )
+        if getattr(getattr(cfg, 'raiz', None), 'acesso_total', False):
+            paragrafo += (
+                ' executar_comando NÃO é um shell: nada de dir, type, cd, echo, pipes ou &&; para ler use listar_pasta, ler_arquivo e buscar, e para rodar use um programa por vez (pytest, python, git, npm, node).'
+            ' Você alcança QUALQUER pasta deste PC (o usuário liberou): quando o vault, uma nota ou o pedido apontar '
+                'um caminho absoluto (por exemplo B:\\Projetos\\NetHub\\NetHub BR), leia-o direto com ler_arquivo, '
+                'listar_pasta e buscar usando esse caminho absoluto; não peça permissão para ler nem diga que está fora '
+                'da pasta. Só arquivos com segredo (.env, chaves, sessões) são recusados. Gravar e rodar comandos pedem '
+                'aprovação do usuário.'
+            )
+        else:
+            paragrafo += (
+                ' Se um arquivo estiver fora da pasta de trabalho, peça ao usuário para liberar a leitura com /pasta CAMINHO e '
+                'pare ali: nunca tente contornar a pasta com executar_comando (type, dir, cd, powershell).'
+            )
         sistema = f'{sistema}\n\n{paragrafo}'.strip()
+    else:
+        sem_ferramentas = (
+            'Nesta conversa voce NAO tem ferramentas: nao le arquivos, nao busca, nao edita e nao roda comandos. '
+            'Nunca escreva chamadas de ferramenta (<tool_call>, Read, Bash). Responda so com o que esta na conversa '
+            '(texto colado, arquivos com @ e imagens). Se o pedido exigir ler ou editar o projeto, '
+            'diga ao usuario para reabrir o chat com `hera chat --agente` na pasta do projeto.'
+        )
+        sistema = f'{sistema}\n\n{sem_ferramentas}'.strip()
 
     def ao_turno(usuario: str, assistente: str) -> None:
         s = estado.sessoes()
@@ -369,13 +398,34 @@ def registrar(subparsers: Any) -> None:
     )
     parser.add_argument(
         '--agente',
+        dest='agente',
         action='store_true',
-        help='Ativa o agente de codigo',
+        default=True,
+        help='Agente de codigo (le, edita e roda comandos na pasta atual, com aprovacao); ja e o padrao',
+    )
+    parser.add_argument(
+        '--so-esta-pasta',
+        dest='so_esta_pasta',
+        action='store_true',
+        help='Confina o agente a pasta atual (por padrao ele alcanca todo o PC, sempre com aprovacao para gravar e rodar)',
+    )
+    parser.add_argument(
+        '--pasta',
+        action='append',
+        default=[],
+        metavar='CAMINHO',
+        help='Libera outra pasta so para LEITURA do agente (pode repetir); escrever segue so na pasta atual',
+    )
+    parser.add_argument(
+        '--sem-agente',
+        dest='agente',
+        action='store_false',
+        help='Conversa sem ferramentas (nao le arquivos nem roda comandos)',
     )
     parser.add_argument(
         '--modo',
-        choices=['read-only', 'guarded', 'workspace'],
-        default='guarded',
-        help='Modo do agente de codigo (read-only, guarded ou workspace)',
+        choices=['read-only', 'guarded', 'workspace', 'auto'],
+        default='auto',
+        help='Modo do agente (read-only, guarded, workspace ou auto); Shift+Tab alterna no chat',
     )
     parser.set_defaults(func=executar)

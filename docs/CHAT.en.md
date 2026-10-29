@@ -25,7 +25,8 @@ hera chat --listar
 
 Main options:
 
-- `--agente`: enables the code agent.
+- `--agente`: code agent (already the default): reads, edits and runs commands in the current folder, with approval. `--sem-agente` turns it off and leaves chat only.
+- `--so-esta-pasta`: confines the agent to the current folder (by default it reaches the whole PC). With it, `--pasta CAMINHO` (or `/pasta CAMINHO` in the chat) opens another folder for READ access only.
 - `--modo read-only|guarded|workspace`: default is `guarded`.
 - `--modelo X`: forces a model.
 - `--sem-maestro`: disables the Maestro.
@@ -101,6 +102,17 @@ You can force a model with `--modelo` or `/model nome`, return to automatic with
 
 `/goal 5 make the test pass` makes the agent work in turns (at most N, default 5, hard cap 10) until a cheap judge says the goal is met, blocked, or the limit is reached. Every action still asks for your approval (`guarded` mode) and Ctrl+C interrupts. If the judge fails, the goal stops: without a judge there is no way to know when to stop.
 
+## Images
+
+`hera chat` can read images (screenshots, photos, error captures):
+
+- `@print.png` or `@"my folder/print.png"` attaches a file; relative paths start at the current folder.
+- Dragging the file into the terminal pastes its full path (quoted or not), which also works.
+- `@clip` attaches the image on the clipboard (for example after `Win+Shift+S`). Windows only.
+- Formats: PNG, JPEG, GIF and WebP, up to 4 images per message and 5 MB each. The format is checked from the file contents, not the extension.
+- The maestro picks a vision-capable model on its own (DeepSeek-V4.1-Flash, then gemini-flash-lite and Nemotron VL). If you force a model that cannot see images, the chat only warns you.
+- The image goes to the chosen model (including cloud providers): do not attach screens with passwords or personal data. The saved history keeps only the text `[imagem: name]`, not the pixels.
+
 ## Attaching files with @
 
 Write `@file`, `@folder/x.py`, or `@x.py:10-30` in your message and the content is sent to the model along with it (up to 5 attachments per message). Folders become a listing. Paths outside the working folder and sensitive files (`.env`, keys) are refused with a warning, and keys inside the content are masked. The saved history keeps what you typed, not the attached content.
@@ -123,7 +135,7 @@ hera skills show <nome>
 
 ## Code agent and safety
 
-With `--agente`, these tools are available: `ler_arquivo`, `listar_pasta`, `buscar`, `editar_arquivo`, `escrever_arquivo`, `executar_comando`, `usar_skill`, and `delegar_tarefa`.
+The agent is on by default (`guarded` mode: it asks before writing or running). It reaches any folder on the PC (the folder where the chat was opened is only the starting folder for commands and the only one where `workspace` mode writes without asking); writing elsewhere and running commands always ask for approval. Sensitive files (`.env`, keys, sessions, credentials, `AppData`) are always refused. To confine the agent to the current folder, use `--so-esta-pasta`. Available tools: `ler_arquivo`, `listar_pasta`, `buscar`, `editar_arquivo`, `escrever_arquivo`, `executar_comando`, `usar_skill`, and `delegar_tarefa`.
 
 `delegar_tarefa` calls sub-agents: clean-context helpers on a cheaper model (light, medium, or heavy tier) that **only read** the project and return a summary. Up to 3 run in parallel; they cannot edit, run commands, or spawn other sub-agents. Only the main agent edits, with your approval.
 
@@ -138,6 +150,14 @@ Execution rules:
 - Never reads `.env`, keys, or `.git`.
 
 Automatic checkpoints are stored in `~/.hera/checkpoints`. `/rollback` undoes without deleting what you edited afterwards.
+
+### Agent modes (Shift+Tab)
+
+`Shift+Tab` cycles the mode in the input field; the footer shows the active one (also `/modo <name>` or `--modo` at start):
+
+- **manual approval** (`guarded`): asks before writing and before running commands (`--modo guarded`).
+- **auto mode** (`auto`, default, in yellow): writes without asking in any folder on the PC (except system ones such as `C:\Windows` and `Program Files`) and runs without asking only project checks (`pytest`, `python -m pytest`, `python -m unittest`, `npm test`, `npm run test`, `npm run lint`, `node --check`, `ruff check`). Still asking: writing in system folders, builds, installing packages, `git commit` and any other command. What is blocked (`git push`, mass deletes, `curl`, `powershell`, chained commands) stays blocked. The diff is always shown, and `/rollback` undoes.
+- **read-only** (`read-only`): the agent only reads and analyzes; nothing is written or run.
 
 ## Memory
 

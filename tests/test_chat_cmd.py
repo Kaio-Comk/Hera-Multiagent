@@ -292,8 +292,9 @@ def test_registrar_aceita_agente_e_modo() -> None:
     chat_cmd.registrar(parser.add_subparsers())
 
     args_padrao = parser.parse_args(['chat'])
-    assert args_padrao.agente is False
-    assert args_padrao.modo == 'guarded'
+    assert args_padrao.agente is True  # o agente e o padrao (como no Claude Code); --sem-agente desliga
+    assert args_padrao.modo == 'auto'  # o padrao e o auto mode, como no Claude Code
+    assert parser.parse_args(['chat', '--sem-agente']).agente is False
 
     args_agente = parser.parse_args(['chat', '--agente', '--modo', 'workspace'])
     assert args_agente.agente is True

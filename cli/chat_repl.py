@@ -211,6 +211,7 @@ async def rodar(
     janela: int = 32000,
     resumir: Optional[Callable[[str], Awaitable[str]]] = None,
     anexos: Optional[Callable[[str], tuple]] = None,
+    imagens: Optional[Callable[[str], tuple]] = None,
     julgar: Optional[Callable[[str], Awaitable[str]]] = None,
 ) -> Sessao:
     '''Executa o laco de conversa ate o usuario encerrar.'''
@@ -272,6 +273,16 @@ async def rodar(
     async def executar_turno(texto: str) -> str:
         nonlocal primeira_vez, modelo_anterior
 
+        # Imagens citadas na pergunta (@print.png, caminho arrastado, @clip): lidas antes de tudo; no texto fica '[imagem: nome]'.
+        lista_imagens: list = []
+        if imagens is not None:
+            try:
+                texto, lista_imagens, avisos_imagens = imagens(texto)
+                for aviso in avisos_imagens:
+                    escrever(f'[imagens: {aviso}]\n')
+            except Exception:  # noqa: BLE001 - imagem e conveniencia: na duvida, segue so com o texto
+                lista_imagens = []
+
         # Contexto de memoria por turno: executado em thread e nunca derruba o turno
         memoria = ''
         try:
@@ -305,6 +316,25 @@ async def rodar(
             primeira_vez = False
             modelo_anterior = escolha.modelo
 
+        if lista_imagens:
+            from cli.chat_imagens import escolher_modelo_visao, modelo_enxerga
+
+            escrever('[imagem: ' + ', '.join(f'{i.nome} ({max(1, round(i.tamanho_kb))} KB)' for i in lista_imagens) + ']\n')
+            if not modelo_enxerga(str(getattr(cliente, 'modelo', ''))):
+                novo = None
+                if maestro is not None and getattr(maestro, 'ativo', True) and not getattr(escolha, 'forcada', False):
+                    try:
+                        novo = escolher_modelo_visao(await maestro._disponiveis(), maestro._indisponiveis_ativos())
+                    except Exception:  # noqa: BLE001
+                        novo = None
+                if novo:
+                    cliente.modelo = novo
+                    sessao.modelo = novo
+                    modelo_anterior = novo
+                    escrever(f'[maestro: imagem -> {novo}]\n')
+                else:
+                    escrever(f'Aviso: o modelo {cliente.modelo} pode nao enxergar imagens.\n')
+
         texto_modelo = texto
         if anexos is not None:  # '@arquivo' na pergunta: o MODELO recebe o conteudo; o historico gravado guarda o que o usuario digitou
             try:
@@ -317,7 +347,12 @@ async def rodar(
                     escrever(resumo_anexos(lista_anexos) + '\n')
             except Exception:  # noqa: BLE001 - anexar e conveniencia: na duvida, segue com a pergunta original
                 texto_modelo = texto
-        sessao.mensagens.append({'role': 'user', 'content': texto_modelo})
+        if lista_imagens:
+            from cli.chat_imagens import montar_conteudo
+
+            sessao.mensagens.append({'role': 'user', 'content': montar_conteudo(texto_modelo, lista_imagens)})
+        else:
+            sessao.mensagens.append({'role': 'user', 'content': texto_modelo})
 
         # Compactacao antes do envio
         if compactar_fn is not None and estimar_tokens is not None:
@@ -369,13 +404,25 @@ async def rodar(
         except ErroDoServidor as erro:
             status_retry = (0, 429, 502, 503, 504)
             if maestro is not None and erro.status in status_retry:
+                # O modelo que falhou e o que estava em uso (pode ter sido trocado por um com visao), nao o 1o do maestro.
                 modelo_falhou = (
-                    escolha.modelo
-                    if escolha is not None
-                    else getattr(cliente, 'modelo', 'default')
+                    getattr(cliente, 'modelo', None)
+                    or (escolha.modelo if escolha is not None else 'default')
                 )
                 maestro.marcar_indisponivel(modelo_falhou)
-                nova_escolha = await maestro.escolher(texto)
+                nova_escolha = None
+                if lista_imagens:
+                    # Com imagem, o substituto TEM que enxergar (um modelo sem visao responde 400).
+                    from cli.chat_imagens import escolher_modelo_visao
+
+                    novo_visao = escolher_modelo_visao(await maestro._disponiveis(), maestro._indisponiveis_ativos())
+                    if novo_visao is None:
+                        escrever('Erro: nenhum modelo que enxerga imagens esta disponivel agora. Tente de novo em instantes.\n')
+                        sessao.mensagens.pop()
+                        raise RuntimeError('sem modelo com visao disponivel')
+                    nova_escolha = Escolha(novo_visao, 'visao', 'imagem na mensagem')
+                if nova_escolha is None:
+                    nova_escolha = await maestro.escolher(texto)
                 cliente.modelo = nova_escolha.modelo
                 sessao.modelo = nova_escolha.modelo
                 modelo_anterior = nova_escolha.modelo
@@ -475,6 +522,16 @@ async def rodar(
     return sessao
 
 
+CICLO_DE_MODOS = ('guarded', 'auto', 'read-only')   # Shift+Tab: aprovacao manual -> auto mode -> somente leitura
+
+
+def proximo_modo(atual: str) -> str:
+    '''Proximo modo do agente no Shift+Tab; um modo fora do ciclo (ex.: workspace) volta ao primeiro.'''
+    if atual not in CICLO_DE_MODOS:
+        return CICLO_DE_MODOS[0]
+    return CICLO_DE_MODOS[(CICLO_DE_MODOS.index(atual) + 1) % len(CICLO_DE_MODOS)]
+
+
 def _encostar_no_fundo(sessao_prompt: Any) -> bool:
     '''Salva o cursor e desce o campo de entrada ate o fim da tela, sem criar linhas em branco (como o Claude Code).
 
@@ -516,15 +573,32 @@ async def principal(
     from cli.chat_ui import Visual
 
     visual = Visual()
-    sessao_prompt = PromptSession(style=Style.from_dict({'bottom-toolbar': 'noreverse'}))
+    from prompt_toolkit.key_binding import KeyBindings
+
+    atalhos = KeyBindings()
+
+    @atalhos.add('s-tab')
+    def _alternar_modo(event: Any) -> None:
+        if agente_cfg is None:
+            return
+        proximo = proximo_modo(getattr(agente_cfg, 'modo', 'guarded'))
+        agente_cfg.escrita.modo = proximo
+        agente_cfg.modo = proximo
+        event.app.invalidate()   # redesenha o rodape com o modo novo
+
+    sessao_prompt = PromptSession(style=Style.from_dict({'bottom-toolbar': 'noreverse'}), key_bindings=atalhos)
     modo_agente = getattr(agente_cfg, 'modo', None) if agente_cfg is not None else None
+    if modo_agente and getattr(getattr(agente_cfg, 'raiz', None), 'acesso_total', False):
+        modo_agente = f'{modo_agente} · todo o PC'
     pasta_atual = str(Path.cwd())
 
     def rodape() -> ANSI:
         forcado = getattr(maestro, 'forcado', None) if maestro is not None else None
         ativo = maestro is not None and getattr(maestro, 'ativo', True) and not forcado
         atual = forcado or getattr(cliente, 'modelo', modelo)
-        return ANSI(visual.rodape(modelo=atual, modo=modo_agente or '', maestro=bool(ativo), pasta=pasta_atual))
+        modo_vivo = getattr(agente_cfg, 'modo', '') if agente_cfg is not None else ''
+        todo_pc = bool(getattr(getattr(agente_cfg, 'raiz', None), 'acesso_total', False))
+        return ANSI(visual.rodape(modelo=atual, modo=modo_vivo or '', maestro=bool(ativo), pasta=pasta_atual, todo_pc=todo_pc))
 
     async def seletor(titulo: str, opcoes: list[str], atual: str) -> Optional[str]:
         from cli.chat_seletor import selecionar
@@ -554,23 +628,38 @@ async def principal(
             asyncio.ensure_future(animar_pensando())
         return texto
 
+    animando = False
+
     async def animar_pensando() -> None:
-        '''Atualiza o indicador a cada meio segundo (simbolo e tempo) ate a resposta comecar; para sozinho.'''
-        while visual.pensando_visivel:
-            await asyncio.sleep(0.5)
-            quadro = visual.tick_pensando()
-            if quadro:
-                print(quadro, end='', flush=True)
+        '''Atualiza o indicador a cada meio segundo (simbolo e tempo) enquanto ele estiver na tela; para sozinho.'''
+        nonlocal animando
+        if animando:
+            return
+        animando = True
+        try:
+            while visual.pensando_visivel:
+                await asyncio.sleep(0.5)
+                quadro = visual.tick_pensando()
+                if quadro:
+                    print(quadro, end='', flush=True)
+        finally:
+            animando = False
 
     def escrever(texto: str) -> None:
         print(visual.estilizar(texto), end='', flush=True)
+        if visual.pensando_visivel and not animando:  # o indicador voltou (entre chamadas de ferramenta): anima de novo
+            try:
+                asyncio.ensure_future(animar_pensando())
+            except RuntimeError:  # sem laco de eventos (testes sincronos)
+                pass
 
     async def aprovar_interativo(p: Any) -> str:
         if visual.pensando_visivel:  # o pedido de aprovacao nao pode dividir a linha com o indicador
             print(visual.apagar_linha(), end='', flush=True)
             visual.pensando_visivel = False
         try:
-            escolha = await sessao_prompt.prompt_async(
+            # Sessao propria: a principal guarda o texto-guia e o rodape do campo de entrada e os repetiria aqui.
+            escolha = await PromptSession().prompt_async(
                 ANSI(visual.aprovacao('Aplicar? [s]im / [n]ao / [t]odos (lembrar nesta sessão): '))
             )
         except (KeyboardInterrupt, EOFError):
@@ -636,6 +725,11 @@ async def principal(
             async def aprovar_nao(_p: Any) -> str:
                 return 'nao'
 
+            def eco_filho(texto_filho: str) -> None:
+                # So as chamadas de ferramenta do sub-agente aparecem ('↳ sub/listar_pasta x'); sem isso a tela parece parada.
+                if texto_filho.startswith('-> '):
+                    escrever('-> sub/' + texto_filho[3:])
+
             filho = Agente(
                 conversar=lambda msgs, tools: conversar_com_ferramentas(
                     cli_irmao, msgs, tools
@@ -643,8 +737,8 @@ async def principal(
                 leitura=agente_cfg.leitura,
                 escrita=escrita_filho,
                 aprovar=aprovar_nao,
-                escrever=lambda _t: None,
-                max_passos=8,
+                escrever=eco_filho,
+                max_passos=20,
                 skills=skills_map,
                 delegar=None,
             )
@@ -739,6 +833,13 @@ async def principal(
     def anexos_fn(texto_usuario: str):
         return expandir_anexos(texto_usuario, raiz_anexos)
 
+    from cli.chat_imagens import extrair_imagens, imagem_da_area_de_transferencia
+
+    def imagens_fn(texto_usuario: str):
+        return extrair_imagens(
+            texto_usuario, Path.cwd(), exportar_clipboard=imagem_da_area_de_transferencia
+        )
+
     await rodar(
         cliente,
         ler_linha,
@@ -751,5 +852,6 @@ async def principal(
         janela=janela,
         resumir=resumir_fn,
         anexos=anexos_fn,
+        imagens=imagens_fn,
         julgar=julgar,
     )

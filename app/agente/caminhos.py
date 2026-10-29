@@ -21,19 +21,53 @@ _PADROES_SENSIVEIS = (
     'credentials*',
     '.npmrc',
     '.pypirc',
+    '.netrc',
+    '.credentials*',      # ex.: ~/.claude/.credentials.json
+    '.claude.json',
+    '*.session',          # sessoes do Telegram (Telethon)
+    '*.kdbx',
+    '*.ppk',
+    'id_ed25519*',
+    'cookies*',
+    'login data*',
 )
 
-_PASTAS_SENSIVEIS = ('.git', '.ssh', '.aws')
+_PASTAS_SENSIVEIS = ('.git', '.ssh', '.aws', '.gnupg', '.kube', '.docker')
+# So contam quando estao DENTRO da pasta de trabalho (abrir o chat na pasta pessoal expoe o AppData; trabalhar la dentro e outra coisa).
+_PASTAS_SENSIVEIS_NA_RAIZ = ('appdata',)
+
+
+def _em_appdata(partes: tuple[str, ...]) -> bool:
+    '''True se o caminho esta em AppData (perfis de navegador, credenciais...), exceto dentro de uma pasta Temp.'''
+    minusculas = [x.lower() for x in partes]
+    if 'appdata' not in minusculas:
+        return False
+    return 'temp' not in minusculas[minusculas.index('appdata') + 1:]
 
 
 class Raiz:
     '''Raiz de trabalho do agente; todo acesso fica confinado a ela.'''
 
-    def __init__(self, pasta: Path) -> None:
+    def __init__(self, pasta: Path, *, acesso_total: bool = False) -> None:
         self.pasta = Path(pasta).resolve()
+        # acesso_total: o agente alcanca qualquer pasta do PC (a pasta atual continua sendo a "casa": cwd dos comandos,
+        # unica onde o modo workspace grava sem perguntar). Arquivos com segredo seguem sempre recusados.
+        self.acesso_total = acesso_total
+        self.leitura_extra: list[Path] = []   # pastas liberadas so para LEITURA (/pasta); escrever segue so na raiz
 
-    def resolver(self, caminho: str | Path) -> Path:
-        '''Resolve caminho relativo a raiz e exige que fique dentro dela.'''
+    def permitir_leitura(self, pasta: str | Path) -> Path:
+        '''Libera uma pasta extra SO para leitura (o usuario pediu: /pasta ou --pasta). Nunca libera pasta sensivel.'''
+        alvo = Path(pasta).expanduser().resolve()
+        if not alvo.is_dir():
+            raise CaminhoNegado('pasta inexistente')
+        if self.eh_sensivel(alvo):
+            raise CaminhoNegado('pasta sensivel')
+        if alvo != self.pasta and alvo not in self.leitura_extra:
+            self.leitura_extra.append(alvo)
+        return alvo
+
+    def resolver(self, caminho: str | Path, *, leitura: bool = False) -> Path:
+        '''Resolve caminho relativo a raiz e exige que fique dentro dela (para leitura, tambem dentro das pastas liberadas).'''
         if caminho is None:
             raise CaminhoNegado('caminho vazio')
         texto = str(caminho)
@@ -43,8 +77,15 @@ class Raiz:
         if not p.is_absolute():
             p = self.pasta / p
         resolvido = p.resolve()
+        if self.acesso_total:
+            return resolvido
         if resolvido != self.pasta and self.pasta not in resolvido.parents:
-            raise CaminhoNegado('fora da pasta de trabalho')
+            if leitura and any(resolvido == e or e in resolvido.parents for e in self.leitura_extra):
+                return resolvido
+            raise CaminhoNegado(
+                'fora da pasta de trabalho. Peca ao usuario para liberar a leitura com /pasta CAMINHO; '
+                'nao tente contornar com executar_comando'
+            )
         return resolvido
 
     def relativo(self, caminho: str | Path) -> str:
@@ -71,11 +112,16 @@ class Raiz:
         for parte in p.parts:
             if parte.lower() in _PASTAS_SENSIVEIS:
                 return True
-        return False
+        try:
+            relativas = p.resolve().relative_to(self.pasta).parts
+        except (ValueError, OSError):
+            # fora da pasta de trabalho: com acesso total, o AppData de qualquer usuario continua protegido
+            return self.acesso_total and _em_appdata(p.parts)
+        return any(parte.lower() in _PASTAS_SENSIVEIS_NA_RAIZ for parte in relativas)
 
     def exigir_leitura(self, caminho: str | Path) -> Path:
         '''Resolve e nega leitura de arquivos sensiveis.'''
-        resolvido = self.resolver(caminho)
+        resolvido = self.resolver(caminho, leitura=True)
         if self.eh_sensivel(resolvido):
             raise CaminhoNegado('arquivo sensivel')
         return resolvido

@@ -150,7 +150,7 @@ def test_prompt_comeca_com_regua_e_termina_com_marcador():
 def test_rodape_com_modo():
     v = Visual(cor=False, largura=80)
     t = v.rodape(modelo='m', modo='guarded', maestro=False, pasta='/p')
-    assert 'modo guarded' in t
+    assert 'aprovação manual' in t and 'shift+tab' in t
 
 
 def test_rodape_sem_modo():

@@ -16,7 +16,7 @@ from app.agente.checkpoints import Checkpoints
 from app.agente.leitura import Resultado
 
 _TIPOS = {'editar', 'escrever', 'comando'}
-_MODOS = {'read-only', 'guarded', 'workspace'}
+_MODOS = {'read-only', 'guarded', 'workspace', 'auto'}
 _MAX_ESCRITA = 1024 * 1024
 
 _OPERADORES = ('&&', '||', '|', '>', '<', ';', '`', '$(', '%')
@@ -46,6 +46,38 @@ def _eh_leitura(norm: tuple[str, ...]) -> bool:
             return all(a in _BRANCH_LEITURA for a in resto)
         return False
     return norm[:2] in (('python', '--version'), ('pip', 'list')) or norm[:1] == ('where',)
+# Modo auto (Shift+Tab): alem da leitura, roda sem perguntar so o que verifica o projeto sem grava-lo nem toca em producao.
+_SEGUROS_AUTO = (
+    ('pytest',), ('python', '-m', 'pytest'), ('python', '-m', 'unittest'), ('python', '-m', 'py_compile'),
+    ('npm', 'test'), ('npm', 'run', 'test'), ('npm', 'run', 'lint'), ('node', '--check'), ('ruff', 'check'),
+)
+
+
+_INTERNOS_DO_SHELL = frozenset({
+    'dir', 'type', 'cd', 'chdir', 'echo', 'copy', 'move', 'ren', 'rename', 'del', 'erase', 'md', 'mkdir', 'rd', 'rmdir',
+    'set', 'cls', 'ls', 'cat', 'pwd', 'cp', 'mv', 'rm', 'touch', 'findstr', 'find', 'more', 'where',
+})
+# Pastas do sistema: mesmo no auto mode, gravar nelas sempre pergunta.
+_PASTAS_DO_SISTEMA = tuple(
+    x.lower().rstrip('\\/')
+    for x in (
+        os.environ.get('SystemRoot', 'C:\\Windows'),
+        os.environ.get('ProgramFiles', 'C:\\Program Files'),
+        os.environ.get('ProgramFiles(x86)', 'C:\\Program Files (x86)'),
+        os.environ.get('ProgramData', 'C:\\ProgramData'),
+    )
+)
+
+
+def _em_pasta_do_sistema(alvo: Path) -> bool:
+    texto = str(alvo).lower().replace('/', '\\')
+    return any(texto == base or texto.startswith(base + '\\') for base in _PASTAS_DO_SISTEMA)
+
+
+def _seguro_no_auto(norm: tuple[str, ...]) -> bool:
+    return any(norm[: len(pref)] == pref for pref in _SEGUROS_AUTO)
+
+
 _ENV_SECRETO = re.compile(r'KEY|TOKEN|SECRET|PASSWORD|API', re.IGNORECASE)
 _CHAVE = re.compile(r'sk-[A-Za-z0-9]{20,}')
 
@@ -101,10 +133,43 @@ def _executar_padrao(args: tuple[str, ...], cwd: Path, timeout: int) -> tuple[in
         return -1, f'erro ao executar: {exc}'
 
 
+_GIT_OPCOES_COM_VALOR = {'-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path', '--super-prefix'}
+
+
+def _git_bloqueado(args: tuple[str, ...]) -> bool:
+    """Acha o subcomando do git pulando as opcoes globais (git -C x push, git --no-pager push) e bloqueia push, clean e reset --hard."""
+    if not args or args[0].lower() != 'git':
+        return False
+    i = 1
+    while i < len(args) and args[i].startswith('-'):
+        i += 2 if args[i] in _GIT_OPCOES_COM_VALOR else 1
+    if i >= len(args):
+        return False
+    sub, resto = args[i].lower(), tuple(a.lower() for a in args[i + 1:])
+    return sub in ('push', 'clean') or (sub == 'reset' and '--hard' in resto)
+
+
+def _sem_aspas(arg: str) -> str:
+    """Tira as aspas externas do argumento: sem isso o programa recebe as aspas como parte do nome (cannot change to ...)."""
+    if len(arg) >= 2 and arg[0] == arg[-1] and arg[0] in ('"', "'"):
+        return arg[1:-1]
+    return arg
+
+
+def _sem_git_C(args: tuple[str, ...]) -> tuple[str, ...]:
+    """'git -C <pasta> status' so muda a pasta: avalia como 'git status'. So o -C MAIUSCULO (o -c minusculo injeta config e nao passa)."""
+    if len(args) >= 4 and args[0].lower() == 'git':
+        resto = args[1:]
+        while len(resto) >= 3 and resto[0] == '-C':
+            resto = resto[2:]
+        return (args[0], *resto)
+    return args
+
+
 def classificar_comando(texto: str) -> tuple[str, tuple[str, ...]]:
     """Classifica um comando em bloqueado, leitura ou normal."""
     try:
-        args = tuple(shlex.split(texto, posix=False))
+        args = tuple(_sem_aspas(a) for a in shlex.split(texto, posix=False))   # posix=False deixa as aspas no argumento
     except ValueError:
         return 'bloqueado', ()
     if not args:
@@ -116,7 +181,9 @@ def classificar_comando(texto: str) -> tuple[str, tuple[str, ...]]:
     for b in _BLOQUEADOS:
         if b in baixo:
             return 'bloqueado', args
-    norm = tuple(a.lower() for a in args)
+    if _git_bloqueado(args):
+        return 'bloqueado', args
+    norm = tuple(a.lower() for a in _sem_git_C(args))
     if _eh_leitura(norm):
         return 'leitura', args
     return 'normal', args
@@ -164,12 +231,15 @@ class Escrita:
         except Exception:
             return None
 
-    def _dentro(self, path: Path) -> bool:
+    def _na_pasta(self, path: Path) -> bool:
         try:
             path.relative_to(self.raiz.pasta)
             return True
         except ValueError:
             return False
+
+    def _dentro(self, path: Path) -> bool:
+        return True if self.raiz.acesso_total else self._na_pasta(path)
 
     def _bloqueio_modo(self) -> Resultado | None:
         if self.modo == 'read-only':
@@ -268,6 +338,13 @@ class Escrita:
         classe, args = classificar_comando(comando)
         if classe == 'bloqueado':
             return Resultado(False, f'comando bloqueado: {comando}')
+        if args and args[0].lower() in _INTERNOS_DO_SHELL:
+            return Resultado(
+                False,
+                f'"{args[0]}" e um comando interno do shell e executar_comando NAO usa shell (sem dir, type, cd, echo, '
+                'pipes ou &&). Para ler use listar_pasta, ler_arquivo e buscar; para rodar, um programa por vez '
+                '(pytest, python, git, npm, node).',
+            )
         pid = self._novo_id()
         p = Pendencia(
             id=pid,
@@ -285,13 +362,20 @@ class Escrita:
     def precisa_aprovacao(self, p: Pendencia) -> bool:
         """Indica se a pendencia exige aprovacao explicita."""
         if p.tipo == 'comando':
-            classe, _ = classificar_comando(' '.join(p.comando or ()))
+            classe, _ = classificar_comando(subprocess.list2cmdline(list(p.comando or ())))   # recoloca as aspas dos argumentos com espaco
             if classe == 'leitura':
+                return False
+            if self.modo == 'auto' and classe == 'normal' and _seguro_no_auto(tuple(a.lower() for a in (p.comando or ()))):
                 return False
             chave = (p.comando or (), str(self.raiz.pasta))
             return chave not in self._lembrados
+        if self.modo == 'auto':
+            alvo = getattr(p, 'alvo', None)
+            return bool(alvo is not None and _em_pasta_do_sistema(Path(alvo).resolve()))
         if self.modo == 'workspace':
-            return False
+            # grava sem perguntar so dentro da pasta de trabalho; em qualquer outro lugar do PC, sempre pergunta
+            alvo = getattr(p, 'alvo', None)
+            return bool(self.raiz.acesso_total and alvo is not None and not self._na_pasta(Path(alvo).resolve()))
         return True
 
     def lembrar(self, p: Pendencia) -> None:
