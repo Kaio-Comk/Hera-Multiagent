@@ -713,6 +713,11 @@ async def principal(
             async def aprovar_nao(_p: Any) -> str:
                 return 'nao'
 
+            def eco_filho(texto_filho: str) -> None:
+                # So as chamadas de ferramenta do sub-agente aparecem ('↳ sub/listar_pasta x'); sem isso a tela parece parada.
+                if texto_filho.startswith('-> '):
+                    escrever('-> sub/' + texto_filho[3:])
+
             filho = Agente(
                 conversar=lambda msgs, tools: conversar_com_ferramentas(
                     cli_irmao, msgs, tools
@@ -720,8 +725,8 @@ async def principal(
                 leitura=agente_cfg.leitura,
                 escrita=escrita_filho,
                 aprovar=aprovar_nao,
-                escrever=lambda _t: None,
-                max_passos=8,
+                escrever=eco_filho,
+                max_passos=20,
                 skills=skills_map,
                 delegar=None,
             )

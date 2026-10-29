@@ -780,6 +780,7 @@ async def test_delegar_montado_so_com_agente_e_maestro(monkeypatch: pytest.Monke
 
 async def test_filho_read_only_sem_recursao_e_sem_escrever_efeitos(
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     from cli import chat_repl
     from cli.chat_comandos import ConfigAgente
@@ -847,6 +848,7 @@ async def test_filho_read_only_sem_recursao_e_sem_escrever_efeitos(
 
     async def turno_filho(self, msgs, sistema):
         filhos_criados[-1].escrever('texto confidencial do subagente')
+        filhos_criados[-1].escrever('-> ler_arquivo a.py')   # so a chamada de ferramenta aparece, para a tela nao parecer parada
         assert 'Voce e um ajudante de leitura' in sistema
         return 'resumo do filho'
 
@@ -858,9 +860,11 @@ async def test_filho_read_only_sem_recursao_e_sem_escrever_efeitos(
     filho = filhos_criados[-1]
     assert filho.escrita.modo == 'read-only'
     assert filho.delegar is None
-    assert filho.max_passos == 8
+    assert filho.max_passos == 20
     assert await filho.aprovar(object()) == 'nao'
-    assert 'texto confidencial do subagente' not in saida_usuario
+    saida_real = capsys.readouterr().out
+    assert 'texto confidencial do subagente' not in saida_real
+    assert 'sub/ler_arquivo a.py' in saida_real   # a chamada de ferramenta do sub-agente aparece
 
 
 async def test_delegar_retry_quando_servidor_indisponivel(
