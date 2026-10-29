@@ -21,6 +21,8 @@ from app.benchmark import LocalBenchmark
 from adapters.ollama import OllamaAdapter
 from adapters.claude_code import ClaudeCodeAdapter
 from adapters.antigravity import AntigravityAdapter
+from cli import memory_cmd, chat_cmd
+from app.memory.integracao import contexto_da_memoria
 
 class MultiagentOrchestrator:
     """Orquestrador Multiagente Unificado."""
@@ -128,6 +130,11 @@ class MultiagentOrchestrator:
         if context_block:
             final_instruction = f"{context_block}\n{instruction}"
             self._print_feedback("🧠 **[MEMÓRIA]** Contexto relevante injetado a partir do Obsidian Vault.")
+        # Memoria do Hera (notas em Markdown): opt-in por HERA_MEMORY_SNAPSHOT=1, ja sanitizada de segredos.
+        memoria = contexto_da_memoria(instruction)
+        if memoria:
+            final_instruction = f"{memoria}\n{final_instruction}"
+            self._print_feedback("🧠 **[MEMÓRIA]** Snapshot da memória do Hera injetado.")
 
         task_id = f"task-{uuid.uuid4().hex[:8]}"
         task = AgentTask(
@@ -207,6 +214,12 @@ async def main():
     vault_parser = subparsers.add_parser("vault-search", help="Pesquisar notas e convenções no Obsidian Vault")
     vault_parser.add_argument("query", type=str, help="Termo ou conceito a ser pesquisado no vault")
 
+    # Comando: memory (notas de memoria em Markdown, ver cli/memory_cmd.py)
+    memory_cmd.registrar(subparsers)
+
+    # Comando: chat (conversa continua no terminal, ver cli/chat_cmd.py)
+    chat_cmd.registrar(subparsers)
+
     # Comando: list
     subparsers.add_parser("list", help="Listar histórico recente de tarefas no SQLite")
     subparsers.add_parser("approval-code", help="Mostrar o código de aprovação humana atual (HITL / MCP)")
@@ -234,6 +247,11 @@ async def main():
     if args.command is None:
         # `hera` sozinho abre a interface web (porta padrao, com navegador).
         args = parser.parse_args(["web"])
+
+    if args.command == "memory":
+        sys.exit(memory_cmd.executar(args))
+    if args.command == "chat":
+        sys.exit(await chat_cmd.executar(args))
 
     orchestrator = MultiagentOrchestrator()
 

@@ -17,6 +17,7 @@ dependencies = [
     "uvicorn[standard]>=0.29.0",
     "psutil>=5.9.0",
     "python-multipart>=0.0.9",     # /v1/audio/transcriptions (upload de audio)
+    "prompt_toolkit>=3.0.40",      # hera chat (conversa no terminal)
 ]
 
 [project.scripts]
@@ -36,7 +37,7 @@ dev = [
 py-modules = ["main"]
 
 [tool.setuptools.packages.find]
-include = ["app*", "adapters*", "models*"]
+include = ["app*", "adapters*", "models*", "cli*"]
 namespaces = true
 
 [tool.pytest.ini_options]
