@@ -1,0 +1,11 @@
+# Configuracao do gitleaks (CI). Usa as regras padrao e libera so dados FALSOS de teste, de forma especifica.
+title = "Hera"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Senha inventada usada pelos testes do filtro de dados sensiveis (DLP); nao e um segredo real."
+regexes = [
+  '''password=Abc12345678901234567890''',
+]
