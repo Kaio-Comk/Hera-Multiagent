@@ -58,7 +58,7 @@ You can force a model with `--modelo` or `/model nome`, return to automatic with
 - Tables stay as plain text.
 
 ### Switching model and maestro
-- /model with no argument opens a selector: arrows navigate, type to filter, PageUp/PageDown/Home/End, Enter selects, Esc or Ctrl+C cancels.
+- /model with no argument opens a selector: arrows navigate, type to filter, PageUp, PageDown, Home, End, Enter selects, Esc or Ctrl+C cancels.
 - A 10-item window with "above/below"; "auto" hands control back to the maestro.
 - /model <name> and /model auto still work.
 - Maestro status line: "⎿ maestro: faixa X -> modelo"; "(decidido pelo juiz)" when the judge decided.

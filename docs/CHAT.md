@@ -58,7 +58,7 @@ Você pode forçar um modelo com `--modelo` ou `/model nome`, voltar ao automát
 - Tabelas ficam em texto puro.
 
 ### Trocar de modelo e maestro
-- /model sem argumento abre um seletor: setas navegam, digite para filtrar, PageUp/PageDown/Home/End, Enter escolhe, Esc ou Ctrl+C cancela.
+- /model sem argumento abre um seletor: setas navegam, digite para filtrar, PageUp, PageDown, Home, End, Enter escolhe, Esc ou Ctrl+C cancela.
 - Janela de 10 itens com "acima/abaixo"; "auto" devolve o controle ao maestro.
 - /model <nome> e /model auto continuam valendo.
 - Linha de status do maestro: "⎿ maestro: faixa X -> modelo"; "(decidido pelo juiz)" quando o juiz decidiu.

@@ -228,7 +228,7 @@ async def test_escolher_faixa_faixas_e_invalido() -> None:
 
     m = Maestro(disp)
     e_leve = await m.escolher_faixa('leve')
-    assert e_leve.modelo == 'gemini-flash-lite-latest'
+    assert e_leve.modelo == 'deepseek-ai/DeepSeek-V4.1-Flash'  # primeiro da faixa leve desde 29/10/2026
     assert e_leve.peso == 'leve'
 
     e_pesado = await m.escolher_faixa('pesado')
