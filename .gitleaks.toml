@@ -7,5 +7,5 @@ useDefault = true
 [allowlist]
 description = "Senha inventada usada pelos testes do filtro de dados sensiveis (DLP); nao e um segredo real."
 regexes = [
-  '''password=Abc12345678901234567890''',
+  '''^Abc12345678901234567890$''',
 ]
