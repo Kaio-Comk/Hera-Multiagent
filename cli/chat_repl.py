@@ -202,6 +202,11 @@ async def rodar(
     resumidor_efetivo = resumir or criar_resumidor(cliente, maestro)
     if julgar is None:
         julgar = criar_juiz(cliente, maestro)
+    if maestro is not None and hasattr(maestro, 'timeout_juiz') and getattr(maestro, 'juiz', None) is None:
+        from app.maestro import PROMPT_FAIXA
+
+        # Pedido que a regra local nao sabe pesar: o modelo leve decide a faixa (falhou ou demorou, vale a regra local).
+        maestro.juiz = lambda pedido: julgar(PROMPT_FAIXA + pedido)
 
     primeira_vez = True
     modelo_anterior: str | None = None

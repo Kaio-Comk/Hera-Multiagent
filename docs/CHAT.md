@@ -37,7 +37,7 @@ Opções principais:
 
 ## Maestro
 
-O Maestro vem ligado por padrão. Ele classifica cada pedido em leve, médio ou pesado usando regras locais, sem gastar chamada de IA, e escolhe o modelo da faixa entre os disponíveis. Se um modelo estiver indisponível (429/503), ele troca sozinho.
+O Maestro vem ligado por padrão. Ele classifica cada pedido em leve, médio ou pesado usando regras locais, sem gastar chamada de IA, e escolhe o modelo da faixa entre os disponíveis. Quando as regras não têm certeza (pedido sem nenhuma palavra reconhecida, ou palavra pesada isolada em pedido curto), um modelo leve decide a faixa em até 8 segundos; se falhar ou demorar, vale a regra local. O motivo aparece na linha `[maestro: ...]` (`juiz: pesado (regra local: ...)`). Se um modelo estiver indisponível (429/503), ele troca sozinho.
 
 Você pode forçar um modelo com `--modelo` ou `/model nome`, voltar ao automático com `/model auto`, desligar com `/maestro off` e trocar o perfil com `/perfil`.
 

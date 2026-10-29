@@ -1214,3 +1214,27 @@ async def test_goal_com_juiz_padrao_do_cliente() -> None:
     }
     texto_saida = ''.join(saida)
     assert '[goal encerrado: feito em 1 turno(s) - tudo certo]' in texto_saida
+
+
+async def test_rodar_liga_o_juiz_de_faixa_ao_maestro() -> None:
+    from app.maestro import PROMPT_FAIXA, Maestro
+
+    async def disponiveis():
+        return ['m1']
+
+    maestro = Maestro(disponiveis_de=disponiveis)
+    recebidos: list[str] = []
+
+    async def julgar(prompt: str) -> str:
+        recebidos.append(prompt)
+        return 'leve'
+
+    entradas = iter(['/exit'])
+
+    async def ler() -> str:
+        return next(entradas)
+
+    await rodar(ClienteFalso([]), ler, lambda _t: None, maestro=maestro, julgar=julgar)
+    assert maestro.juiz is not None
+    assert await maestro.juiz('crie um sistema de filas') == 'leve'
+    assert recebidos == [PROMPT_FAIXA + 'crie um sistema de filas']
