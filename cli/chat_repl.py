@@ -409,6 +409,17 @@ async def rodar(
     return sessao
 
 
+def _encostar_no_fundo(sessao_prompt: Any) -> None:
+    '''Empurra o campo de entrada para o fim da tela (como o Claude Code); sem suporte do terminal, nao faz nada.'''
+    try:
+        abaixo = sessao_prompt.output.get_rows_below_cursor_position()
+    except Exception:  # noqa: BLE001
+        return
+    sobra = abaixo - 4  # regua de cima, linha de entrada, regua de baixo e rodape
+    if sobra > 0:
+        print('\n' * sobra, end='', flush=True)
+
+
 async def principal(
     base_url: str,
     token: str,
@@ -446,7 +457,10 @@ async def principal(
         if visual.pensando_visivel:
             print(visual.apagar_linha(), end='', flush=True)
         visual.novo_turno()
-        texto = await sessao_prompt.prompt_async(ANSI(visual.prompt()), bottom_toolbar=rodape)
+        _encostar_no_fundo(sessao_prompt)
+        texto = await sessao_prompt.prompt_async(
+            ANSI(visual.prompt()), bottom_toolbar=rodape, placeholder=ANSI(visual.placeholder())
+        )
         if texto.strip() and not texto.lstrip().startswith('/'):
             print(visual.marcar_pensando(), end='', flush=True)
         return texto
@@ -572,13 +586,12 @@ async def principal(
         versao_hera = _versao('hera-multiagent')
     except Exception:
         versao_hera = ''
+    fontes = getattr(getattr(estado, 'instrucoes', None), 'fontes', None) if estado is not None else None
     print(visual.banner(
         versao=versao_hera, modelo=modelo, pasta=pasta_atual, modo=modo_agente or '',
         maestro=bool(maestro is not None and getattr(maestro, 'ativo', True)),
+        instrucoes=len(fontes or ()),
     ))
-    fontes = getattr(getattr(estado, 'instrucoes', None), 'fontes', None) if estado is not None else None
-    if fontes:
-        print(visual.estilizar(f'[{len(fontes)} arquivo(s) de instruções carregado(s)]\n'), end='')
     sessao = Sessao(modelo, sistema=sistema, agente=agente)
     if mensagens_iniciais:
         sessao.mensagens = list(mensagens_iniciais)

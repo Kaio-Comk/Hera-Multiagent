@@ -40,51 +40,6 @@ def test_sem_cor_nao_emite_ansi():
         assert '\x1b' not in saida
 
 
-def test_banner_contem_informacoes():
-    '''O banner deve conter versao, modelo e pasta.'''
-    v = Visual(cor=False, largura=80)
-    texto = v.banner(versao='2.3', modelo='claude-3', pasta='/home/user/hera',
-                     modo='chat', maestro=False)
-    assert '2.3' in texto
-    assert 'claude-3' in texto
-    assert '/home/user/hera' in texto
-
-
-def test_banner_maestro_mostra_automatico():
-    '''Com maestro ligado, o banner mostra o modelo automatico.'''
-    v = Visual(cor=False, largura=80)
-    texto = v.banner(versao='1.0', modelo='claude', pasta='/tmp',
-                     modo='chat', maestro=True)
-    assert 'modelo automatico (maestro)' in texto
-
-
-def test_banner_linhas_mesma_largura():
-    '''Todas as linhas da caixa devem ter a mesma largura visivel.'''
-    v = Visual(cor=True, largura=80)
-    texto = v.banner(versao='1.0', modelo='claude', pasta='/tmp/proj',
-                     modo='chat', maestro=False)
-    linhas = texto.split('\n')
-    # Considera apenas as linhas da caixa (ate a borda inferior).
-    caixa = []
-    for linha in linhas:
-        limpa = _limpar(linha)
-        caixa.append(limpa)
-        if limpa.startswith('╰'):
-            break
-    larguras = {len(linha) for linha in caixa}
-    assert len(larguras) == 1
-
-
-def test_banner_pasta_longa_cortada():
-    '''Pasta longa deve ser cortada com reticencias no inicio.'''
-    v = Visual(cor=False, largura=40)
-    pasta = '/muito/longo/caminho/para/uma/pasta/bem/comprida/aqui'
-    texto = v.banner(versao='1.0', modelo='claude', pasta=pasta,
-                     modo='chat', maestro=False)
-    assert '…' in texto
-    assert pasta not in texto
-
-
 def test_estilizar_status():
     '''Linha de status vira a seta com o conteudo entre colchetes.'''
     v = Visual(cor=False, largura=80)
@@ -157,18 +112,68 @@ def test_aprovacao_em_aviso():
     assert '? rodar comando' in _limpar(saida)
 
 
-def test_prompt_sem_cor():
-    '''Sem cor, o prompt usa o marcador simples.'''
-    v = Visual(cor=False, largura=20)
-    saida = v.prompt()
-    assert saida.endswith('> ')
-    assert '─' * 20 in saida
-
-
-def test_rodape_ultima_pasta():
-    '''O rodape deve mostrar apenas o nome da ultima pasta.'''
+def test_banner_sem_caixa():
     v = Visual(cor=False, largura=80)
-    saida = v.rodape(modelo='claude', modo='chat', maestro=False,
-                     pasta='/home/user/projeto')
-    assert 'projeto' in saida
-    assert '/home/user/projeto' not in saida
+    t = v.banner(versao='1.2.3', modelo='claude-sonnet', pasta='/home/user/projeto', modo='guarded', maestro=False)
+    assert '╭' not in t
+    assert '│' not in t
+    assert 'Hera' in t
+    assert 'v1.2.3' in t
+    assert 'claude-sonnet' in t
+    assert '/home/user/projeto' in t
+
+
+def test_banner_mascote_nas_tres_linhas():
+    v = Visual(cor=False, largura=80)
+    t = v.banner(versao='1.0', modelo='m', pasta='/p', modo='', maestro=False)
+    limpo = _limpar(t)
+    linhas = limpo.split('\n')
+    assert '▄ ▄██▄ ▄' in linhas[0]
+    assert '██████████' in linhas[1]
+    assert '▀████▀' in linhas[2]
+
+
+def test_banner_instrucoes_so_quando_positivo():
+    v = Visual(cor=False, largura=80)
+    sem = v.banner(versao='1.0', modelo='m', pasta='/p', modo='', maestro=False, instrucoes=0)
+    assert 'arquivo(s) de instrucoes' not in sem
+    com = v.banner(versao='1.0', modelo='m', pasta='/p', modo='', maestro=False, instrucoes=3)
+    assert '3 arquivo(s) de instrucoes carregado(s)' in com
+
+
+def test_prompt_comeca_com_regua_e_termina_com_marcador():
+    v = Visual(cor=False, largura=80)
+    t = v.prompt()
+    assert t.startswith(v.regua())
+    assert t.endswith('> ')
+
+
+def test_rodape_com_modo():
+    v = Visual(cor=False, largura=80)
+    t = v.rodape(modelo='m', modo='guarded', maestro=False, pasta='/p')
+    assert 'modo guarded' in t
+
+
+def test_rodape_sem_modo():
+    v = Visual(cor=False, largura=80)
+    t = v.rodape(modelo='m', modo='', maestro=False, pasta='/p')
+    assert 'modo' not in t
+
+
+def test_placeholder_sem_escapes():
+    v = Visual(cor=False, largura=80)
+    t = v.placeholder()
+    assert t == 'Pergunte algo, / para comandos, @ para anexar arquivo'
+
+
+def test_banner_pasta_longa_cortada():
+    v = Visual(cor=False, largura=80)
+    pasta = '/' + 'a' * 200
+    t = v.banner(versao='1.0', modelo='m', pasta=pasta, modo='', maestro=False)
+    assert '…' in t
+
+
+def test_banner_mascote_com_cor():
+    v = Visual(cor=True, largura=80)
+    t = v.banner(versao='1.0', modelo='m', pasta='/p', modo='', maestro=False)
+    assert '38;5;37' in t

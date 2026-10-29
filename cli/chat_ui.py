@@ -56,6 +56,9 @@ def _cortar_inicio(texto: str, limite: int) -> str:
     return '…' + texto[-(limite - 1):]
 
 
+MASCOTE = ('  ▄ ▄██▄ ▄  ', ' ██████████ ', '   ▀████▀   ')
+
+
 class Visual:
     '''Renderiza o visual do REPL de terminal do Hera.'''
 
@@ -106,89 +109,48 @@ class Visual:
     # ------------------------------------------------------------------
     # Banner e reguas
     # ------------------------------------------------------------------
-    def banner(self, *, versao: str, modelo: str, pasta: str, modo: str,
-               maestro: bool) -> str:
-        '''Monta a caixa de abertura do REPL com informacoes do ambiente.'''
-        largura = min(self.largura, 64)
-        # Largura interna util (entre as bordas).
-        interno = max(1, largura - 2)
-
-        # Linha 1: titulo com acento.
-        titulo = '  ✻ Hera ' + versao
-        # Linha 2: modelo ou maestro, com modo opcional.
-        if maestro:
-            base = 'modelo automatico (maestro)'
-        else:
-            base = modelo
-        if modo:
-            base = base + ' · modo ' + modo
-        linha2 = '  ' + base
-        # Linha 3: pasta, apagada e cortada pelo inicio se nao couber.
-        pasta_visivel = _cortar_inicio(pasta, interno - 2)
-        linha3 = '  ' + pasta_visivel
-
+    def banner(self, *, versao, modelo, pasta, modo, maestro, instrucoes: int = 0) -> str:
+        '''Monta o banner do chat com o mascote e informacoes de contexto.'''
         linhas = []
-        linhas.append(self._montar_linha(titulo, interno, acento=True))
-        linhas.append(self._montar_linha(linha2, interno))
-        linhas.append(self._montar_linha(linha3, interno, apagado=True))
+        linha1 = self._pintar('Hera', '\x1b[1m')
+        if versao:
+            linha1 += ' ' + self._apagado('v' + versao)
+        base2 = 'modelo automatico (maestro)' if maestro else modelo
+        if modo:
+            base2 += ' · modo ' + modo
+        linha2 = self._apagado(base2)
+        limite = self.largura - 16
+        linha3 = self._apagado(_cortar_inicio(pasta, limite))
+        textos = [linha1, linha2, linha3]
+        for i, texto in enumerate(textos):
+            linhas.append(self._acento(MASCOTE[i]) + '  ' + texto + '\n')
+        linhas.append('\n')
+        if instrucoes > 0:
+            linhas.append('▏ ' + self._apagado(str(instrucoes) + ' arquivo(s) de instrucoes carregado(s)') + '\n')
+            linhas.append('\n')
+        return ''.join(linhas)
 
-        topo = '╭' + '─' * interno + '╮'
-        base_borda = '╰' + '─' * interno + '╯'
-
-        partes = [topo]
-        partes.extend(linhas)
-        partes.append(base_borda)
-        caixa = '\n'.join(partes)
-
-        dica = ' / comandos · @arquivo anexa · Ctrl+C interrompe · /exit sai'
-        dica = self._apagado(dica)
-
-        return caixa + '\n' + dica + '\n'
-
-    def _montar_linha(self, conteudo: str, interno: int, *,
-                      acento: bool = False, apagado: bool = False) -> str:
-        '''Monta uma linha da caixa com bordas e preenchimento correto.'''
-        visivel = _largura_visivel(conteudo)
-        if visivel > interno:
-            # Corta pelo inicio para caber.
-            conteudo = _cortar_inicio(_sem_ansi(conteudo), interno)
-            visivel = _largura_visivel(conteudo)
-        preenchimento = ' ' * (interno - visivel)
-        if acento:
-            conteudo = self._acento(conteudo)
-        elif apagado:
-            conteudo = self._apagado(conteudo)
-        return '│' + conteudo + preenchimento + '│'
+    def prompt(self) -> str:
+        '''Retorna a regua e o marcador de entrada do usuario.'''
+        return self.regua() + '\n' + self._acento('❯ ' if self.cor else '> ')
 
     def regua(self) -> str:
         '''Devolve uma linha horizontal apagada com a largura do terminal.'''
         return self._apagado('─' * self.largura)
 
-    def prompt(self) -> str:
-        '''Devolve a regua seguida do marcador de entrada do usuario.'''
-        if self.cor:
-            marcador = self._acento('❯ ')
-        else:
-            marcador = '> '
-        return self.regua() + '\n' + marcador
-
-    def rodape(self, *, modelo: str, modo: str, maestro: bool, pasta: str) -> str:
-        '''Devolve a regua seguida do resumo do estado atual.'''
+    def rodape(self, *, modelo, modo, maestro, pasta) -> str:
+        '''Monta o rodape com modo, modelo e atalhos.'''
         partes = []
-        if maestro:
-            partes.append('maestro')
-        else:
-            partes.append(modelo)
         if modo:
-            partes.append(modo)
-        nome_pasta = os.path.basename(pasta.rstrip('/')) or pasta
-        partes.append(nome_pasta)
-        linha = ' ' + ' · '.join(partes)
-        return self.regua() + '\n' + self._apagado(linha)
+            partes.append(self._aviso(('⏵⏵ ' if self.cor else '>> ') + 'modo ' + modo) + self._apagado(' · '))
+        itens = ['maestro' if maestro else modelo, '/ comandos', '@arquivo', 'ctrl+c interrompe']
+        partes.append(self._apagado(' · '.join(itens)))
+        return self.regua() + '\n' + '  ' + ''.join(partes)
 
-    # ------------------------------------------------------------------
-    # Estado do turno
-    # ------------------------------------------------------------------
+    def placeholder(self) -> str:
+        '''Retorna o texto de placeholder do campo de entrada.'''
+        return self._apagado('Pergunte algo, / para comandos, @ para anexar arquivo')
+
     def pensando(self) -> str:
         '''Devolve o indicador de pensamento, sem quebra de linha.'''
         return self._apagado('✻ Pensando…')
