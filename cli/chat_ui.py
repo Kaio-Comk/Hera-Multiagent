@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+import time
 
 # Constante de modulo usada para apagar a linha atual do terminal.
 APAGAR = '\r\x1b[2K'
@@ -74,6 +75,7 @@ class Visual:
         self.assistente_iniciado = False
         self.inicio_de_linha = True
         self.pensando_visivel = False
+        self._pensando_desde = 0.0
 
     # ------------------------------------------------------------------
     # Auxiliares de cor
@@ -159,9 +161,21 @@ class Visual:
         '''Retorna o texto de placeholder do campo de entrada.'''
         return self._apagado('Pergunte algo, / para comandos, @ para anexar arquivo')
 
-    def pensando(self) -> str:
-        '''Devolve o indicador de pensamento, sem quebra de linha.'''
-        return self._apagado('✻ Pensando…')
+    def pensando(self, segundos: int = 0) -> str:
+        '''Devolve o indicador de pensamento, sem quebra de linha; a partir de 2 s mostra o tempo e como interromper.'''
+        quadros = '✻✽✶✳✢'
+        simbolo = quadros[segundos % len(quadros)] if segundos else quadros[0]
+        texto = f'{simbolo} Pensando…'
+        if segundos >= 2:
+            texto += f' ({segundos}s · ctrl+c interrompe)'
+        return self._apagado(texto)
+
+    def tick_pensando(self) -> str:
+        '''Redesenha o indicador com o tempo decorrido; vazio se ele nao esta na tela (a animacao para sozinha).'''
+        if not self.cor or not self.pensando_visivel:
+            return ''
+        segundos = int(time.monotonic() - self._pensando_desde)
+        return self.apagar_linha() + self.pensando(segundos)
 
     def novo_turno(self) -> None:
         '''Reinicia o estado do turno atual.'''
@@ -172,6 +186,7 @@ class Visual:
     def marcar_pensando(self) -> str:
         '''Devolve o indicador de pensamento e marca que ele esta visivel.'''
         self.pensando_visivel = True
+        self._pensando_desde = time.monotonic()
         return self.pensando()
 
     def _prefixo_apagar(self) -> str:
@@ -197,8 +212,14 @@ class Visual:
         if (not pedaco[0].isspace() and pedaco.startswith('[')
                 and pedaco.endswith('\n')):
             interno = pedaco[1:-2] if len(pedaco) >= 3 else ''
+            esperando = self.pensando_visivel
             prefixo = self._prefixo_apagar()
-            return prefixo + self._apagado('  ⎿ ' + interno) + '\n'
+            linha = prefixo + self._apagado('  ⎿ ' + interno) + '\n'
+            if esperando:
+                # Ainda esperando a resposta: o indicador volta para baixo da linha de status.
+                self.pensando_visivel = True
+                linha += self.pensando()
+            return linha
 
         # (b) Erro ou aviso.
         if pedaco.startswith('Erro ('):

@@ -490,12 +490,24 @@ async def principal(
             print(visual.eco(texto), end='', flush=True)
         if texto.strip() and not texto.lstrip().startswith('/'):
             print(visual.marcar_pensando(), end='', flush=True)
+            asyncio.ensure_future(animar_pensando())
         return texto
+
+    async def animar_pensando() -> None:
+        '''Atualiza o indicador a cada meio segundo (simbolo e tempo) ate a resposta comecar; para sozinho.'''
+        while visual.pensando_visivel:
+            await asyncio.sleep(0.5)
+            quadro = visual.tick_pensando()
+            if quadro:
+                print(quadro, end='', flush=True)
 
     def escrever(texto: str) -> None:
         print(visual.estilizar(texto), end='', flush=True)
 
     async def aprovar_interativo(p: Any) -> str:
+        if visual.pensando_visivel:  # o pedido de aprovacao nao pode dividir a linha com o indicador
+            print(visual.apagar_linha(), end='', flush=True)
+            visual.pensando_visivel = False
         try:
             escolha = await sessao_prompt.prompt_async(
                 ANSI(visual.aprovacao('Aplicar? [s]im / [n]ao / [t]odos (lembrar nesta sessão): '))

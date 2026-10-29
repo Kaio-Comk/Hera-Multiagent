@@ -187,3 +187,29 @@ def test_limpar_tela_so_com_cor():
 def test_eco_repete_a_pergunta():
     assert Visual(cor=False).eco('ola') == '> ola\n'
     assert Visual(cor=True).eco('ola').endswith('ola\n')
+
+
+def test_status_durante_a_espera_devolve_o_indicador():
+    v = Visual(cor=True, largura=80)
+    v.novo_turno()
+    v.marcar_pensando()
+    saida = v.estilizar('[maestro: faixa leve -> m]\n')
+    assert saida.endswith('Pensando…\x1b[0m')
+    assert v.pensando_visivel is True
+    assert 'Pensando' not in v.estilizar('Ola')  # a resposta apaga o indicador e ele nao volta
+    assert v.pensando_visivel is False
+
+
+def test_pensando_mostra_o_tempo_a_partir_de_2s():
+    v = Visual(cor=False)
+    assert v.pensando(0) == '✻ Pensando…'
+    assert '(5s · ctrl+c interrompe)' in v.pensando(5)
+    assert '(' not in v.pensando(1)
+
+
+def test_tick_so_com_cor_e_indicador_visivel():
+    v = Visual(cor=True)
+    assert v.tick_pensando() == ''
+    v.marcar_pensando()
+    assert v.tick_pensando().startswith('\r\x1b[2K')
+    assert Visual(cor=False).tick_pensando() == ''
