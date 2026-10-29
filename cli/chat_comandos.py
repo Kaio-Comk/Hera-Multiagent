@@ -339,11 +339,21 @@ class Comandos:
                         lista = await self.cliente.modelos()
                     except Exception:
                         lista = None
-                    escrever(f'Modelo atual: {atual}\n')
-                    if lista:
-                        for mid in lista[:15]:
-                            escrever(f'  {mid}\n')
-                    return None
+                    seletor = getattr(self, 'seletor', None)
+                    if seletor is not None and lista:
+                        opcoes = ['auto'] + [m for m in lista if m != 'auto']
+                        escolha = await seletor('Escolha o modelo (setas e Enter; Ctrl+C cancela)', opcoes, atual)
+                        if escolha is None:
+                            escrever('Troca de modelo cancelada.\n')
+                            return None
+                        arg = escolha
+                    else:
+                        escrever(f'Modelo atual: {atual}\n')
+                        if lista:
+                            for mid in lista[:15]:
+                                escrever(f'  {mid}\n')
+                        escrever('Para trocar: /model <nome>  ou  /model auto\n')
+                        return None
 
                 if arg.lower() == 'auto':
                     if self.maestro is not None:

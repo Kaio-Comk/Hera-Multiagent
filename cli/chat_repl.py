@@ -160,6 +160,42 @@ def criar_juiz(
     return julgar
 
 
+# Modelos para decidir a faixa, do mais rapido ao menos (medido em 29/10/2026: DeepSeek 2 s, Gemini lite 14 a 28 s).
+MODELOS_JUIZ_FAIXA = ('deepseek-ai/DeepSeek-V4.1-Flash', 'gemini-flash-lite-latest', 'agnes-2.5-flash')
+
+
+def criar_juiz_de_faixa(
+    cliente: ClienteHera,
+    maestro: Maestro,
+) -> Callable[[str], Awaitable[str | None]]:
+    '''Juiz do maestro: modelo rapido (cliente proprio, sem mexer no modelo da conversa) que responde so a faixa.'''
+    from app.maestro import PROMPT_FAIXA
+
+    async def julgar_faixa(pedido: str) -> str | None:
+        disponiveis = await maestro._disponiveis()
+        indisponiveis = maestro._indisponiveis_ativos()
+        modelo = next((m for m in MODELOS_JUIZ_FAIXA if m in disponiveis and m not in indisponiveis), None)
+        if modelo is None:
+            return None
+        irmao = ClienteHera(
+            getattr(cliente, 'base_url', ''),
+            getattr(cliente, 'token', ''),
+            modelo,
+            transporte=getattr(cliente, '_transporte', getattr(cliente, 'transporte', None)),
+            timeout=getattr(cliente, '_timeout', getattr(cliente, 'timeout', 120.0)),
+        )
+        mensagens = [
+            {'role': 'system', 'content': 'Voce e um juiz objetivo e conservador.'},
+            {'role': 'user', 'content': PROMPT_FAIXA + pedido},
+        ]
+        partes: list[str] = []
+        async for pedaco in irmao.conversar(mensagens):
+            partes.append(pedaco)
+        return ''.join(partes)
+
+    return julgar_faixa
+
+
 async def rodar(
     cliente: ClienteHera,
     ler_linha: Callable[[], Awaitable[str]],
@@ -200,8 +236,17 @@ async def rodar(
         sessao.agente = agente
 
     resumidor_efetivo = resumir or criar_resumidor(cliente, maestro)
+    juiz_do_chat = julgar is None
     if julgar is None:
         julgar = criar_juiz(cliente, maestro)
+    if maestro is not None and hasattr(maestro, 'timeout_juiz') and getattr(maestro, 'juiz', None) is None:
+        from app.maestro import PROMPT_FAIXA
+
+        # Pedido que a regra local nao sabe pesar: um modelo rapido decide a faixa (falhou ou demorou, vale a regra local).
+        if juiz_do_chat:
+            maestro.juiz = criar_juiz_de_faixa(cliente, maestro)
+        else:
+            maestro.juiz = lambda pedido: julgar(PROMPT_FAIXA + pedido)
 
     primeira_vez = True
     modelo_anterior: str | None = None
@@ -237,7 +282,8 @@ async def rodar(
                 and getattr(maestro, 'ativo', True)
             )
             if deve_escrever:
-                escrever(f'[maestro: faixa {escolha.peso} -> {escolha.modelo}]\n')
+                por_juiz = ' (decidido pelo juiz)' if str(getattr(escolha, 'motivo', '')).startswith('juiz') else ''
+                escrever(f'[maestro: faixa {escolha.peso}{por_juiz} -> {escolha.modelo}]\n')
             primeira_vez = False
             modelo_anterior = escolha.modelo
 
@@ -409,6 +455,22 @@ async def rodar(
     return sessao
 
 
+def _encostar_no_fundo(sessao_prompt: Any) -> bool:
+    '''Salva o cursor e desce o campo de entrada ate o fim da tela, sem criar linhas em branco (como o Claude Code).
+
+    Devolve True se o cursor foi salvo: quem le a linha deve restaurar (ESC 8) e apagar o que ficou abaixo, para a
+    conversa continuar logo depois do conteudo e nao do fundo da tela. Sem espaco ou sem suporte, nao faz nada.
+    '''
+    try:
+        abaixo = sessao_prompt.output.get_rows_below_cursor_position()
+    except Exception:  # noqa: BLE001
+        return False
+    if abaixo < 5:  # regua de cima, entrada, regua de baixo, rodape e uma folga: sem isso a tela rolaria
+        return False
+    print('\x1b7' + (f'\x1b[{abaixo - 4}B' if abaixo > 4 else ''), end='', flush=True)
+    return True
+
+
 async def principal(
     base_url: str,
     token: str,
@@ -428,19 +490,68 @@ async def principal(
 ) -> None:
     '''Ponto de entrada interativo usando prompt_toolkit.'''
     from prompt_toolkit import PromptSession
+    from prompt_toolkit.formatted_text import ANSI
+    from prompt_toolkit.styles import Style
 
-    sessao_prompt = PromptSession()
+    from cli.chat_ui import Visual
+
+    visual = Visual()
+    sessao_prompt = PromptSession(style=Style.from_dict({'bottom-toolbar': 'noreverse'}))
+    modo_agente = getattr(agente_cfg, 'modo', None) if agente_cfg is not None else None
+    pasta_atual = str(Path.cwd())
+
+    def rodape() -> ANSI:
+        forcado = getattr(maestro, 'forcado', None) if maestro is not None else None
+        ativo = maestro is not None and getattr(maestro, 'ativo', True) and not forcado
+        atual = forcado or getattr(cliente, 'modelo', modelo)
+        return ANSI(visual.rodape(modelo=atual, modo=modo_agente or '', maestro=bool(ativo), pasta=pasta_atual))
+
+    async def seletor(titulo: str, opcoes: list[str], atual: str) -> Optional[str]:
+        from cli.chat_seletor import selecionar
+
+        itens = [(o, 'auto (o maestro escolhe)' if o == 'auto' else o) for o in opcoes]
+        try:
+            return await selecionar(titulo, itens, atual if atual in opcoes else None)
+        except (KeyboardInterrupt, EOFError):
+            return None
 
     async def ler_linha() -> str:
-        return await sessao_prompt.prompt_async('> ')
+        if visual.pensando_visivel:
+            print(visual.apagar_linha(), end='', flush=True)
+        visual.novo_turno()
+        no_fundo = visual.cor and _encostar_no_fundo(sessao_prompt)
+        try:
+            texto = await sessao_prompt.prompt_async(
+                ANSI(visual.prompt()), bottom_toolbar=rodape, placeholder=ANSI(visual.placeholder())
+            )
+        finally:
+            if no_fundo:
+                print('\x1b8\x1b[J', end='', flush=True)  # volta ao fim do conteudo e apaga campo e rodape
+        if no_fundo:
+            print(visual.eco(texto), end='', flush=True)
+        if texto.strip() and not texto.lstrip().startswith('/'):
+            print(visual.marcar_pensando(), end='', flush=True)
+            asyncio.ensure_future(animar_pensando())
+        return texto
+
+    async def animar_pensando() -> None:
+        '''Atualiza o indicador a cada meio segundo (simbolo e tempo) ate a resposta comecar; para sozinho.'''
+        while visual.pensando_visivel:
+            await asyncio.sleep(0.5)
+            quadro = visual.tick_pensando()
+            if quadro:
+                print(quadro, end='', flush=True)
 
     def escrever(texto: str) -> None:
-        print(texto, end='', flush=True)
+        print(visual.estilizar(texto), end='', flush=True)
 
     async def aprovar_interativo(p: Any) -> str:
+        if visual.pensando_visivel:  # o pedido de aprovacao nao pode dividir a linha com o indicador
+            print(visual.apagar_linha(), end='', flush=True)
+            visual.pensando_visivel = False
         try:
             escolha = await sessao_prompt.prompt_async(
-                'Aplicar? [s]im / [n]ao / [t]odos (lembrar nesta sessão): '
+                ANSI(visual.aprovacao('Aplicar? [s]im / [n]ao / [t]odos (lembrar nesta sessão): '))
             )
         except (KeyboardInterrupt, EOFError):
             return 'nao'
@@ -549,8 +660,22 @@ async def principal(
             delegar=delegar_fn,
         )
         pasta = getattr(agente_cfg.raiz, 'pasta', agente_cfg.raiz)
-        print(f'Agente de código ligado (modo {agente_cfg.modo}) em {pasta}')
 
+    try:
+        from importlib.metadata import version as _versao
+        versao_hera = _versao('hera-multiagent')
+    except Exception:
+        versao_hera = ''
+    fontes = getattr(getattr(estado, 'instrucoes', None), 'fontes', None) if estado is not None else None
+    print(visual.limpar_tela(), end='')
+    print(visual.banner(
+        versao=versao_hera, modelo=modelo, pasta=pasta_atual, modo=modo_agente or '',
+        maestro=bool(maestro is not None and getattr(maestro, 'ativo', True)),
+        instrucoes=len(fontes or ()),
+        arquivos=tuple(
+            str(getattr(f, 'caminho', '')).replace(str(Path.home()), '~') for f in (fontes or ())
+        ),
+    ))
     sessao = Sessao(modelo, sistema=sistema, agente=agente)
     if mensagens_iniciais:
         sessao.mensagens = list(mensagens_iniciais)
@@ -582,6 +707,9 @@ async def principal(
             else None
         )
     )
+
+    if comandos is not None:
+        comandos.seletor = seletor
 
     from app.agente.caminhos import Raiz
     from cli.chat_anexos import expandir_anexos

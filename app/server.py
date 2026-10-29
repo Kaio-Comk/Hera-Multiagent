@@ -845,7 +845,7 @@ async def _start_run(goal: str, raw_steps: List[Dict[str, Any]], executors_req: 
         steps, warnings = orchestration.normalize_steps(raw_steps, executors, ocfg["max_steps"], models_map)
     except orchestration.PlanError as exc:
         raise HTTPException(status_code=400, detail={"error": "invalid_plan", "message": str(exc)})
-    from app.memory.integracao import injetar_memoria_nos_passos     # opt-in (HERA_MEMORY_SNAPSHOT=1); nunca derruba o plano
+    from app.memory.integracao import injetar_memoria_nos_passos     # ligado por padrao (HERA_MEMORY_SNAPSHOT=0 desliga); nunca derruba o plano
     injetar_memoria_nos_passos(steps)
     run_id = f"run-{uuid.uuid4().hex[:8]}"
     workspace = str(ROOT_DIR)

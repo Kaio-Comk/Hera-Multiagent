@@ -37,9 +37,42 @@ Opções principais:
 
 ## Maestro
 
-O Maestro vem ligado por padrão. Ele classifica cada pedido em leve, médio ou pesado usando regras locais, sem gastar chamada de IA, e escolhe o modelo da faixa entre os disponíveis. Se um modelo estiver indisponível (429/503), ele troca sozinho.
+O Maestro vem ligado por padrão. Ele classifica cada pedido em leve, médio ou pesado usando regras locais, sem gastar chamada de IA, e escolhe o modelo da faixa entre os disponíveis. Quando as regras não têm certeza (pedido sem nenhuma palavra reconhecida, ou palavra pesada isolada em pedido curto), um modelo leve decide a faixa em até 8 segundos; se falhar ou demorar, vale a regra local. O motivo aparece na linha `[maestro: ...]` (`juiz: pesado (regra local: ...)`). Se um modelo estiver indisponível (429/503), ele troca sozinho.
 
 Você pode forçar um modelo com `--modelo` ou `/model nome`, voltar ao automático com `/model auto`, desligar com `/maestro off` e trocar o perfil com `/perfil`.
+
+## Visual do chat
+
+### Abertura e campo de entrada
+- Abertura: mascote em blocos, "Hera vX", modelo (ou "modelo automatico (maestro)"), pasta atual e uma linha com os arquivos de instruções carregados (ex.: ~/.hera/HERA.md).
+- A tela é limpa ao abrir.
+- Campo de entrada preso ao fim da tela entre duas réguas, com texto-guia apagado: "Pergunte algo, / para comandos, @ para anexar arquivo".
+- Ao enviar, a pergunta fica no histórico com o símbolo ❯ e a conversa continua logo após o conteúdo.
+- Rodapé sob o campo: modo do agente (se ligado, em amarelo), "maestro" ou o modelo escolhido, e atalhos (/ comandos, @arquivo, ctrl+c interrompe).
+
+### Respostas e Markdown
+- Enquanto o modelo pensa: indicador "✻ Pensando…" animado; depois de 2 s mostra os segundos e "ctrl+c interrompe".
+- Some quando a resposta começa; o campo de entrada some durante a resposta e volta no fim.
+- A resposta aparece linha a linha, com Markdown desenhado: títulos (#, ##) em negrito colorido sem os símbolos, listas com bullet, **negrito**, *itálico*, `código inline` em dourado.
+- Blocos de código com cerca "╌╌ linguagem" e barra "│" (sem realce de sintaxe), citações "▎", links como "texto (url)".
+- Tabelas ficam em texto puro.
+
+### Trocar de modelo e maestro
+- /model sem argumento abre um seletor: setas navegam, digite para filtrar, PageUp, PageDown, Home, End, Enter escolhe, Esc ou Ctrl+C cancela.
+- Janela de 10 itens com "acima/abaixo"; "auto" devolve o controle ao maestro.
+- /model <nome> e /model auto continuam valendo.
+- Linha de status do maestro: "⎿ maestro: faixa X -> modelo"; "(decidido pelo juiz)" quando o juiz decidiu.
+- Aparece na primeira mensagem e quando o modelo muda.
+- Juiz do maestro: só quando a regra local não tem certeza; usa um modelo rápido (DeepSeek-V4.1-Flash, depois gemini-flash-lite, depois agnes-2.5-flash); limite de 8 s; se falhar descansa 5 min.
+- Faixa leve do maestro agora começa pelo DeepSeek-V4.1-Flash (River), depois gemini-flash-lite, gpt-4o-mini, agnes-2.5-flash.
+
+### Cores
+- NO_COLOR ou saída que não é terminal desligam cores e efeitos de tela (o texto sai puro, sem limpar a tela).
+
+### Instruções e memória
+- Instruções globais: ~/.hera/HERA.md tem prioridade sobre ~/.claude/CLAUDE.md (que só é lido se o HERA.md global não existir).
+- Snapshot de memória vem LIGADO por padrão (HERA_MEMORY_SNAPSHOT=0 desliga).
+- A busca na memória avisa com erro claro (IndiceIndisponivel) quando o índice falha, ignora palavras curtas/comuns (até 8 termos) e remove do índice nota ilegível.
 
 ## Comandos
 
@@ -119,7 +152,7 @@ hera memory forget <nome>
 hera memory export
 ```
 
-Com `HERA_MEMORY_SNAPSHOT=1`, notas relevantes são injetadas a cada pergunta e também no começo de cada passo dos planos executados pelo servidor (painel web e planos do Claude), sem ultrapassar o limite de 4.000 caracteres da instrução. As conversas ficam salvas em SQLite e podem ser retomadas.
+Por padrão (desligue com `HERA_MEMORY_SNAPSHOT=0`), notas relevantes são injetadas a cada pergunta e também no começo de cada passo dos planos executados pelo servidor (painel web e planos do Claude), sem ultrapassar o limite de 4.000 caracteres da instrução. As conversas ficam salvas em SQLite e podem ser retomadas.
 
 ## Provedores e custo
 

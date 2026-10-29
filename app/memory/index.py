@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import sqlite3
 import threading
@@ -8,7 +9,35 @@ from pathlib import Path
 
 from app.memory.store import MemoryStore
 
+logger = logging.getLogger(__name__)
+
 _VERSAO_ESQUEMA = 2  # 2: coluna `titulo` (nome da nota com hifens viram espacos) tambem e buscavel
+
+
+_STOPWORDS = frozenset({
+    'de', 'da', 'do', 'das', 'dos', 'para', 'por', 'com', 'uma', 'uns',
+    'que', 'nao', 'the', 'and', 'for', 'with', 'this', 'that', 'are', 'was',
+})
+_MAX_TERMOS = 8
+
+
+class IndiceIndisponivel(RuntimeError):
+    '''O indice FTS5 nao respondeu (banco travado, corrompido ou tabela ausente).'''
+
+
+def termos_da_consulta(consulta: str) -> list[str]:
+    '''Termos uteis da consulta: sem palavras curtas/comuns, sem repeticao, no maximo 8 (os mais longos), na ordem original.'''
+    vistos: set[str] = set()
+    termos: list[str] = []
+    for t in re.findall(r'\w+', (consulta or '').lower()):
+        if len(t) < 3 or t in _STOPWORDS or t in vistos:
+            continue
+        vistos.add(t)
+        termos.append(t)
+    if len(termos) <= _MAX_TERMOS:
+        return termos
+    escolhidos = set(sorted(range(len(termos)), key=lambda i: (-len(termos[i]), i))[:_MAX_TERMOS])
+    return [t for i, t in enumerate(termos) if i in escolhidos]
 
 
 @dataclass(frozen=True)
@@ -74,6 +103,11 @@ class MemoryIndex:
                 try:
                     nota = self.store.get(nome)
                 except Exception:
+                    # Nota ilegivel nao pode ficar achavel pelo conteudo antigo.
+                    self._conn.execute('DELETE FROM busca WHERE nome = ?', (nome,))
+                    self._conn.execute('DELETE FROM meta WHERE nome = ?', (nome,))
+                    if anterior is not None:
+                        removidas += 1
                     continue
                 self._conn.execute('DELETE FROM busca WHERE nome = ?', (nome,))
                 self._conn.execute(
@@ -103,7 +137,7 @@ class MemoryIndex:
     def buscar(self, consulta: str, limite: int = 5) -> list[Resultado]:
         with self._lock:
             self.sincronizar()
-            termos = re.findall(r'\w+', consulta.lower())
+            termos = termos_da_consulta(consulta)
             if not termos:
                 return []
             fts = ' OR '.join('"' + t.replace('"', '') + '"*' for t in termos)
@@ -115,8 +149,9 @@ class MemoryIndex:
                     'FROM busca WHERE busca MATCH ? ORDER BY s LIMIT ?',
                     (fts, limite),
                 ).fetchall()
-            except sqlite3.OperationalError:
-                return []
+            except sqlite3.OperationalError as exc:
+                logger.warning('indice da memoria indisponivel: %s', exc)
+                raise IndiceIndisponivel(str(exc)) from exc
             resultado: list[Resultado] = []
             for nome, descricao, tipo, trecho, s in rows:
                 texto = trecho if trecho else ''

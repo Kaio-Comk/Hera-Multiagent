@@ -1062,3 +1062,46 @@ async def test_comando_lembrar_nao_descarta(tmp_path: Path) -> None:
     await cmd.executar('/lembrar sim', sessao, saida.append)
     assert not (pasta / 'x-nota.md').exists()
     assert 'Nao ha propostas' in ''.join(saida)
+
+
+async def test_comando_model_com_seletor_troca_o_modelo() -> None:
+    saida: list[str] = []
+    cliente = ClienteFalso(['m1', 'm2'])
+    cliente.modelo = 'm1'
+    sessao = Sessao(modelo='m1')
+    cmd = Comandos(cliente, EstadoChat())
+    vistas: list = []
+
+    async def seletor(titulo, opcoes, atual):
+        vistas.append((opcoes, atual))
+        return 'm2'
+
+    cmd.seletor = seletor
+    await cmd.executar('/model', sessao, saida.append)
+    assert vistas == [(['auto', 'm1', 'm2'], 'm1')]
+    assert cliente.modelo == 'm2' and sessao.modelo == 'm2'
+    assert 'Modelo alterado para m2.' in ''.join(saida)
+
+
+async def test_comando_model_com_seletor_cancelado_nao_muda() -> None:
+    saida: list[str] = []
+    cliente = ClienteFalso(['m1', 'm2'])
+    cliente.modelo = 'm1'
+    sessao = Sessao(modelo='m1')
+    cmd = Comandos(cliente, EstadoChat())
+
+    async def seletor(titulo, opcoes, atual):
+        return None
+
+    cmd.seletor = seletor
+    await cmd.executar('/model', sessao, saida.append)
+    assert cliente.modelo == 'm1' and sessao.modelo == 'm1'
+    assert 'cancelada' in ''.join(saida)
+
+
+async def test_comando_model_sem_seletor_mostra_como_trocar() -> None:
+    saida: list[str] = []
+    cliente = ClienteFalso(['m1'])
+    cmd = Comandos(cliente, EstadoChat())
+    await cmd.executar('/model', Sessao(modelo='m1'), saida.append)
+    assert '/model <nome>' in ''.join(saida)

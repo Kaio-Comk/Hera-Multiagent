@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import re
 import time
 import unicodedata
 from collections.abc import Awaitable, Callable, Collection
@@ -11,10 +13,10 @@ ORDEM: tuple[Peso, ...] = ('leve', 'medio', 'pesado')
 
 PREFERENCIAS_PADRAO: dict[str, list[str]] = {
     'leve': [
+        'deepseek-ai/DeepSeek-V4.1-Flash',  # River (credito com validade) e ~2 s; o Gemini lite chegou a 14-28 s em 29/10/2026
         'gemini-flash-lite-latest',
         'gpt-4o-mini',
         'agnes-2.5-flash',
-        'deepseek-ai/DeepSeek-V4.1-Flash',
     ],
     'medio': [
         'deepseek-ai/DeepSeek-V4.1-Flash',
@@ -119,6 +121,36 @@ def classificar_local(texto: str) -> tuple[str, str]:
     return 'medio', 'pedido comum'
 
 
+PROMPT_FAIXA = (
+    "Classifique o pedido do usuario em UMA palavra: "
+    "leve (saudacao, pergunta curta, traducao, resumo curto), "
+    "medio (explicar, documentar, revisar, codigo pequeno), "
+    "pesado (arquitetura, bug dificil, varios arquivos, seguranca, raciocinio longo). "
+    "Responda somente a palavra.\n"
+    "Pedido:\n"
+)
+
+
+def ler_faixa(resposta: str | None) -> str | None:
+    """Extrai a primeira faixa valida (leve/medio/pesado) da resposta do juiz."""
+    if not resposta:
+        return None
+    texto = _normalizar(resposta)
+    m = re.search(r"\b(leve|medio|pesado)\b", texto)
+    if not m:
+        return None
+    return m.group(1)
+
+
+def regra_incerta(peso: str, motivo: str, texto: str) -> bool:
+    """Diz se a classificacao local merece consulta ao juiz."""
+    if motivo == "pedido comum":
+        return True
+    if peso == "pesado" and motivo.startswith("palavra-chave") and len(texto) < 200:
+        return True
+    return False
+
+
 def _faixas_vizinhas(peso: str) -> list[str]:
     """Ordem de fallback entre faixas de peso."""
     if peso == 'leve':
@@ -184,6 +216,10 @@ class Maestro:
         self._cache: list[str] = []
         self._cache_em: float | None = None
         self._indisponiveis: dict[str, float] = {}
+        self.juiz: Callable[[str], Awaitable[str | None]] | None = None
+        self.timeout_juiz: float = 8.0
+        self.pausa_juiz: float = 300.0  # apos falha ou timeout, o juiz descansa (nao atrasa cada pedido)
+        self._juiz_pausado_ate: float = 0.0
 
     @property
     def perfil(self) -> str | None:
@@ -224,21 +260,25 @@ class Maestro:
         self._indisponiveis[modelo] = self._relogio() + segundos
 
     async def escolher(self, texto: str) -> Escolha:
-        """Escolhe modelo para o texto dado."""
         peso, motivo = classificar_local(texto)
         if self.forcado:
-            return Escolha(self.forcado, peso, 'modelo forcado pelo usuario', True)
+            return Escolha(self.forcado, peso, "modelo forcado pelo usuario", True)
         if not self.ativo:
-            return Escolha('default', 'medio', 'maestro desligado')
+            return Escolha("default", "medio", "maestro desligado")
+        if self.juiz and self._relogio() >= self._juiz_pausado_ate and regra_incerta(peso, motivo, texto):
+            try:
+                resposta = await asyncio.wait_for(self.juiz(texto[:1500]), self.timeout_juiz)
+            except Exception:
+                resposta = None
+                self._juiz_pausado_ate = self._relogio() + self.pausa_juiz
+            faixa = ler_faixa(resposta)
+            if faixa:
+                motivo = f"juiz: {faixa} (regra local: {motivo})"
+                peso = faixa
         disponiveis = await self._disponiveis()
-        modelo = escolher_modelo(
-            peso,
-            disponiveis,
-            self._prefs_efetivas(),
-            indisponiveis=self._indisponiveis_ativos(),
-        )
+        modelo = escolher_modelo(peso, disponiveis, self._prefs_efetivas(), indisponiveis=self._indisponiveis_ativos())
         if modelo is None:
-            return Escolha('default', peso, 'nenhum modelo da faixa disponivel')
+            return Escolha("default", peso, "nenhum modelo da faixa disponivel")
         return Escolha(modelo, peso, motivo)
 
     async def escolher_faixa(self, peso: str) -> Escolha:
