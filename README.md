@@ -390,7 +390,7 @@ See the full guide: [docs/CHAT.en.md](docs/CHAT.en.md).
 pipx install git+https://github.com/Kaio-Comk/Hera-Multiagent.git
 hera chat
 ```
-Installed this way, Hera keeps its data (database, token, `config.yaml`) in `%USERPROFILE%\.hera`, never inside the package folder. Set `HERA_HOME` to move it. Upgrading the package does not touch your data. Windows only for now.
+Installed this way, Hera keeps its data (database, token, `config.yaml`) in `%USERPROFILE%\.hera`, never inside the package folder. Set `HERA_HOME` to move it. Upgrading the package does not touch your data. Windows is the supported platform. The test suite also passes on Linux and macOS in CI, but day-to-day use there is untested (for example, the encrypted key vault is Windows-based).
 
 ### Option B: from source (for contributors)
 

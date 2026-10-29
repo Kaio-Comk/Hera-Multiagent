@@ -9,7 +9,7 @@ pipx install git+https://github.com/Kaio-Comk/Hera-Multiagent.git
 hera chat
 ```
 
-Instalado, o Hera guarda dados (banco, token, `config.yaml`) em `%USERPROFILE%\.hera`, fora da pasta do pacote. A variável `HERA_HOME` muda o local; `HERA_DATA_DIR` e `HERA_CONFIG` mudam só os dados ou só a configuração. Atualizar o pacote não mexe nos seus dados. Só Windows por enquanto.
+Instalado, o Hera guarda dados (banco, token, `config.yaml`) em `%USERPROFILE%\.hera`, fora da pasta do pacote. A variável `HERA_HOME` muda o local; `HERA_DATA_DIR` e `HERA_CONFIG` mudam só os dados ou só a configuração. Atualizar o pacote não mexe nos seus dados. O Windows é a plataforma suportada. A suíte de testes também passa em Linux e macOS no CI, mas o uso no dia a dia lá não foi testado.
 
 ## Início rápido
 

@@ -9,7 +9,7 @@ pipx install git+https://github.com/Kaio-Comk/Hera-Multiagent.git
 hera chat
 ```
 
-When installed, Hera keeps its data (database, token, `config.yaml`) in `%USERPROFILE%\.hera`, outside the package folder. `HERA_HOME` moves it; `HERA_DATA_DIR` and `HERA_CONFIG` move only the data or only the configuration. Upgrading the package does not touch your data. Windows only for now.
+When installed, Hera keeps its data (database, token, `config.yaml`) in `%USERPROFILE%\.hera`, outside the package folder. `HERA_HOME` moves it; `HERA_DATA_DIR` and `HERA_CONFIG` move only the data or only the configuration. Upgrading the package does not touch your data. Windows is the supported platform. The test suite also passes on Linux and macOS in CI, but day-to-day use there is untested.
 
 ## Quick start
 
