@@ -89,6 +89,22 @@ class UsageLedger:
         self._cache[key] = (time.monotonic(), out)
         return out
 
+    def today_cost(self) -> float:
+        """Soma do custo de hoje (em US$) de todos os provedores."""
+        key = "today_cost"
+        hit = self._cache.get(key)
+        if hit and time.monotonic() - hit[0] < 5:
+            return hit[1]
+        sql = "SELECT COALESCE(SUM(cost), 0.0) FROM usage WHERE ts >= ?"
+        try:
+            with self._lock, self._connect() as db:
+                row = db.execute(sql, [_day_start()]).fetchone()
+                val = float(row[0] or 0.0) if row else 0.0
+        except sqlite3.Error:
+            return 0.0
+        self._cache[key] = (time.monotonic(), val)
+        return val
+
     def latency_stats(self, window_hours: int = 24) -> Dict[str, Dict[str, Any]]:
         """Latência média e nº de chamadas OK por provedor (para a estratégia 'mais rápido')."""
         key = f"lat:{window_hours}"
@@ -166,3 +182,6 @@ class UsageLedger:
         with self._lock, self._connect() as db:
             db.row_factory = sqlite3.Row
             return [dict(r) for r in db.execute(sql, args)]
+
+
+UsageStore = UsageLedger

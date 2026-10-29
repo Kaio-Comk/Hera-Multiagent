@@ -311,7 +311,8 @@ class RunReporter:
         """Compila e salva o relatório em disco."""
         run_id = str(run_data.get("id", f"run-{int(time.time())}"))
         if not output_path:
-            reports_dir = Path(__file__).resolve().parent.parent / "data" / "reports"
+            from app.paths import diretorio_relatorios
+            reports_dir = diretorio_relatorios()
             reports_dir.mkdir(parents=True, exist_ok=True)
             output_path = str(reports_dir / f"{run_id}.html")
 

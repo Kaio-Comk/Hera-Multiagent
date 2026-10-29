@@ -374,3 +374,62 @@ async def test_ollama_parado_responde_apos_uma_tentativa_so():
     finally:
         mod.httpx = httpx
     assert st.healthy is False and calls == ["/api/version"]
+
+
+# ── 503/502/504 passageiros (River, 28/10/2026): uma nova tentativa antes de desistir ──────────────
+@pytest.mark.asyncio
+async def test_503_passageiro_e_repetido_uma_vez_na_mesma_chave(monkeypatch):
+    import app.gateway.providers as providers
+    monkeypatch.setattr(providers, "RETRY_5XX_DELAY", 0.0)
+    calls = []
+
+    async def handler(r):
+        calls.append(1)
+        return httpx.Response(503) if len(calls) == 1 else httpx.Response(200, json=OK_JSON)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        resp = await cloud(KeyManager(["sk-aaaaaaaaaaaaaaaaaaaa"])).chat_complete(req(), http)
+    assert resp.choices[0].message.content == "ola" and len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_503_persistente_falha_depois_de_so_uma_repeticao(monkeypatch):
+    import app.gateway.providers as providers
+    monkeypatch.setattr(providers, "RETRY_5XX_DELAY", 0.0)
+    calls = []
+
+    async def handler(r):
+        calls.append(1)
+        return httpx.Response(503)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        with pytest.raises(GatewayProviderError) as exc:
+            await cloud(KeyManager(["sk-aaaaaaaaaaaaaaaaaaaa"])).chat_complete(req(), http)
+    assert exc.value.status_code == 503 and exc.value.retryable and len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_erro_400_nao_e_repetido(monkeypatch):
+    import app.gateway.providers as providers
+    monkeypatch.setattr(providers, "RETRY_5XX_DELAY", 0.0)
+    calls = []
+
+    async def handler(r):
+        calls.append(1)
+        return httpx.Response(400)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        with pytest.raises(GatewayProviderError):
+            await cloud(KeyManager(["sk-aaaaaaaaaaaaaaaaaaaa"])).chat_complete(req(), http)
+    assert len(calls) == 1
+
+
+def test_river_tem_prazo_para_modelo_que_pensa_antes_de_responder():
+    # O River e um provedor PRIVADO do dono (fica no config.yaml, que nao e versionado): sem ele (CI, outra maquina) nao ha o que checar.
+    import pathlib
+    import yaml
+    caminho = pathlib.Path("config.yaml")
+    if not caminho.exists():
+        pytest.skip("config.yaml local ausente")
+    cfg = yaml.safe_load(open(caminho, encoding="utf-8"))
+    river = (cfg.get("providers") or {}).get("river")
+    if river is None:
+        pytest.skip("provedor 'river' nao configurado nesta maquina")
+    assert river["timeout"] >= 180      # GLM levou 55 s num modulo pequeno; 60 s estourava (ReadTimeout)

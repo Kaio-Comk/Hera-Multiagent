@@ -1,4 +1,5 @@
 import pytest
+from models.agent import HealthStatus
 from models.task import AgentTask
 from adapters.ollama import OllamaAdapter
 from adapters.hera_router import HeraRouterAdapter
@@ -8,8 +9,13 @@ from app.router import TaskRouter
 
 @pytest.fixture
 def mock_router():
+    ollama = OllamaAdapter()
+
+    async def _no_ar():                 # o roteador agora confere o Ollama; o teste nao pode depender da maquina
+        return HealthStatus(healthy=True)
+    ollama.health_check = _no_ar
     adapters = {
-        "ollama": OllamaAdapter(),
+        "ollama": ollama,
         "hera_router": HeraRouterAdapter(call=None, models=lambda: [], has_cloud=lambda: True),
         "claude_code": ClaudeCodeAdapter(),
         "antigravity": AntigravityAdapter(),

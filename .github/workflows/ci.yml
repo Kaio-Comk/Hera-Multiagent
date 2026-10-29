@@ -1,25 +1,67 @@
-name: CI Quality & Syntax
+name: CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "master", "main" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "master", "main" ]
+
+permissions:
+  contents: read
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: Testes (Windows, Python 3.12)
+    runs-on: windows-latest
+    timeout-minutes: 25
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.12"
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        if [ -f pyproject.toml ]; then pip install -e . || true; fi
-    - name: Syntax Check
-      run: |
-        python -m compileall .
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Instalar
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Sintaxe
+        run: python -m compileall -q app cli adapters models main.py
+      - name: Testes
+        run: python -m pytest -q
+
+  portabilidade:
+    name: Testes (${{ matrix.os }}, informativo)
+    # Windows e a plataforma-alvo; Linux e macOS rodam so para MEDIR a portabilidade e nao bloqueiam o PR.
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Instalar
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Testes
+        run: python -m pytest -q -p no:cacheprovider
+
+  segredos:
+    name: Varredura de segredos
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

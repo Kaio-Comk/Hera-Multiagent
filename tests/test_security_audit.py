@@ -12,6 +12,17 @@ from adapters.ollama import OllamaAdapter
 from adapters.hera_router import HeraRouterAdapter
 from adapters.claude_code import ClaudeCodeAdapter
 from adapters.antigravity import AntigravityAdapter
+from models.agent import HealthStatus
+
+
+def ollama_no_ar():
+    """Ollama de teste que responde: o roteador confere a saude, e estes testes nao podem depender da maquina."""
+    ollama = OllamaAdapter()
+
+    async def _saudavel():
+        return HealthStatus(healthy=True)
+    ollama.health_check = _saudavel
+    return ollama
 
 # 1. Testes de Shell Injection e Bypass de Executável (P0)
 def test_policy_engine_blocks_shell_chaining_and_redirection():
@@ -89,7 +100,7 @@ def test_privacy_guard_detects_credentials():
 @pytest.mark.asyncio
 async def test_router_dlp_forces_local_ollama_on_secrets():
     adapters = {
-        "ollama": OllamaAdapter(),
+        "ollama": ollama_no_ar(),
         "hera_router": HeraRouterAdapter(call=None, models=lambda: [], has_cloud=lambda: True)
     }
     router = TaskRouter(adapters=adapters)
@@ -110,7 +121,7 @@ async def test_router_dlp_forces_local_ollama_on_secrets():
 @pytest.mark.asyncio
 async def test_router_offline_precedence_over_manual_assignment():
     adapters = {
-        "ollama": OllamaAdapter(),
+        "ollama": ollama_no_ar(),
         "hera_router": HeraRouterAdapter(call=None, models=lambda: [], has_cloud=lambda: True)
     }
     router = TaskRouter(adapters=adapters)

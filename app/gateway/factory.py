@@ -22,13 +22,15 @@ Um provedor ligado sem chave, ou com URL reprovada pela política anti-SSRF, é 
 from __future__ import annotations
 
 import logging
+import math
 import os
-from typing import Any, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 from app.gateway.key_manager import KeyManager, load_keys_from_env
 from app.gateway.oauth import OAuthKeyManager
 from app.gateway.provider_policy import SSRFSecurityError, sanitize_extra_headers
 from app.gateway.providers import BaseGatewayAdapter, CloudOpenAIGatewayAdapter, OllamaGatewayAdapter
+from app.gateway.tier_router import TierRouter
 
 log = logging.getLogger("hera.gateway.factory")
 
@@ -84,3 +86,91 @@ def build_gateway_adapters(cfg: Mapping[str, Any], environ: Optional[Mapping[str
         except (SSRFSecurityError, ValueError) as exc:
             log.warning("[gateway] provedor %r ignorado: %s", name, exc)
     return adapters
+
+
+def parse_daily_budget(raw: Any) -> Optional[float]:
+    """Lê gateway.daily_budget_usd (aceita número ou None; valor negativo/inválido vira None com aviso no log)."""
+    if raw is None:
+        return None
+    if isinstance(raw, bool):
+        log.warning("[gateway] daily_budget_usd invalido (booleano): %r", raw)
+        return None
+    try:
+        val = float(raw)
+        if val < 0 or math.isnan(val) or math.isinf(val):
+            log.warning("[gateway] daily_budget_usd invalido (negativo ou nao-finito): %r", raw)
+            return None
+        return val
+    except (ValueError, TypeError):
+        log.warning("[gateway] daily_budget_usd invalido: %r", raw)
+        return None
+
+
+def parse_sticky_minutes(raw: Any) -> int:
+    """Lê gateway.sticky_minutes (padrão 15; 0 desliga)."""
+    if raw is None:
+        return 15
+    if isinstance(raw, bool):
+        log.warning("[gateway] sticky_minutes invalido (booleano): %r, usando padrao 15", raw)
+        return 15
+    try:
+        val = int(raw)
+        if val < 0:
+            log.warning("[gateway] sticky_minutes negativo (%r), usando padrao 15", raw)
+            return 15
+        return val
+    except (ValueError, TypeError):
+        log.warning("[gateway] sticky_minutes invalido (%r), usando padrao 15", raw)
+        return 15
+
+
+def build_tier_router(
+    cfg: Mapping[str, Any],
+    adapters: Optional[List[BaseGatewayAdapter]] = None,
+    environ: Optional[Mapping[str, str]] = None,
+    secrets: Optional[Any] = None,
+    oauth: Optional[Any] = None,
+    usage: Optional[Any] = None,
+    clock: Optional[Any] = None,
+    **kwargs: Any,
+) -> TierRouter:
+    """Monta o TierRouter a partir do config.yaml, seção `gateway`."""
+    if adapters is None:
+        adapters = build_gateway_adapters(cfg, environ=environ, secrets=secrets, oauth=oauth)
+
+    gw = cfg.get("gateway") if isinstance(cfg.get("gateway"), Mapping) else {}
+    if not gw and ("daily_budget_usd" in cfg or "sticky_minutes" in cfg or "tier_order" in cfg):
+        gw = cfg
+
+    raw_budget = gw.get("daily_budget_usd") if "daily_budget_usd" in gw else cfg.get("gateway.daily_budget_usd")
+    daily_budget = parse_daily_budget(raw_budget)
+
+    raw_sticky = gw.get("sticky_minutes") if "sticky_minutes" in gw else cfg.get("gateway.sticky_minutes")
+    sticky_minutes = parse_sticky_minutes(raw_sticky)
+
+    tier_order = gw.get("default_tier_order") or gw.get("tier_order")
+
+    router_kwargs: Dict[str, Any] = {
+        "adapters": adapters,
+        "daily_budget_usd": daily_budget,
+        "sticky_minutes": sticky_minutes,
+    }
+    if tier_order is not None:
+        router_kwargs["tier_order"] = list(tier_order)
+    if clock is not None:
+        router_kwargs["clock"] = clock
+    if "total_timeout_seconds" in gw:
+        router_kwargs["total_timeout_seconds"] = float(gw["total_timeout_seconds"])
+    elif "total_timeout" in gw:
+        router_kwargs["total_timeout_seconds"] = float(gw["total_timeout"])
+    if "max_concurrent_requests" in gw:
+        router_kwargs["max_concurrent_requests"] = int(gw["max_concurrent_requests"])
+
+    router_kwargs.update(kwargs)
+    router = TierRouter(**router_kwargs)
+    if usage is not None:
+        router.usage = usage
+    return router
+
+
+build_router = build_tier_router

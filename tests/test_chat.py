@@ -185,7 +185,8 @@ async def test_api_executar_plano_da_conversa_guarda_o_resultado(api):  # noqa: 
 @pytest.mark.asyncio
 async def test_api_executar_usa_a_pasta_do_projeto_e_recusa_fora_da_lista(api, tmp_path):  # noqa: F811
     async with client() as c:
-        r = await c.post("/api/chat/projects", json={"name": "Fora", "folder": "C:\\Windows\\System32"})
+        fora = os.path.join(tmp_path.anchor, "Windows", "System32")          # 'C:\Windows\System32' no Windows, '/Windows/System32' no resto
+        r = await c.post("/api/chat/projects", json={"name": "Fora", "folder": fora})
         assert r.status_code == 400 and r.json()["detail"]["error"] == "project_dir_not_allowed"
         assert (await c.post("/api/chat/projects", json={"name": "   "})).status_code == 400
 

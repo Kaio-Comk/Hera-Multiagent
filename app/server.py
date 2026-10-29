@@ -65,7 +65,7 @@ from app.gateway.privacy import GatewayPrivacyManager
 from app.gateway.providers import OllamaGatewayAdapter, GatewayProviderError
 from app.gateway.provider_policy import SSRFSecurityError, sanitize_extra_headers, validate_provider_url
 from app.gateway.safe_transport import make_safe_async_client
-from app.gateway.factory import build_gateway_adapters
+from app.gateway.factory import build_gateway_adapters, parse_daily_budget, parse_sticky_minutes
 from app.gateway.tier_router import TierRouter, CLIENT_NAME, REQUEST_ID
 from app.gateway.client_keys import ClientKeyStore
 
@@ -150,7 +150,8 @@ for _name, _cls in CLI_ENGINES.items():          # CLIs oficiais (Codex, Cursor,
                            auto_approve=bool(cfg["engines"].get(_name, {}).get("auto_approve", False)))
 
 # Banco de tarefas: caminho relativo vale a partir da PASTA DO PROJETO (antes dependia de onde o comando foi aberto).
-DB_PATH = resolve_db_path(cfg["general"].get("db_path"), ROOT_DIR)
+from app.paths import home_hera      # checkout => ROOT_DIR (igual a antes); instalado => ~/.hera, nunca o site-packages
+DB_PATH = resolve_db_path(cfg["general"].get("db_path"), home_hera())
 store = StateStore(db_path=str(DB_PATH))
 LEGACY_DB = Path.cwd() / "data" / "orchestrator.db"       # historico criado por engano na pasta de onde o hera foi aberto
 IMPORTED_LEGACY = (merge_legacy_db(LEGACY_DB, DB_PATH)
@@ -844,6 +845,8 @@ async def _start_run(goal: str, raw_steps: List[Dict[str, Any]], executors_req: 
         steps, warnings = orchestration.normalize_steps(raw_steps, executors, ocfg["max_steps"], models_map)
     except orchestration.PlanError as exc:
         raise HTTPException(status_code=400, detail={"error": "invalid_plan", "message": str(exc)})
+    from app.memory.integracao import injetar_memoria_nos_passos     # opt-in (HERA_MEMORY_SNAPSHOT=1); nunca derruba o plano
+    injetar_memoria_nos_passos(steps)
     run_id = f"run-{uuid.uuid4().hex[:8]}"
     workspace = str(ROOT_DIR)
     if project_dir and project_dir.strip():
@@ -1496,6 +1499,8 @@ def reload_gateway() -> None:
                                    for k, v in (gw.get("pricing") or {}).items() if isinstance(v, dict)}
     gateway_tier_router.tier_order = list(gw.get("default_tier_order") or gateway_tier_router.tier_order)
     gateway_tier_router.guard.threshold = max(1, int(gw.get("breaker_threshold") or 3))
+    gateway_tier_router.daily_budget_usd = parse_daily_budget(gw.get("daily_budget_usd"))     # None = sem teto
+    gateway_tier_router.sticky_minutes = parse_sticky_minutes(gw.get("sticky_minutes"))       # 0 desliga a aderencia
     providers_cfg = fresh.get("providers") or {}
     gateway_tier_router.priorities = {n: int(p["priority"]) for n, p in providers_cfg.items()
                                       if isinstance(p, dict) and p.get("priority")}
@@ -1640,6 +1645,8 @@ async def router_state():
             "tier_order": gateway_tier_router.tier_order, "offline": router.default_offline,
             "ollama_models": ollama_models, "aliases": gw.get("aliases") or {},
             "pricing": gw.get("pricing") or {}, "breaker_threshold": gateway_tier_router.guard.threshold,
+            "daily_budget_usd": gateway_tier_router.daily_budget_usd, "today_cost_usd": USAGE.today_cost(),
+            "sticky_minutes": gateway_tier_router.sticky_minutes,
             "rtk": {"enabled": RUNTIME_FLAGS["rtk"], **gateway_tier_router.rtk_stats}}
 
 
@@ -2556,7 +2563,7 @@ async def claude_auth_login(body: ClaudeLoginBody):
     args = [binary, "auth", "login", f"--{body.mode}"]
     if sys.platform != "win32":
         return {"started": False, "command": " ".join(args), "message": "Rode este comando no terminal."}
-    subprocess.Popen(args, creationflags=subprocess.CREATE_NEW_CONSOLE, close_fds=True)      # noqa: S603 - args fixos, sem shell
+    subprocess.Popen(args, creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0), close_fds=True)      # noqa: S603 - args fixos, sem shell
     _CLAUDE_STATUS_CACHE["value"] = None
     return {"started": True, "message": "Uma janela do Claude Code abriu. Conclua o login no navegador."}
 

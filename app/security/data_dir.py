@@ -9,6 +9,6 @@ DATA_ENV = "HERA_DATA_DIR"
 
 
 def data_dir(environ: Optional[Mapping[str, str]] = None) -> Path:
+    from app.paths import data_dir as _data_dir        # regra unica: checkout => <projeto>/data; instalado => ~/.hera/data
     env = os.environ if environ is None else environ
-    fixed = (env.get(DATA_ENV) or "").strip()
-    return Path(fixed) if fixed else Path(__file__).resolve().parent.parent.parent / "data"
+    return _data_dir(env)

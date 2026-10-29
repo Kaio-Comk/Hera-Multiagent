@@ -20,17 +20,19 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "default_model": "qwen2.5-coder:1.5b",
             "timeout": 120.0
         },
+        # CLIs de ASSINATURA (Claude Code, Antigravity): DESLIGADAS de fabrica. Rodam a CLI oficial com o SEU login; leia
+        # docs/SUBSCRIPTIONS.md antes de ligar. Quem ja tem `enabled: true` no config.yaml continua como estava.
         "claude_code": {
-            "enabled": True,
+            "enabled": False,
             "default_model": "sonnet",
             "timeout": 300.0,
             "permission_mode": "auto"      # modo automatico do Claude Code (aprova o comum, barra o arriscado); "" = nega toda escrita
         },
         "antigravity": {
-            "enabled": True,
+            "enabled": False,
             "default_model": "default",    # "default" = o padrao do CLI; escolha um da lista no painel
             "timeout": 300.0,
-            "auto_approve": True           # aprova TUDO sem perguntar (`--dangerously-skip-permissions`); false = o agy nega escritas
+            "auto_approve": False          # True aprova TUDO sem perguntar (`--dangerously-skip-permissions`); false = o agy nega escritas
         },
         # CLIs oficiais em modo não interativo: DESLIGADOS até você instalar e fazer login (ver o cartão no painel).
         # auto_approve=false: o CLI só lê; true libera escrita/comandos sem perguntar (escolha explícita).
@@ -85,7 +87,8 @@ class ConfigManager:
         if config_path:
             self.config_path = Path(config_path)
         else:
-            self.config_path = Path(__file__).resolve().parent.parent / "config.yaml"
+            from app.paths import config_path as _config_path      # checkout => <projeto>/config.yaml; instalado => ~/.hera/config.yaml
+            self.config_path = _config_path()
         self._ensure_config()
 
     def _ensure_config(self):
