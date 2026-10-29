@@ -155,8 +155,8 @@ Checkpoints automáticos ficam em `~/.hera/checkpoints`. O `/rollback` desfaz se
 
 `Shift+Tab` alterna o modo no campo de entrada; o rodapé mostra qual está ativo (também `/modo <nome>` ou `--modo` ao abrir):
 
-- **aprovação manual** (`guarded`, padrão): pergunta antes de gravar e antes de rodar comandos.
-- **auto mode** (`auto`, em amarelo): grava sem perguntar dentro da pasta em que o chat foi aberto e roda sem perguntar só verificações do projeto (`pytest`, `python -m pytest`, `python -m unittest`, `npm test`, `npm run test`, `npm run lint`, `node --check`, `ruff check`). Continuam pedindo aprovação: gravar fora da pasta, build, instalar pacotes, `git commit` e qualquer outro comando. O que é bloqueado (`git push`, apagar em massa, `curl`, `powershell`, encadear comandos) continua bloqueado. O diff aparece sempre, e `/rollback` desfaz.
+- **aprovação manual** (`guarded`): pergunta antes de gravar e antes de rodar comandos (`--modo guarded`).
+- **auto mode** (`auto`, padrão, em amarelo): grava sem perguntar em qualquer pasta do PC (menos as do sistema, como `C:\Windows` e `Program Files`) e roda sem perguntar só verificações do projeto (`pytest`, `python -m pytest`, `python -m unittest`, `npm test`, `npm run test`, `npm run lint`, `node --check`, `ruff check`). Continuam pedindo aprovação: gravar em pastas do sistema, build, instalar pacotes, `git commit` e qualquer outro comando. O que é bloqueado (`git push`, apagar em massa, `curl`, `powershell`, encadear comandos) continua bloqueado. O diff aparece sempre, e `/rollback` desfaz.
 - **somente leitura** (`read-only`): o agente só lê e analisa; nada é gravado nem executado.
 
 ## Memória

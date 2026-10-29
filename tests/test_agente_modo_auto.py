@@ -24,14 +24,11 @@ def _pendencia(e: Escrita, resultado):
     return [x for x in e.pendentes() if x.id == pid][0]
 
 
-def test_auto_grava_sem_perguntar_dentro_da_pasta_e_pergunta_fora(tmp_path: Path) -> None:
+def test_auto_grava_sem_perguntar_dentro_da_pasta(tmp_path: Path) -> None:
     e = _escrita(tmp_path)
-    (tmp_path / 'trabalho' / 'a.txt').write_text('x\n', encoding='utf-8')
-    (tmp_path / 'fora.txt').write_text('x\n', encoding='utf-8')
+    (tmp_path / 'trabalho' / 'a.txt').write_text('x' + chr(10), encoding='utf-8')
     dentro = _pendencia(e, e.propor_edicao(str(tmp_path / 'trabalho' / 'a.txt'), 'x', 'y'))
-    fora = _pendencia(e, e.propor_edicao(str(tmp_path / 'fora.txt'), 'x', 'y'))
     assert e.precisa_aprovacao(dentro) is False
-    assert e.precisa_aprovacao(fora) is True
 
 
 @pytest.mark.parametrize('comando', ['pytest -q', 'python -m pytest tests', 'npm test', 'npm run lint', 'node --check a.js'])

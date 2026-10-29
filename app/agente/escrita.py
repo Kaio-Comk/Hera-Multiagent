@@ -53,6 +53,27 @@ _SEGUROS_AUTO = (
 )
 
 
+_INTERNOS_DO_SHELL = frozenset({
+    'dir', 'type', 'cd', 'chdir', 'echo', 'copy', 'move', 'ren', 'rename', 'del', 'erase', 'md', 'mkdir', 'rd', 'rmdir',
+    'set', 'cls', 'ls', 'cat', 'pwd', 'cp', 'mv', 'rm', 'touch', 'findstr', 'find', 'more', 'where',
+})
+# Pastas do sistema: mesmo no auto mode, gravar nelas sempre pergunta.
+_PASTAS_DO_SISTEMA = tuple(
+    x.lower().rstrip('\\/')
+    for x in (
+        os.environ.get('SystemRoot', 'C:\\Windows'),
+        os.environ.get('ProgramFiles', 'C:\\Program Files'),
+        os.environ.get('ProgramFiles(x86)', 'C:\\Program Files (x86)'),
+        os.environ.get('ProgramData', 'C:\\ProgramData'),
+    )
+)
+
+
+def _em_pasta_do_sistema(alvo: Path) -> bool:
+    texto = str(alvo).lower().replace('/', '\\')
+    return any(texto == base or texto.startswith(base + '\\') for base in _PASTAS_DO_SISTEMA)
+
+
 def _seguro_no_auto(norm: tuple[str, ...]) -> bool:
     return any(norm[: len(pref)] == pref for pref in _SEGUROS_AUTO)
 
@@ -282,6 +303,13 @@ class Escrita:
         classe, args = classificar_comando(comando)
         if classe == 'bloqueado':
             return Resultado(False, f'comando bloqueado: {comando}')
+        if args and args[0].lower() in _INTERNOS_DO_SHELL:
+            return Resultado(
+                False,
+                f'"{args[0]}" e um comando interno do shell e executar_comando NAO usa shell (sem dir, type, cd, echo, '
+                'pipes ou &&). Para ler use listar_pasta, ler_arquivo e buscar; para rodar, um programa por vez '
+                '(pytest, python, git, npm, node).',
+            )
         pid = self._novo_id()
         p = Pendencia(
             id=pid,
@@ -306,7 +334,10 @@ class Escrita:
                 return False
             chave = (p.comando or (), str(self.raiz.pasta))
             return chave not in self._lembrados
-        if self.modo in ('workspace', 'auto'):
+        if self.modo == 'auto':
+            alvo = getattr(p, 'alvo', None)
+            return bool(alvo is not None and _em_pasta_do_sistema(Path(alvo).resolve()))
+        if self.modo == 'workspace':
             # grava sem perguntar so dentro da pasta de trabalho; em qualquer outro lugar do PC, sempre pergunta
             alvo = getattr(p, 'alvo', None)
             return bool(self.raiz.acesso_total and alvo is not None and not self._na_pasta(Path(alvo).resolve()))

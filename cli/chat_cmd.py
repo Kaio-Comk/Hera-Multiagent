@@ -290,7 +290,8 @@ async def executar(
         )
         if getattr(getattr(cfg, 'raiz', None), 'acesso_total', False):
             paragrafo += (
-                ' Você alcança QUALQUER pasta deste PC (o usuário liberou): quando o vault, uma nota ou o pedido apontar '
+                ' executar_comando NÃO é um shell: nada de dir, type, cd, echo, pipes ou &&; para ler use listar_pasta, ler_arquivo e buscar, e para rodar use um programa por vez (pytest, python, git, npm, node).'
+            ' Você alcança QUALQUER pasta deste PC (o usuário liberou): quando o vault, uma nota ou o pedido apontar '
                 'um caminho absoluto (por exemplo B:\\Projetos\\NetHub\\NetHub BR), leia-o direto com ler_arquivo, '
                 'listar_pasta e buscar usando esse caminho absoluto; não peça permissão para ler nem diga que está fora '
                 'da pasta. Só arquivos com segredo (.env, chaves, sessões) são recusados. Gravar e rodar comandos pedem '
@@ -424,7 +425,7 @@ def registrar(subparsers: Any) -> None:
     parser.add_argument(
         '--modo',
         choices=['read-only', 'guarded', 'workspace', 'auto'],
-        default='guarded',
+        default='auto',
         help='Modo do agente (read-only, guarded, workspace ou auto); Shift+Tab alterna no chat',
     )
     parser.set_defaults(func=executar)
