@@ -1,6 +1,8 @@
 import argparse
 from pathlib import Path
 
+import sys
+
 import pytest
 
 from app.agente import escrita as modulo
@@ -29,6 +31,7 @@ def test_auto_grava_sem_perguntar_em_qualquer_pasta(tmp_path: Path) -> None:
     assert e.precisa_aprovacao(p) is False  # o usuario abre o chat na pasta pessoal: o auto vale no PC todo
 
 
+@pytest.mark.skipif(sys.platform != 'win32', reason='caminhos de unidade do Windows (letra de unidade)')
 def test_auto_pergunta_para_gravar_em_pastas_do_sistema(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     sistema = tmp_path / 'Windows'
     sistema.mkdir()

@@ -404,13 +404,25 @@ async def rodar(
         except ErroDoServidor as erro:
             status_retry = (0, 429, 502, 503, 504)
             if maestro is not None and erro.status in status_retry:
+                # O modelo que falhou e o que estava em uso (pode ter sido trocado por um com visao), nao o 1o do maestro.
                 modelo_falhou = (
-                    escolha.modelo
-                    if escolha is not None
-                    else getattr(cliente, 'modelo', 'default')
+                    getattr(cliente, 'modelo', None)
+                    or (escolha.modelo if escolha is not None else 'default')
                 )
                 maestro.marcar_indisponivel(modelo_falhou)
-                nova_escolha = await maestro.escolher(texto)
+                nova_escolha = None
+                if lista_imagens:
+                    # Com imagem, o substituto TEM que enxergar (um modelo sem visao responde 400).
+                    from cli.chat_imagens import escolher_modelo_visao
+
+                    novo_visao = escolher_modelo_visao(await maestro._disponiveis(), maestro._indisponiveis_ativos())
+                    if novo_visao is None:
+                        escrever('Erro: nenhum modelo que enxerga imagens esta disponivel agora. Tente de novo em instantes.\n')
+                        sessao.mensagens.pop()
+                        raise RuntimeError('sem modelo com visao disponivel')
+                    nova_escolha = Escolha(novo_visao, 'visao', 'imagem na mensagem')
+                if nova_escolha is None:
+                    nova_escolha = await maestro.escolher(texto)
                 cliente.modelo = nova_escolha.modelo
                 sessao.modelo = nova_escolha.modelo
                 modelo_anterior = nova_escolha.modelo

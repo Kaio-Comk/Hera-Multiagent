@@ -71,6 +71,7 @@ def test_extrair_mencao_at_com_aspas(tmp_path):
     assert avisos == []
 
 
+@pytest.mark.skipif(sys.platform != 'win32', reason='caminhos de unidade do Windows (letra de unidade)')
 def test_extrair_caminho_windows_aspas(tmp_path):
     alvo = _criar(tmp_path, 'win.png', PNG)
     texto_original = f'olha "{alvo}"'
@@ -88,6 +89,7 @@ def test_extrair_caminho_windows_sem_aspas(tmp_path):
     assert texto == r'olha C:\hera_inexistente\win2.png agora'
 
 
+@pytest.mark.skipif(sys.platform != 'win32', reason='caminhos de unidade do Windows (letra de unidade)')
 def test_extrair_caminho_windows_com_aspas_e_espacos(tmp_path):
     alvo = _criar(tmp_path, 'win3.png', PNG)
     texto, imgs, avisos = extrair_imagens(f'olha "{alvo}"', tmp_path)
@@ -259,6 +261,7 @@ def test_imagem_clipboard_excecao(monkeypatch):
     assert imagem_da_area_de_transferencia(executar=executar_falso) is None
 
 
+@pytest.mark.skipif(sys.platform != 'win32', reason='caminhos de unidade do Windows (letra de unidade)')
 def test_caminho_do_windows_com_espacos_e_sem_aspas(tmp_path):
     alvo = _criar(tmp_path, 'Capturar.PNG', PNG)
     texto, imgs, avisos = extrair_imagens(f'nada acontece {alvo} e agora?', tmp_path)
@@ -266,6 +269,7 @@ def test_caminho_do_windows_com_espacos_e_sem_aspas(tmp_path):
     assert len(imgs) == 1 and avisos == []
 
 
+@pytest.mark.skipif(sys.platform != 'win32', reason='caminhos de unidade do Windows (letra de unidade)')
 def test_dois_caminhos_sem_aspas_nao_se_misturam(tmp_path):
     a = _criar(tmp_path, 'a.png', PNG)
     b = _criar(tmp_path, 'b.png', PNG)
