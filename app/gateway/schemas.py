@@ -23,6 +23,8 @@ class ToolCallItem(BaseModel):
     id: str = ""
     type: Literal["function"] = "function"
     function: FunctionCallDefinition
+    # Gemini 3: `extra_content.google.thought_signature` TEM de voltar na proxima requisicao, senao HTTP 400.
+    extra_content: Optional[Dict[str, Any]] = None
 
 class ChatMessage(BaseModel):
     role: Literal["system", "user", "assistant", "tool"]
@@ -96,6 +98,7 @@ class NormalizedDelta:
     tool_call_id: Optional[str] = None
     tool_name_fragment: Optional[str] = None
     tool_arguments_fragment: Optional[str] = None
+    tool_extra_content: Optional[Dict[str, Any]] = None       # assinatura de raciocinio do Gemini (ver ToolCallItem)
     finish_reason: Optional[FinishReason] = None
     usage_input_tokens: Optional[int] = None
     usage_output_tokens: Optional[int] = None

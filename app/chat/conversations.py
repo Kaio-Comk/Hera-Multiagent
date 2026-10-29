@@ -19,7 +19,12 @@ from contextlib import closing
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-from app.chat.fts import buscar_mensagens, garantir_fts
+from app.chat.fts import (
+    buscar_mensagens,
+    desativar_fts,
+    garantir_fts,
+    reconstruir_fts,
+)
 
 MAX_PROJECTS = 100
 MAX_CONVERSATIONS = 1000
@@ -82,7 +87,13 @@ class ConversationStore:
         self._lock = threading.Lock()
         with closing(self._connect()) as db:
             db.executescript(_SCHEMA)
-            garantir_fts(db)        # indice FTS5 das mensagens (gatilhos mantem em dia; banco antigo e reindexado)
+            try:
+                garantir_fts(db)        # indice FTS5 das mensagens (gatilhos mantem em dia; banco antigo e reindexado)
+            except (sqlite3.DatabaseError, sqlite3.OperationalError):
+                try:
+                    desativar_fts(db)
+                except Exception:
+                    pass
 
     # ── infra ──────────────────────────────────────────────────────────────────
     def _connect(self) -> sqlite3.Connection:
@@ -101,8 +112,21 @@ class ConversationStore:
         return rows[0] if rows else None
 
     def _exec(self, sql: str, args: Iterable[Any] = ()) -> int:
-        with self._lock, closing(self._connect()) as db:
-            return db.execute(sql, tuple(args)).rowcount
+        with self._lock:
+            try:
+                with closing(self._connect()) as db:
+                    return db.execute(sql, tuple(args)).rowcount
+            except (sqlite3.DatabaseError, sqlite3.OperationalError) as err:
+                msg = str(err).lower()
+                if any(k in msg for k in ("msg_fts", "fts5", "malformed", "vtable")):
+                    try:
+                        with closing(self._connect()) as db_fix:
+                            desativar_fts(db_fix)
+                        with closing(self._connect()) as db_retry:
+                            return db_retry.execute(sql, tuple(args)).rowcount
+                    except Exception:
+                        raise err from None
+                raise
 
     def _count(self, table: str, where: str = "1=1", args: Iterable[Any] = ()) -> int:
         if table not in ("projects", "conversations", "messages", "attachments"):
@@ -232,6 +256,11 @@ class ConversationStore:
         """Busca textual (FTS5) nas mensagens de todas as conversas, ou so numa delas."""
         with self._lock, closing(self._connect()) as db:
             return buscar_mensagens(db, consulta, limite, conversation_id)
+
+    def reconstruir_indice(self) -> None:
+        """Recria o índice FTS5 e gatilhos e reindexa as mensagens existentes."""
+        with self._lock, closing(self._connect()) as db:
+            reconstruir_fts(db)
 
     def get_message(self, message_id: str) -> Optional[Dict[str, Any]]:
         row = self._row("SELECT * FROM messages WHERE id = ?", (message_id,))

@@ -96,7 +96,8 @@ async def openai_sse_deltas(lines: AsyncIterator[str], provider: str, model: str
                 yield NormalizedDelta(request_id=request_id, provider=provider, model=model,
                                       tool_call_index=tc.get("index", 0), tool_call_id=tc.get("id"),
                                       tool_name_fragment=fn.get("name"),
-                                      tool_arguments_fragment=fn.get("arguments"))
+                                      tool_arguments_fragment=fn.get("arguments"),
+                                      tool_extra_content=tc.get("extra_content") if isinstance(tc.get("extra_content"), dict) else None)
             if finish:
                 yield NormalizedDelta(request_id=request_id, provider=provider, model=model,
                                       finish_reason=norm_finish(finish),

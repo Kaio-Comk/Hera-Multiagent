@@ -65,7 +65,7 @@ def test_erro_do_pedido_nao_conta_para_o_disjuntor():
 async def test_provedor_em_pausa_vai_para_o_fim_da_fila():
     a = Fake("a", models=("m",), error=GatewayProviderError("fora", status_code=500, retryable=True))
     b = Fake("b", models=("m",))
-    r = TierRouter(adapters=[a, b])
+    r = TierRouter(adapters=[a, b], sticky_minutes=0)       # sem aderencia: o teste e do disjuntor, a aderencia pularia o 'a'
     r.guard.threshold = 2
     for _ in range(2):
         await r.route_and_execute(req("m"), CLIENT)                     # a falha, b responde

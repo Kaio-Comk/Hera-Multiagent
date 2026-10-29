@@ -9,10 +9,7 @@ import contextvars
 import dataclasses
 import logging
 import time
-from typing import List, Dict, Any, Optional
-import httpx
-
-from typing import List, Dict, Any, Optional, AsyncIterator
+from typing import List, Dict, Any, Optional, AsyncIterator, Callable, Tuple
 import httpx
 import uuid
 
@@ -51,6 +48,9 @@ class TierRouter:
         keepalive_seconds: float = 15.0,
         stream_idle_timeout_seconds: float = 60.0,
         stream_total_timeout_seconds: float = 900.0,
+        daily_budget_usd: Optional[float] = None,
+        sticky_minutes: int = 15,
+        clock: Callable[[], float] = time.monotonic,
     ):
         self.keepalive_seconds = keepalive_seconds
         self.stream_idle_timeout_seconds = stream_idle_timeout_seconds
@@ -63,12 +63,25 @@ class TierRouter:
         self.aliases: Dict[str, str] = {}                # apelido -> provedor/modelo ou modelo
         self.priorities: Dict[str, int] = {}             # provedor -> prioridade dentro da camada (menor primeiro)
         self.pricing: Dict[str, Dict[str, float]] = {}   # "provedor" ou "provedor/modelo" -> {"in": US$/1M, "out": US$/1M}
-        self.guard = ProviderGuard()                     # disjuntor + limites por provedor
+        self._clock = clock
+        self.guard = ProviderGuard(clock=clock)          # disjuntor + limites por provedor
         self.rtk_stats = {"calls": 0, "saved_chars": 0}
         self.usage = None            # UsageLedger opcional: contagem de chamadas/tokens (sem conteudo)
         self.privacy_manager = privacy_manager or GatewayPrivacyManager()
         self.token_saver = token_saver or RTKTokenSaver()
         self.semaphore = asyncio.Semaphore(max_concurrent_requests)
+
+        if daily_budget_usd is not None:
+            try:
+                b = float(daily_budget_usd)
+                self.daily_budget_usd = b if b >= 0 else None
+            except (ValueError, TypeError):
+                self.daily_budget_usd = None
+        else:
+            self.daily_budget_usd = None
+
+        self.sticky_minutes = int(sticky_minutes) if sticky_minutes is not None else 15
+        self._sticky: Dict[str, Tuple[str, float]] = {}
 
     def _claimed_models(self) -> set:
         claimed: set = set()
@@ -102,10 +115,24 @@ class TierRouter:
         return self.usage.today(provider=provider) if self.usage is not None else {"requests": 0, "tokens": 0}
 
     def _blocked(self, adapter_name: str) -> Optional[GatewayProviderError]:
-        """Estourou o limite configurado do provedor? Devolve o erro (429, retentavel) ou None."""
+        """Estourou o limite configurado do provedor ou orçamento diário? Devolve o erro ou None."""
         reason = self.guard.over_limit(adapter_name, self._today)
         if reason:
             return GatewayProviderError(f"Provedor {adapter_name} em {reason}.", status_code=429, retryable=True)
+        if self.daily_budget_usd is not None:
+            adapter = next((a for a in self.adapters if a.name == adapter_name), None)
+            is_free_or_local = bool(
+                getattr(adapter, "is_local", False)
+                or getattr(adapter, "tier", None) in ("local", "cloud_free")
+            )
+            if not is_free_or_local:
+                spent = self.usage.today_cost() if self.usage is not None else 0.0
+                if spent >= self.daily_budget_usd:
+                    return GatewayProviderError(
+                        f"Orcamento diario de US$ {self.daily_budget_usd} atingido (gasto US$ {spent}).",
+                        status_code=402,
+                        retryable=True,
+                    )
         return None
 
     def _apply_alias(self, request: ChatCompletionRequest) -> ChatCompletionRequest:
@@ -160,6 +187,22 @@ class TierRouter:
                     self.rtk_stats["calls"] += 1
                     self.rtk_stats["saved_chars"] += len(msg.content) - len(compressed)
                 msg.content = compressed
+
+    def _set_sticky(self, chave: str, provider_name: str) -> None:
+        if self.sticky_minutes > 0:
+            expires_at = self._clock() + (self.sticky_minutes * 60.0)
+            self._sticky[chave] = (provider_name, expires_at)
+
+    def sticky_status(self) -> Dict[str, Dict[str, Any]]:
+        now = self._clock()
+        out: Dict[str, Dict[str, Any]] = {}
+        for chave, (prov, exp) in list(self._sticky.items()):
+            rem = exp - now
+            if rem > 0:
+                out[chave] = {"provedor": prov, "segundos_restantes": int(round(rem))}
+            else:
+                self._sticky.pop(chave, None)
+        return out
 
     async def route_and_execute(
         self,
@@ -224,6 +267,26 @@ class TierRouter:
         if not eligible_adapters:
             raise GatewayProviderError(
                 f"Nenhum provedor habilitado atende o modelo '{request.model}'.", status_code=404, retryable=False)
+
+        # Aderência ao modelo de fallback (sticky fallback)
+        if self.sticky_minutes > 0:
+            chave = getattr(request, "user", None) or "default"
+            sticky_entry = self._sticky.get(chave)
+            if sticky_entry is not None:
+                sticky_provider, expires_at = sticky_entry
+                if self._clock() < expires_at:
+                    target = next((a for a in eligible_adapters if a.name == sticky_provider), None)
+                    if target is not None and not self.guard.is_paused(target.name):
+                        hits = self.guard._hits.get(target.name)
+                        len_before = len(hits) if hits is not None else 0
+                        blocked_err = self._blocked(target.name)
+                        if blocked_err is None:
+                            if hits is not None and len(hits) > len_before:
+                                hits.pop()
+                            eligible_adapters = [target] + [a for a in eligible_adapters if a.name != target.name]
+                else:
+                    self._sticky.pop(chave, None)
+
         return eligible_adapters
 
     async def _route_and_execute(
@@ -245,13 +308,24 @@ class TierRouter:
 
         # 3. Execução com controle de semáforo e fallback seguro
         last_error: Optional[Exception] = None
+        budget_blocked_count = 0
+        had_retryable_failure = False
 
         async with self.semaphore:
             for i, adapter in enumerate(eligible_adapters):
                 blocked = self._blocked(adapter.name)
                 if blocked is not None:                      # limite do provedor estourado: pula (sem gastar chamada)
                     last_error = blocked
+                    if getattr(blocked, "status_code", None) == 402:
+                        budget_blocked_count += 1
+                    if getattr(blocked, "retryable", False):
+                        had_retryable_failure = True
                     if i == len(eligible_adapters) - 1:
+                        if budget_blocked_count == len(eligible_adapters):
+                            raise GatewayProviderError(
+                                "Orcamento diario atingido e nenhum provedor gratuito ou local disponivel.",
+                                status_code=402,
+                            )
                         raise blocked
                     continue
                 started = time.monotonic()
@@ -259,23 +333,38 @@ class TierRouter:
                     response = await adapter.chat_complete(request, client)
                     self._record(adapter.name, response.model or request.model, True, 200, response.usage, started,
                                  requested=request.model)
+                    if had_retryable_failure and self.sticky_minutes > 0:
+                        chave = getattr(request, "user", None) or "default"
+                        self._set_sticky(chave, adapter.name)
                     return response
                 except GatewayProviderError as e:
                     self._record(adapter.name, request.model, False, e.status_code, None, started, error=str(e))
                     last_error = e
                     if not e.retryable:
                         raise e
+                    had_retryable_failure = True
                     if i == len(eligible_adapters) - 1:
+                        if budget_blocked_count == len(eligible_adapters):
+                            raise GatewayProviderError(
+                                "Orcamento diario atingido e nenhum provedor gratuito ou local disponivel.",
+                                status_code=402,
+                            )
                         raise e
                     continue
                 except Exception as e:
                     self._record(adapter.name, request.model, False, 500, None, started, error=f"{type(e).__name__}")
                     last_error = e
+                    had_retryable_failure = True
                     if i == len(eligible_adapters) - 1:
                         raise GatewayProviderError(f"Falha inesperada no provedor {adapter.name}: {str(e)}", status_code=500)
                     continue
 
         if last_error:
+            if budget_blocked_count == len(eligible_adapters):
+                raise GatewayProviderError(
+                    "Orcamento diario atingido e nenhum provedor gratuito ou local disponivel.",
+                    status_code=402,
+                )
             raise last_error
         raise GatewayProviderError("Falha desconhecida no roteamento de provedores.", status_code=500)
 
@@ -308,29 +397,51 @@ class TierRouter:
                                        status_code=404, retryable=False)
         body = {**payload, "model": probe.model}
         last_error: Optional[Exception] = None
+        budget_blocked_count = 0
+        had_retryable_failure = False
+
         async with self.semaphore:
             for i, adapter in enumerate(eligible):
                 last = i == len(eligible) - 1
                 blocked = self._blocked(adapter.name)
                 if blocked is not None:
                     last_error = blocked
+                    if getattr(blocked, "status_code", None) == 402:
+                        budget_blocked_count += 1
+                    if getattr(blocked, "retryable", False):
+                        had_retryable_failure = True
                     if last:
+                        if budget_blocked_count == len(eligible):
+                            raise GatewayProviderError(
+                                "Orcamento diario atingido e nenhum provedor gratuito ou local disponivel.",
+                                status_code=402,
+                            )
                         raise blocked
                     continue
                 started = time.monotonic()
                 try:
                     resp = await adapter.modality(kind, body, client, files)
+                    if had_retryable_failure and self.sticky_minutes > 0:
+                        chave = getattr(probe, "user", None) or "default"
+                        self._set_sticky(chave, adapter.name)
                 except GatewayProviderError as e:
                     self._record(adapter.name, probe.model, False, e.status_code, None, started, error=str(e), requested=model)
                     last_error = e
                     if not e.retryable or last:
+                        if last and budget_blocked_count == len(eligible):
+                            raise GatewayProviderError(
+                                "Orcamento diario atingido e nenhum provedor gratuito ou local disponivel.",
+                                status_code=402,
+                            )
                         raise
+                    had_retryable_failure = True
                     continue
                 except Exception as e:
                     self._record(adapter.name, probe.model, False, 500, None, started, error=type(e).__name__, requested=model)
                     last_error = e
                     if last:
                         raise GatewayProviderError(f"Falha inesperada no provedor {adapter.name}: {e}", status_code=500)
+                    had_retryable_failure = True
                     continue
                 resp = dataclasses.replace(resp, provider=adapter.name)
                 tokens = self._tokens_of(resp)
@@ -338,6 +449,11 @@ class TierRouter:
                              prompt_tokens=tokens, completion_tokens=0 if tokens is not None else None)
                 return resp
         if last_error:
+            if budget_blocked_count == len(eligible):
+                raise GatewayProviderError(
+                    "Orcamento diario atingido e nenhum provedor gratuito ou local disponivel.",
+                    status_code=402,
+                )
             raise last_error
         raise GatewayProviderError("Falha desconhecida no roteamento de provedores.", status_code=500)
 
@@ -369,7 +485,7 @@ class TierRouter:
         address = None if only_provider else self._resolve_address(request)
         if address:
             return await self.route_and_stream(request.model_copy(update={"model": address[1]}), client,
-                                               force_offline, enable_rtk, address[0])
+                                                force_offline, enable_rtk, address[0])
         eligible = self._select_adapters(request, force_offline, enable_rtk, only_provider)
         await self.semaphore.acquire()
         released = False
@@ -385,32 +501,49 @@ class TierRouter:
         try:
             handle = None
             last_error: Optional[Exception] = None
+            budget_blocked_count = 0
+            had_retryable_failure = False
             for i, adapter in enumerate(eligible):
                 rec.attempts = i + 1
                 blocked = self._blocked(adapter.name)
                 if blocked is not None:
                     last_error = blocked
+                    if getattr(blocked, "status_code", None) == 402:
+                        budget_blocked_count += 1
+                    if getattr(blocked, "retryable", False):
+                        had_retryable_failure = True
                     continue
                 opened = time.monotonic()
                 try:
                     handle = await asyncio.wait_for(adapter.open_stream(request, client),
                                                     timeout=self.total_timeout_seconds)
+                    if had_retryable_failure and self.sticky_minutes > 0:
+                        chave = getattr(request, "user", None) or "default"
+                        self._set_sticky(chave, adapter.name)
                     break
                 except asyncio.TimeoutError:
                     last_error = GatewayProviderError(
                         f"Provedor {adapter.name} não abriu o stream em {self.total_timeout_seconds:.0f}s",
                         status_code=504, retryable=True)
                     self._record(adapter.name, request.model, False, 504, None, opened, stream=True, error=str(last_error))
+                    had_retryable_failure = True
                 except GatewayProviderError as e:
                     last_error = e
                     self._record(adapter.name, request.model, False, e.status_code, None, opened, stream=True, error=str(e))
                     if not e.retryable:
                         raise
+                    had_retryable_failure = True
                 except Exception as e:                        # noqa: BLE001 - qualquer falha pré-resposta
                     last_error = GatewayProviderError(
                         f"Falha inesperada no provedor {adapter.name}: {type(e).__name__}", status_code=500)
                     self._record(adapter.name, request.model, False, 500, None, opened, stream=True, error=type(e).__name__)
+                    had_retryable_failure = True
             if handle is None:
+                if budget_blocked_count == len(eligible):
+                    raise GatewayProviderError(
+                        "Orcamento diario atingido e nenhum provedor gratuito ou local disponivel.",
+                        status_code=402,
+                    )
                 raise last_error or GatewayProviderError("Nenhum provedor abriu o stream.", status_code=503)
         except BaseException:
             release()
@@ -474,6 +607,8 @@ class TierRouter:
                     call = {"index": delta.tool_call_index, "type": "function", "function": fn}
                     if delta.tool_call_id:
                         call["id"] = delta.tool_call_id
+                    if delta.tool_extra_content:
+                        call["extra_content"] = delta.tool_extra_content
                     yield format_openai_sse_chunk(request_id=handle.request_id, model=handle.model, tool_calls=[call])
                 if delta.finish_reason:
                     finish = delta.finish_reason
