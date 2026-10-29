@@ -160,6 +160,42 @@ def criar_juiz(
     return julgar
 
 
+# Modelos para decidir a faixa, do mais rapido ao menos (medido em 29/10/2026: DeepSeek 2 s, Gemini lite 14 a 28 s).
+MODELOS_JUIZ_FAIXA = ('deepseek-ai/DeepSeek-V4.1-Flash', 'gemini-flash-lite-latest', 'agnes-2.5-flash')
+
+
+def criar_juiz_de_faixa(
+    cliente: ClienteHera,
+    maestro: Maestro,
+) -> Callable[[str], Awaitable[str | None]]:
+    '''Juiz do maestro: modelo rapido (cliente proprio, sem mexer no modelo da conversa) que responde so a faixa.'''
+    from app.maestro import PROMPT_FAIXA
+
+    async def julgar_faixa(pedido: str) -> str | None:
+        disponiveis = await maestro._disponiveis()
+        indisponiveis = maestro._indisponiveis_ativos()
+        modelo = next((m for m in MODELOS_JUIZ_FAIXA if m in disponiveis and m not in indisponiveis), None)
+        if modelo is None:
+            return None
+        irmao = ClienteHera(
+            getattr(cliente, 'base_url', ''),
+            getattr(cliente, 'token', ''),
+            modelo,
+            transporte=getattr(cliente, '_transporte', getattr(cliente, 'transporte', None)),
+            timeout=getattr(cliente, '_timeout', getattr(cliente, 'timeout', 120.0)),
+        )
+        mensagens = [
+            {'role': 'system', 'content': 'Voce e um juiz objetivo e conservador.'},
+            {'role': 'user', 'content': PROMPT_FAIXA + pedido},
+        ]
+        partes: list[str] = []
+        async for pedaco in irmao.conversar(mensagens):
+            partes.append(pedaco)
+        return ''.join(partes)
+
+    return julgar_faixa
+
+
 async def rodar(
     cliente: ClienteHera,
     ler_linha: Callable[[], Awaitable[str]],
@@ -200,13 +236,17 @@ async def rodar(
         sessao.agente = agente
 
     resumidor_efetivo = resumir or criar_resumidor(cliente, maestro)
+    juiz_do_chat = julgar is None
     if julgar is None:
         julgar = criar_juiz(cliente, maestro)
     if maestro is not None and hasattr(maestro, 'timeout_juiz') and getattr(maestro, 'juiz', None) is None:
         from app.maestro import PROMPT_FAIXA
 
-        # Pedido que a regra local nao sabe pesar: o modelo leve decide a faixa (falhou ou demorou, vale a regra local).
-        maestro.juiz = lambda pedido: julgar(PROMPT_FAIXA + pedido)
+        # Pedido que a regra local nao sabe pesar: um modelo rapido decide a faixa (falhou ou demorou, vale a regra local).
+        if juiz_do_chat:
+            maestro.juiz = criar_juiz_de_faixa(cliente, maestro)
+        else:
+            maestro.juiz = lambda pedido: julgar(PROMPT_FAIXA + pedido)
 
     primeira_vez = True
     modelo_anterior: str | None = None
@@ -632,7 +672,9 @@ async def principal(
         versao=versao_hera, modelo=modelo, pasta=pasta_atual, modo=modo_agente or '',
         maestro=bool(maestro is not None and getattr(maestro, 'ativo', True)),
         instrucoes=len(fontes or ()),
-        arquivos=tuple(getattr(f, 'caminho', '') for f in (fontes or ())),
+        arquivos=tuple(
+            str(getattr(f, 'caminho', '')).replace(str(Path.home()), '~') for f in (fontes or ())
+        ),
     ))
     sessao = Sessao(modelo, sistema=sistema, agente=agente)
     if mensagens_iniciais:

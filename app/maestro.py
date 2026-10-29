@@ -218,6 +218,8 @@ class Maestro:
         self._indisponiveis: dict[str, float] = {}
         self.juiz: Callable[[str], Awaitable[str | None]] | None = None
         self.timeout_juiz: float = 8.0
+        self.pausa_juiz: float = 300.0  # apos falha ou timeout, o juiz descansa (nao atrasa cada pedido)
+        self._juiz_pausado_ate: float = 0.0
 
     @property
     def perfil(self) -> str | None:
@@ -263,11 +265,12 @@ class Maestro:
             return Escolha(self.forcado, peso, "modelo forcado pelo usuario", True)
         if not self.ativo:
             return Escolha("default", "medio", "maestro desligado")
-        if self.juiz and regra_incerta(peso, motivo, texto):
+        if self.juiz and self._relogio() >= self._juiz_pausado_ate and regra_incerta(peso, motivo, texto):
             try:
                 resposta = await asyncio.wait_for(self.juiz(texto[:1500]), self.timeout_juiz)
             except Exception:
                 resposta = None
+                self._juiz_pausado_ate = self._relogio() + self.pausa_juiz
             faixa = ler_faixa(resposta)
             if faixa:
                 motivo = f"juiz: {faixa} (regra local: {motivo})"
