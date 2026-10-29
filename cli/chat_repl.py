@@ -461,13 +461,11 @@ async def principal(
         return ANSI(visual.rodape(modelo=atual, modo=modo_agente or '', maestro=bool(ativo), pasta=pasta_atual))
 
     async def seletor(titulo: str, opcoes: list[str], atual: str) -> Optional[str]:
-        from prompt_toolkit.shortcuts.choice_input import ChoiceInput
+        from cli.chat_seletor import selecionar
 
         itens = [(o, 'auto (o maestro escolhe)' if o == 'auto' else o) for o in opcoes]
         try:
-            return await ChoiceInput(
-                message=titulo, options=itens, default=atual if atual in opcoes else None, symbol='❯'
-            ).prompt_async()
+            return await selecionar(titulo, itens, atual if atual in opcoes else None)
         except (KeyboardInterrupt, EOFError):
             return None
 
