@@ -25,7 +25,7 @@ hera chat --listar
 
 Opções principais:
 
-- `--agente`: ativa o agente de código.
+- `--agente`: agente de código (já é o padrão): lê, edita e roda comandos na pasta atual, com aprovação. `--sem-agente` desliga e deixa só a conversa.
 - `--modo read-only|guarded|workspace`: padrão `guarded`.
 - `--modelo X`: força um modelo.
 - `--sem-maestro`: desliga o Maestro.
@@ -134,7 +134,7 @@ O `hera skills import` copia as skills de `~/.claude/skills` sem alterar as orig
 
 ## Agente de código e segurança
 
-Com `--agente`, ficam disponíveis as ferramentas: `ler_arquivo`, `listar_pasta`, `buscar`, `editar_arquivo`, `escrever_arquivo`, `executar_comando`, `usar_skill` e `delegar_tarefa`.
+O agente vem ligado por padrão (modo `guarded`: pede aprovação antes de gravar ou rodar). Ele só enxerga a pasta em que o chat foi aberto; arquivos sensíveis (`.env`, chaves, sessões, credenciais, `AppData`) são sempre recusados. Ferramentas disponíveis: `ler_arquivo`, `listar_pasta`, `buscar`, `editar_arquivo`, `escrever_arquivo`, `executar_comando`, `usar_skill` e `delegar_tarefa`.
 
 A `delegar_tarefa` chama sub-agentes: ajudantes de contexto limpo, num modelo mais barato (faixa leve, médio ou pesado), que **só leem** o projeto e devolvem um resumo. Até 3 rodam em paralelo; não editam, não executam comandos e não criam outros sub-agentes. Quem edita é sempre o agente principal, com a sua aprovação.
 

@@ -379,8 +379,16 @@ def registrar(subparsers: Any) -> None:
     )
     parser.add_argument(
         '--agente',
+        dest='agente',
         action='store_true',
-        help='Ativa o agente de codigo',
+        default=True,
+        help='Agente de codigo (le, edita e roda comandos na pasta atual, com aprovacao); ja e o padrao',
+    )
+    parser.add_argument(
+        '--sem-agente',
+        dest='agente',
+        action='store_false',
+        help='Conversa sem ferramentas (nao le arquivos nem roda comandos)',
     )
     parser.add_argument(
         '--modo',

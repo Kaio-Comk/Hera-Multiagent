@@ -21,9 +21,20 @@ _PADROES_SENSIVEIS = (
     'credentials*',
     '.npmrc',
     '.pypirc',
+    '.netrc',
+    '.credentials*',      # ex.: ~/.claude/.credentials.json
+    '.claude.json',
+    '*.session',          # sessoes do Telegram (Telethon)
+    '*.kdbx',
+    '*.ppk',
+    'id_ed25519*',
+    'cookies*',
+    'login data*',
 )
 
-_PASTAS_SENSIVEIS = ('.git', '.ssh', '.aws')
+_PASTAS_SENSIVEIS = ('.git', '.ssh', '.aws', '.gnupg', '.kube', '.docker')
+# So contam quando estao DENTRO da pasta de trabalho (abrir o chat na pasta pessoal expoe o AppData; trabalhar la dentro e outra coisa).
+_PASTAS_SENSIVEIS_NA_RAIZ = ('appdata',)
 
 
 class Raiz:
@@ -71,7 +82,11 @@ class Raiz:
         for parte in p.parts:
             if parte.lower() in _PASTAS_SENSIVEIS:
                 return True
-        return False
+        try:
+            relativas = p.resolve().relative_to(self.pasta).parts
+        except (ValueError, OSError):
+            relativas = ()
+        return any(parte.lower() in _PASTAS_SENSIVEIS_NA_RAIZ for parte in relativas)
 
     def exigir_leitura(self, caminho: str | Path) -> Path:
         '''Resolve e nega leitura de arquivos sensiveis.'''

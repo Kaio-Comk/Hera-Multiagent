@@ -25,7 +25,7 @@ hera chat --listar
 
 Main options:
 
-- `--agente`: enables the code agent.
+- `--agente`: code agent (already the default): reads, edits and runs commands in the current folder, with approval. `--sem-agente` turns it off and leaves chat only.
 - `--modo read-only|guarded|workspace`: default is `guarded`.
 - `--modelo X`: forces a model.
 - `--sem-maestro`: disables the Maestro.
@@ -134,7 +134,7 @@ hera skills show <nome>
 
 ## Code agent and safety
 
-With `--agente`, these tools are available: `ler_arquivo`, `listar_pasta`, `buscar`, `editar_arquivo`, `escrever_arquivo`, `executar_comando`, `usar_skill`, and `delegar_tarefa`.
+The agent is on by default (`guarded` mode: it asks before writing or running). It only sees the folder where the chat was opened; sensitive files (`.env`, keys, sessions, credentials, `AppData`) are always refused. Available tools: `ler_arquivo`, `listar_pasta`, `buscar`, `editar_arquivo`, `escrever_arquivo`, `executar_comando`, `usar_skill`, and `delegar_tarefa`.
 
 `delegar_tarefa` calls sub-agents: clean-context helpers on a cheaper model (light, medium, or heavy tier) that **only read** the project and return a summary. Up to 3 run in parallel; they cannot edit, run commands, or spawn other sub-agents. Only the main agent edits, with your approval.
 
