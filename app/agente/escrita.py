@@ -133,6 +133,32 @@ def _executar_padrao(args: tuple[str, ...], cwd: Path, timeout: int) -> tuple[in
         return -1, f'erro ao executar: {exc}'
 
 
+_GIT_OPCOES_COM_VALOR = {'-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path', '--super-prefix'}
+
+
+def _git_bloqueado(args: tuple[str, ...]) -> bool:
+    """Acha o subcomando do git pulando as opcoes globais (git -C x push, git --no-pager push) e bloqueia push, clean e reset --hard."""
+    if not args or args[0].lower() != 'git':
+        return False
+    i = 1
+    while i < len(args) and args[i].startswith('-'):
+        i += 2 if args[i] in _GIT_OPCOES_COM_VALOR else 1
+    if i >= len(args):
+        return False
+    sub, resto = args[i].lower(), tuple(a.lower() for a in args[i + 1:])
+    return sub in ('push', 'clean') or (sub == 'reset' and '--hard' in resto)
+
+
+def _sem_git_C(args: tuple[str, ...]) -> tuple[str, ...]:
+    """'git -C <pasta> status' so muda a pasta: avalia como 'git status'. So o -C MAIUSCULO (o -c minusculo injeta config e nao passa)."""
+    if len(args) >= 4 and args[0].lower() == 'git':
+        resto = args[1:]
+        while len(resto) >= 3 and resto[0] == '-C':
+            resto = resto[2:]
+        return (args[0], *resto)
+    return args
+
+
 def classificar_comando(texto: str) -> tuple[str, tuple[str, ...]]:
     """Classifica um comando em bloqueado, leitura ou normal."""
     try:
@@ -148,7 +174,9 @@ def classificar_comando(texto: str) -> tuple[str, tuple[str, ...]]:
     for b in _BLOQUEADOS:
         if b in baixo:
             return 'bloqueado', args
-    norm = tuple(a.lower() for a in args)
+    if _git_bloqueado(args):
+        return 'bloqueado', args
+    norm = tuple(a.lower() for a in _sem_git_C(args))
     if _eh_leitura(norm):
         return 'leitura', args
     return 'normal', args
