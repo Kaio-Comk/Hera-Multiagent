@@ -67,3 +67,30 @@ def test_banco_do_servidor_fica_na_pasta_do_hera_e_nao_no_codigo(tmp_path):
     assert resolve_db_path("data/orchestrator.db", home, environ={}) == tmp_path / "data" / "orchestrator.db"
     server_src = (RAIZ / "app" / "server.py").read_text(encoding="utf-8")
     assert "resolve_db_path(cfg[\"general\"].get(\"db_path\"), home_hera())" in server_src      # nao mais ROOT_DIR
+
+
+# ---- padroes de fabrica para o publico: CLIs de assinatura desligadas e sem aprovar tudo ---------------------------
+
+def test_clis_de_assinatura_vem_desligadas_e_sem_aprovacao_automatica_de_fabrica(tmp_path):
+    from app.config_manager import DEFAULT_CONFIG
+    engines = ConfigManager(config_path=str(tmp_path / "novo.yaml")).load_config()["engines"]
+    for nome in ("claude_code", "antigravity"):
+        assert DEFAULT_CONFIG["engines"][nome]["enabled"] is False, nome
+        assert engines[nome]["enabled"] is False, nome
+    assert DEFAULT_CONFIG["engines"]["antigravity"]["auto_approve"] is False     # nunca "aprovar tudo" por padrao
+
+
+def test_quem_ja_configurou_explicitamente_continua_como_estava(tmp_path):
+    import yaml
+    caminho = tmp_path / "meu.yaml"
+    caminho.write_text(yaml.safe_dump({"engines": {"claude_code": {"enabled": True, "default_model": "sonnet", "timeout": 300, "permission_mode": "auto"},
+                                                   "antigravity": {"enabled": True, "default_model": "default", "timeout": 1800, "auto_approve": True}}}), encoding="utf-8")
+    engines = ConfigManager(config_path=str(caminho)).load_config()["engines"]
+    assert engines["claude_code"]["enabled"] is True
+    assert engines["antigravity"]["enabled"] is True and engines["antigravity"]["auto_approve"] is True
+
+
+def test_exemplo_de_config_publico_tambem_vem_desligado():
+    import yaml
+    exemplo = yaml.safe_load((RAIZ / "config.example.yaml").read_text(encoding="utf-8"))["engines"]
+    assert exemplo["claude_code"]["enabled"] is False and exemplo["antigravity"]["enabled"] is False

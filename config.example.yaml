@@ -18,14 +18,16 @@ engines:
     base_url: http://localhost:11434
     default_model: qwen2.5-coder:1.5b
     timeout: 120.0
+  # CLIs de assinatura: desligadas de fabrica. Leia docs/SUBSCRIPTIONS.md antes de ligar.
   claude_code:
-    enabled: true
+    enabled: false
     default_model: sonnet
     timeout: 300.0
   antigravity:
-    enabled: true
+    enabled: false
     default_model: default
     timeout: 300.0
+    auto_approve: false
 
 # Provedores de nuvem do gateway (/v1). TODOS desligados por padrão.
 # As CHAVES ficam em variáveis de ambiente (api_key_env), nunca neste arquivo nem na API. Várias chaves

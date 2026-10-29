@@ -315,7 +315,8 @@ def test_modos_automaticos_dos_motores_de_codigo(tmp_path):
     assert ClaudeCodeAdapter(binary_path="claude", permission_mode="auto").permission_mode == "auto"
     assert AntigravityAdapter(binary_path="agy").auto_approve is False and AntigravityAdapter(binary_path="agy", auto_approve=True).auto_approve
     cfg = ConfigManager(config_path=str(tmp_path / "config.yaml")).load_config()["engines"]
-    assert cfg["claude_code"]["permission_mode"] == "auto" and cfg["antigravity"]["auto_approve"] is True
+    # De fabrica o claude_code usa o modo automatico dele (barra o arriscado) e o antigravity NAO aprova tudo (o dono liga no config.yaml).
+    assert cfg["claude_code"]["permission_mode"] == "auto" and cfg["antigravity"]["auto_approve"] is False
 
 
 # --------------------------------------------------------------------------- divisao do trabalho entre motores

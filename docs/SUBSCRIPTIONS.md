@@ -23,4 +23,5 @@ Hera can drive the **official command-line tools** of some AI subscriptions as e
 
 - Prefer **API keys** (many providers have free tiers; see `hera providers list --catalogo --gratis`) for anything automated or shared.
 - If you enable a subscription engine, keep it personal and moderate, and accept that the vendor decides what counts as ordinary use.
-- To turn the subscription engines off, set `engines.claude_code.enabled: false` and `engines.antigravity.enabled: false` in `config.yaml`.
+- **Both engines are OFF by default on a new install**, and `antigravity` does not auto-approve actions (`auto_approve: false`). To turn one on, set `engines.claude_code.enabled: true` or `engines.antigravity.enabled: true` in `config.yaml` (or use the engine card in the web panel) after installing the CLI and logging in. `auto_approve: true` lets the Antigravity CLI run anything without asking; enable it only on a throwaway project.
+- Installations that already have these keys in `config.yaml` keep their current values.
