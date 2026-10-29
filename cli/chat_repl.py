@@ -409,15 +409,20 @@ async def rodar(
     return sessao
 
 
-def _encostar_no_fundo(sessao_prompt: Any) -> None:
-    '''Empurra o campo de entrada para o fim da tela (como o Claude Code); sem suporte do terminal, nao faz nada.'''
+def _encostar_no_fundo(sessao_prompt: Any) -> bool:
+    '''Salva o cursor e desce o campo de entrada ate o fim da tela, sem criar linhas em branco (como o Claude Code).
+
+    Devolve True se o cursor foi salvo: quem le a linha deve restaurar (ESC 8) e apagar o que ficou abaixo, para a
+    conversa continuar logo depois do conteudo e nao do fundo da tela. Sem espaco ou sem suporte, nao faz nada.
+    '''
     try:
         abaixo = sessao_prompt.output.get_rows_below_cursor_position()
     except Exception:  # noqa: BLE001
-        return
-    sobra = abaixo - 4  # regua de cima, linha de entrada, regua de baixo e rodape
-    if sobra > 0:
-        print('\n' * sobra, end='', flush=True)
+        return False
+    if abaixo < 5:  # regua de cima, entrada, regua de baixo, rodape e uma folga: sem isso a tela rolaria
+        return False
+    print('\x1b7' + (f'\x1b[{abaixo - 4}B' if abaixo > 4 else ''), end='', flush=True)
+    return True
 
 
 async def principal(
@@ -450,17 +455,36 @@ async def principal(
     pasta_atual = str(Path.cwd())
 
     def rodape() -> ANSI:
-        ativo = maestro is not None and getattr(maestro, 'ativo', True)
-        return ANSI(visual.rodape(modelo=modelo, modo=modo_agente or '', maestro=bool(ativo), pasta=pasta_atual))
+        forcado = getattr(maestro, 'forcado', None) if maestro is not None else None
+        ativo = maestro is not None and getattr(maestro, 'ativo', True) and not forcado
+        atual = forcado or getattr(cliente, 'modelo', modelo)
+        return ANSI(visual.rodape(modelo=atual, modo=modo_agente or '', maestro=bool(ativo), pasta=pasta_atual))
+
+    async def seletor(titulo: str, opcoes: list[str], atual: str) -> Optional[str]:
+        from prompt_toolkit.shortcuts.choice_input import ChoiceInput
+
+        itens = [(o, 'auto (o maestro escolhe)' if o == 'auto' else o) for o in opcoes]
+        try:
+            return await ChoiceInput(
+                message=titulo, options=itens, default=atual if atual in opcoes else None, symbol='❯'
+            ).prompt_async()
+        except (KeyboardInterrupt, EOFError):
+            return None
 
     async def ler_linha() -> str:
         if visual.pensando_visivel:
             print(visual.apagar_linha(), end='', flush=True)
         visual.novo_turno()
-        _encostar_no_fundo(sessao_prompt)
-        texto = await sessao_prompt.prompt_async(
-            ANSI(visual.prompt()), bottom_toolbar=rodape, placeholder=ANSI(visual.placeholder())
-        )
+        no_fundo = visual.cor and _encostar_no_fundo(sessao_prompt)
+        try:
+            texto = await sessao_prompt.prompt_async(
+                ANSI(visual.prompt()), bottom_toolbar=rodape, placeholder=ANSI(visual.placeholder())
+            )
+        finally:
+            if no_fundo:
+                print('\x1b8\x1b[J', end='', flush=True)  # volta ao fim do conteudo e apaga campo e rodape
+        if no_fundo:
+            print(visual.eco(texto), end='', flush=True)
         if texto.strip() and not texto.lstrip().startswith('/'):
             print(visual.marcar_pensando(), end='', flush=True)
         return texto
@@ -624,6 +648,9 @@ async def principal(
             else None
         )
     )
+
+    if comandos is not None:
+        comandos.seletor = seletor
 
     from app.agente.caminhos import Raiz
     from cli.chat_anexos import expandir_anexos

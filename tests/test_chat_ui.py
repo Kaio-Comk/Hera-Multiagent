@@ -182,3 +182,8 @@ def test_banner_mascote_com_cor():
 def test_limpar_tela_so_com_cor():
     assert Visual(cor=False).limpar_tela() == ''
     assert Visual(cor=True).limpar_tela() == '\x1b[2J\x1b[H'
+
+
+def test_eco_repete_a_pergunta():
+    assert Visual(cor=False).eco('ola') == '> ola\n'
+    assert Visual(cor=True).eco('ola').endswith('ola\n')

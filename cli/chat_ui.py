@@ -100,6 +100,10 @@ class Visual:
         '''Pinta o texto com a cor de aviso (amarelo).'''
         return self._pintar(texto, _AVISO)
 
+    def eco(self, texto: str) -> str:
+        '''Repete a pergunta do usuario no historico, depois que o campo de entrada sai do fundo da tela.'''
+        return self._acento('❯ ' if self.cor else '> ') + texto + '\n'
+
     def limpar_tela(self) -> str:
         '''Limpa a tela visivel e leva o cursor ao topo (abertura do chat); sem cor, nao faz nada.'''
         return '\x1b[2J\x1b[H' if self.cor else ''
