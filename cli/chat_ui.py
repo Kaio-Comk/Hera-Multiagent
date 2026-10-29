@@ -68,6 +68,15 @@ def _cortar_inicio(texto: str, limite: int) -> str:
 MASCOTE = ('  ▄ ▄██▄ ▄  ', ' ██████████ ', '   ▀████▀   ')
 
 
+# modo -> (texto, em destaque?, simbolo sem cor). O auto mode (como no Claude Code) fica em amarelo.
+_ROTULOS_MODO = {
+    'auto': ('⏵⏵ auto mode ligado (shift+tab alterna)', True, '>>'),
+    'workspace': ('⏵⏵ pasta de trabalho livre (shift+tab alterna)', True, '>>'),
+    'guarded': ('⏵ aprovação manual (shift+tab alterna)', False, '>'),
+    'read-only': ('⏸ somente leitura (shift+tab alterna)', False, '||'),
+}
+
+
 class Visual:
     '''Renderiza o visual do REPL de terminal do Hera.'''
 
@@ -166,12 +175,16 @@ class Visual:
         '''Devolve uma linha horizontal apagada com a largura do terminal.'''
         return self._apagado('─' * self.largura)
 
-    def rodape(self, *, modelo, modo, maestro, pasta) -> str:
-        '''Monta o rodape com modo, modelo e atalhos.'''
+    def rodape(self, *, modelo, modo, maestro, pasta, todo_pc: bool = False) -> str:
+        '''Monta o rodape: modo do agente (Shift+Tab alterna), alcance, modelo e atalhos.'''
         partes = []
-        if modo:
-            partes.append(self._aviso(('⏵⏵ ' if self.cor else '>> ') + 'modo ' + modo) + self._apagado(' · '))
-        itens = ['maestro' if maestro else modelo, '/ comandos', '@arquivo', 'ctrl+c interrompe']
+        rotulo = _ROTULOS_MODO.get(modo)
+        if rotulo:
+            texto, destaque, simbolo_sem_cor = rotulo
+            texto = texto if self.cor else simbolo_sem_cor + ' ' + texto.split(' ', 1)[1]
+            partes.append((self._aviso(texto) if destaque else self._apagado(texto)) + self._apagado(' · '))
+        itens = ['todo o PC'] if todo_pc and rotulo else []
+        itens += ['maestro' if maestro else modelo, '/ comandos', '@arquivo', 'ctrl+c interrompe']
         partes.append(self._apagado(' · '.join(itens)))
         return self.regua() + '\n' + '  ' + ''.join(partes)
 

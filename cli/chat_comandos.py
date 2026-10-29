@@ -679,7 +679,7 @@ class Comandos:
                     escrever(f'Modo atual: {modo_atual}\n')
                     return None
                 novo_modo = arg.lower()
-                modos_validos = ('read-only', 'guarded', 'workspace')
+                modos_validos = ('read-only', 'guarded', 'workspace', 'auto')
                 if novo_modo not in modos_validos:
                     validos_str = ', '.join(modos_validos)
                     escrever(f'Modo invalido: {arg}. Validos: {validos_str}\n')

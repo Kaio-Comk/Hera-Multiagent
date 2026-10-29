@@ -16,7 +16,7 @@ from app.agente.checkpoints import Checkpoints
 from app.agente.leitura import Resultado
 
 _TIPOS = {'editar', 'escrever', 'comando'}
-_MODOS = {'read-only', 'guarded', 'workspace'}
+_MODOS = {'read-only', 'guarded', 'workspace', 'auto'}
 _MAX_ESCRITA = 1024 * 1024
 
 _OPERADORES = ('&&', '||', '|', '>', '<', ';', '`', '$(', '%')
@@ -46,6 +46,17 @@ def _eh_leitura(norm: tuple[str, ...]) -> bool:
             return all(a in _BRANCH_LEITURA for a in resto)
         return False
     return norm[:2] in (('python', '--version'), ('pip', 'list')) or norm[:1] == ('where',)
+# Modo auto (Shift+Tab): alem da leitura, roda sem perguntar so o que verifica o projeto sem grava-lo nem toca em producao.
+_SEGUROS_AUTO = (
+    ('pytest',), ('python', '-m', 'pytest'), ('python', '-m', 'unittest'), ('python', '-m', 'py_compile'),
+    ('npm', 'test'), ('npm', 'run', 'test'), ('npm', 'run', 'lint'), ('node', '--check'), ('ruff', 'check'),
+)
+
+
+def _seguro_no_auto(norm: tuple[str, ...]) -> bool:
+    return any(norm[: len(pref)] == pref for pref in _SEGUROS_AUTO)
+
+
 _ENV_SECRETO = re.compile(r'KEY|TOKEN|SECRET|PASSWORD|API', re.IGNORECASE)
 _CHAVE = re.compile(r'sk-[A-Za-z0-9]{20,}')
 
@@ -291,9 +302,11 @@ class Escrita:
             classe, _ = classificar_comando(' '.join(p.comando or ()))
             if classe == 'leitura':
                 return False
+            if self.modo == 'auto' and classe == 'normal' and _seguro_no_auto(tuple(a.lower() for a in (p.comando or ()))):
+                return False
             chave = (p.comando or (), str(self.raiz.pasta))
             return chave not in self._lembrados
-        if self.modo == 'workspace':
+        if self.modo in ('workspace', 'auto'):
             # grava sem perguntar so dentro da pasta de trabalho; em qualquer outro lugar do PC, sempre pergunta
             alvo = getattr(p, 'alvo', None)
             return bool(self.raiz.acesso_total and alvo is not None and not self._na_pasta(Path(alvo).resolve()))

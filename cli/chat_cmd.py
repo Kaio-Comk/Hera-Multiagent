@@ -423,8 +423,8 @@ def registrar(subparsers: Any) -> None:
     )
     parser.add_argument(
         '--modo',
-        choices=['read-only', 'guarded', 'workspace'],
+        choices=['read-only', 'guarded', 'workspace', 'auto'],
         default='guarded',
-        help='Modo do agente de codigo (read-only, guarded ou workspace)',
+        help='Modo do agente (read-only, guarded, workspace ou auto); Shift+Tab alterna no chat',
     )
     parser.set_defaults(func=executar)

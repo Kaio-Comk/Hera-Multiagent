@@ -510,6 +510,16 @@ async def rodar(
     return sessao
 
 
+CICLO_DE_MODOS = ('guarded', 'auto', 'read-only')   # Shift+Tab: aprovacao manual -> auto mode -> somente leitura
+
+
+def proximo_modo(atual: str) -> str:
+    '''Proximo modo do agente no Shift+Tab; um modo fora do ciclo (ex.: workspace) volta ao primeiro.'''
+    if atual not in CICLO_DE_MODOS:
+        return CICLO_DE_MODOS[0]
+    return CICLO_DE_MODOS[(CICLO_DE_MODOS.index(atual) + 1) % len(CICLO_DE_MODOS)]
+
+
 def _encostar_no_fundo(sessao_prompt: Any) -> bool:
     '''Salva o cursor e desce o campo de entrada ate o fim da tela, sem criar linhas em branco (como o Claude Code).
 
@@ -551,7 +561,20 @@ async def principal(
     from cli.chat_ui import Visual
 
     visual = Visual()
-    sessao_prompt = PromptSession(style=Style.from_dict({'bottom-toolbar': 'noreverse'}))
+    from prompt_toolkit.key_binding import KeyBindings
+
+    atalhos = KeyBindings()
+
+    @atalhos.add('s-tab')
+    def _alternar_modo(event: Any) -> None:
+        if agente_cfg is None:
+            return
+        proximo = proximo_modo(getattr(agente_cfg, 'modo', 'guarded'))
+        agente_cfg.escrita.modo = proximo
+        agente_cfg.modo = proximo
+        event.app.invalidate()   # redesenha o rodape com o modo novo
+
+    sessao_prompt = PromptSession(style=Style.from_dict({'bottom-toolbar': 'noreverse'}), key_bindings=atalhos)
     modo_agente = getattr(agente_cfg, 'modo', None) if agente_cfg is not None else None
     if modo_agente and getattr(getattr(agente_cfg, 'raiz', None), 'acesso_total', False):
         modo_agente = f'{modo_agente} · todo o PC'
@@ -561,7 +584,9 @@ async def principal(
         forcado = getattr(maestro, 'forcado', None) if maestro is not None else None
         ativo = maestro is not None and getattr(maestro, 'ativo', True) and not forcado
         atual = forcado or getattr(cliente, 'modelo', modelo)
-        return ANSI(visual.rodape(modelo=atual, modo=modo_agente or '', maestro=bool(ativo), pasta=pasta_atual))
+        modo_vivo = getattr(agente_cfg, 'modo', '') if agente_cfg is not None else ''
+        todo_pc = bool(getattr(getattr(agente_cfg, 'raiz', None), 'acesso_total', False))
+        return ANSI(visual.rodape(modelo=atual, modo=modo_vivo or '', maestro=bool(ativo), pasta=pasta_atual, todo_pc=todo_pc))
 
     async def seletor(titulo: str, opcoes: list[str], atual: str) -> Optional[str]:
         from cli.chat_seletor import selecionar

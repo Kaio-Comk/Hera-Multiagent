@@ -151,6 +151,14 @@ Execution rules:
 
 Automatic checkpoints are stored in `~/.hera/checkpoints`. `/rollback` undoes without deleting what you edited afterwards.
 
+### Agent modes (Shift+Tab)
+
+`Shift+Tab` cycles the mode in the input field; the footer shows the active one (also `/modo <name>` or `--modo` at start):
+
+- **manual approval** (`guarded`, default): asks before writing and before running commands.
+- **auto mode** (`auto`, in yellow): writes without asking inside the folder where the chat was opened and runs without asking only project checks (`pytest`, `python -m pytest`, `python -m unittest`, `npm test`, `npm run test`, `npm run lint`, `node --check`, `ruff check`). Still asking: writing outside the folder, builds, installing packages, `git commit` and any other command. What is blocked (`git push`, mass deletes, `curl`, `powershell`, chained commands) stays blocked. The diff is always shown, and `/rollback` undoes.
+- **read-only** (`read-only`): the agent only reads and analyzes; nothing is written or run.
+
 ## Memory
 
 On `/exit` after 3 or more questions, the chat offers to save what matters to memory: it shows a preview and only writes after you confirm twice. When resuming a conversation (`--resume`), the opening shows `Retomando: title (N messages)`.
