@@ -123,7 +123,8 @@ class Visual:
     # ------------------------------------------------------------------
     # Banner e reguas
     # ------------------------------------------------------------------
-    def banner(self, *, versao, modelo, pasta, modo, maestro, instrucoes: int = 0, arquivos: tuple = ()) -> str:
+    def banner(self, *, versao, modelo, pasta, modo, maestro, instrucoes: int = 0, arquivos: tuple = (),
+               retomando: str = '') -> str:
         '''Monta o banner do chat com o mascote e informacoes de contexto.'''
         linhas = []
         linha1 = self._pintar('Hera', '\x1b[1m')
@@ -139,6 +140,10 @@ class Visual:
         for i, texto in enumerate(textos):
             linhas.append(self._acento(MASCOTE[i]) + '  ' + texto + '\n')
         linhas.append('\n')
+        if retomando:
+            linhas.append('▏ ' + self._apagado(retomando) + '\n')
+            if instrucoes <= 0:
+                linhas.append('\n')
         if instrucoes > 0:
             texto = str(instrucoes) + ' arquivo(s) de instrucoes carregado(s)'
             if arquivos:

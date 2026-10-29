@@ -141,6 +141,8 @@ Checkpoints automáticos ficam em `~/.hera/checkpoints`. O `/rollback` desfaz se
 
 ## Memória
 
+Ao sair com `/exit` depois de 3 ou mais perguntas, o chat oferece guardar o que importa na memória: mostra a prévia e só grava se você confirmar duas vezes. Ao retomar uma conversa (`--resume`), a abertura mostra `Retomando: título (N mensagens)`.
+
 As notas ficam em Markdown em `~/.hera/memoria`. A variável `HERA_MEMORY_DIR` muda o diretório.
 
 ```text

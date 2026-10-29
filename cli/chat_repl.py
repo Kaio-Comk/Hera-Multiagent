@@ -248,6 +248,24 @@ async def rodar(
         else:
             maestro.juiz = lambda pedido: julgar(PROMPT_FAIXA + pedido)
 
+    async def oferecer_memoria() -> None:
+        '''Ao sair de uma conversa de 3 ou mais perguntas, oferece guardar o que importa (com previa e aprovacao).'''
+        perguntas = sum(1 for m in sessao.mensagens if isinstance(m, dict) and m.get('role') == 'user')
+        if comandos is None or perguntas < 3:
+            return
+        try:
+            escrever('Salvar o que importa desta conversa na memoria? [s/N]\n')
+            if (await ler_linha()).strip().lower() not in ('s', 'sim'):
+                return
+            await comandos.executar('/lembrar', sessao, escrever)
+            if not getattr(comandos, '_propostas', None):
+                return
+            escrever('Gravar tudo isso? [s/N]\n')
+            resposta = (await ler_linha()).strip().lower()
+            await comandos.executar('/lembrar sim' if resposta in ('s', 'sim') else '/lembrar nao', sessao, escrever)
+        except (Exception, KeyboardInterrupt):  # noqa: BLE001 - sair nunca pode travar por causa da memoria
+            escrever('Aviso: nao foi possivel salvar na memoria.\n')
+
     primeira_vez = True
     modelo_anterior: str | None = None
 
@@ -421,6 +439,7 @@ async def rodar(
         if comandos is not None and texto.startswith('/'):
             resultado = await comandos.executar(texto, sessao, escrever)
             if resultado == 'sair':
+                await oferecer_memoria()
                 break
             if isinstance(resultado, ComandoSkill):
                 texto = resultado.texto
@@ -445,6 +464,7 @@ async def rodar(
                 continue
 
         if texto in ('/exit', '/quit', '/sair'):
+            await oferecer_memoria()
             break
 
         try:
@@ -672,6 +692,7 @@ async def principal(
         versao=versao_hera, modelo=modelo, pasta=pasta_atual, modo=modo_agente or '',
         maestro=bool(maestro is not None and getattr(maestro, 'ativo', True)),
         instrucoes=len(fontes or ()),
+        retomando=getattr(estado, 'retomando', '') or '',
         arquivos=tuple(
             str(getattr(f, 'caminho', '')).replace(str(Path.home()), '~') for f in (fontes or ())
         ),

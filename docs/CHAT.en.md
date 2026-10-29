@@ -141,6 +141,8 @@ Automatic checkpoints are stored in `~/.hera/checkpoints`. `/rollback` undoes wi
 
 ## Memory
 
+On `/exit` after 3 or more questions, the chat offers to save what matters to memory: it shows a preview and only writes after you confirm twice. When resuming a conversation (`--resume`), the opening shows `Retomando: title (N messages)`.
+
 Notes are stored as Markdown in `~/.hera/memoria`. The `HERA_MEMORY_DIR` variable changes the directory.
 
 ```text

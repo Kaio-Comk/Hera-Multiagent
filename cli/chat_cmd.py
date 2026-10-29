@@ -218,7 +218,9 @@ async def executar(
         estado.conversa_id = conv['id']
         mensagens_iniciais = sessoes.carregar(estado.conversa_id)
         titulo = conv.get('title') or conv.get('titulo') or ''
-        print(f'Retomando: {titulo} ({len(mensagens_iniciais)} mensagens)')
+        estado.retomando = f'Retomando: {titulo} ({len(mensagens_iniciais)} mensagens)'
+        if not sys.stdout.isatty():  # no terminal a tela e limpa ao abrir; la a abertura mostra esta linha
+            print(estado.retomando)
 
     if not garantir(args.url, raiz):
         return 1
