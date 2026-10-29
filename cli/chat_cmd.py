@@ -253,7 +253,9 @@ async def executar(
 
     catalogo = ''
     try:
-        catalogo = catalogo_para_prompt(skills)
+        # O catalogo manda o modelo "ler a skill" com a ferramenta de leitura: so existe no modo agente.
+        # Sem agente, as skills continuam valendo pelos comandos /nome.
+        catalogo = catalogo_para_prompt(skills) if cfg is not None else ''
     except Exception:
         catalogo = ''
 
@@ -282,6 +284,14 @@ async def executar(
             'Para varrer ou analisar muito código, use delegar_tarefa (faixa leve) e junte os resumos; edite você mesmo.'
         )
         sistema = f'{sistema}\n\n{paragrafo}'.strip()
+    else:
+        sem_ferramentas = (
+            'Nesta conversa voce NAO tem ferramentas: nao le arquivos, nao busca, nao edita e nao roda comandos. '
+            'Nunca escreva chamadas de ferramenta (<tool_call>, Read, Bash). Responda so com o que esta na conversa '
+            '(texto colado, arquivos com @ e imagens). Se o pedido exigir ler ou editar o projeto, '
+            'diga ao usuario para reabrir o chat com `hera chat --agente` na pasta do projeto.'
+        )
+        sistema = f'{sistema}\n\n{sem_ferramentas}'.strip()
 
     def ao_turno(usuario: str, assistente: str) -> None:
         s = estado.sessoes()

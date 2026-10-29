@@ -106,8 +106,12 @@ def escolher_modelo_visao(
 _RE_MENCAO_AT = re.compile(r'@"([^"]+)"|@(\S+)')
 # Regex para caminhos absolutos do Windows entre aspas
 _RE_WIN_ASPAS = re.compile(r'"([A-Za-z]:\\[^"]+)"')
-# Regex para caminhos absolutos do Windows sem aspas e sem espacos
-_RE_WIN_SEM_ASPAS = re.compile(r'([A-Za-z]:\\[^\s"]+)')
+# Caminhos absolutos do Windows sem aspas, COM ou sem espacos (como cola o arrastar-e-soltar ou o copiar do Explorer):
+# vai da letra do drive ate a extensao de imagem, sem atravessar outro caminho nem aspas.
+_RE_WIN_SEM_ASPAS = re.compile(
+    r'([A-Za-z]:\\(?:(?![A-Za-z]:\\)[^"\n])*?\.(?:png|jpe?g|gif|webp))(?![\w\\])',
+    re.IGNORECASE,
+)
 
 
 def _tem_extensao_valida(caminho: str) -> bool:

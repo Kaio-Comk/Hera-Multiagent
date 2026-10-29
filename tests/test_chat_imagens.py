@@ -257,3 +257,23 @@ def test_imagem_clipboard_excecao(monkeypatch):
         raise OSError('falha')
 
     assert imagem_da_area_de_transferencia(executar=executar_falso) is None
+
+
+def test_caminho_do_windows_com_espacos_e_sem_aspas(tmp_path):
+    alvo = _criar(tmp_path, 'Capturar.PNG', PNG)
+    texto, imgs, avisos = extrair_imagens(f'nada acontece {alvo} e agora?', tmp_path)
+    assert texto == 'nada acontece [imagem: Capturar.PNG] e agora?'
+    assert len(imgs) == 1 and avisos == []
+
+
+def test_dois_caminhos_sem_aspas_nao_se_misturam(tmp_path):
+    a = _criar(tmp_path, 'a.png', PNG)
+    b = _criar(tmp_path, 'b.png', PNG)
+    texto, imgs, avisos = extrair_imagens(f'{a} versus {b}', tmp_path)
+    assert texto == '[imagem: a.png] versus [imagem: b.png]'
+    assert [i.nome for i in imgs] == ['a.png', 'b.png']
+
+
+def test_caminho_que_nao_e_imagem_fica_como_esta(tmp_path):
+    texto, imgs, avisos = extrair_imagens(r'abra C:\Users\x\notas.txt e C:\Users\y\z.png2', tmp_path)
+    assert imgs == [] and avisos == [] and texto == r'abra C:\Users\x\notas.txt e C:\Users\y\z.png2'
