@@ -31,14 +31,14 @@ def test_auto_grava_sem_perguntar_dentro_da_pasta(tmp_path: Path) -> None:
     assert e.precisa_aprovacao(dentro) is False
 
 
-@pytest.mark.parametrize('comando', ['pytest -q', 'python -m pytest tests', 'npm test', 'npm run lint', 'node --check a.js'])
+@pytest.mark.parametrize('comando', ['pytest -q', 'python -m pytest tests', 'npm test', 'npm run lint', 'node --check a.js', 'npm run build', 'node build.mjs'])
 def test_auto_roda_verificacoes_sem_perguntar(tmp_path: Path, comando: str) -> None:
     e = _escrita(tmp_path)
     p = _pendencia(e, e.propor_comando(comando))
     assert e.precisa_aprovacao(p) is False
 
 
-@pytest.mark.parametrize('comando', ['npm run build', 'pip install requests', 'git commit -m x', 'node app.js', 'python script.py'])
+@pytest.mark.parametrize('comando', ['pip install requests', 'git commit -m x', 'node app.js', 'python script.py'])
 def test_auto_continua_perguntando_o_resto(tmp_path: Path, comando: str) -> None:
     e = _escrita(tmp_path)
     p = _pendencia(e, e.propor_comando(comando))

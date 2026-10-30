@@ -374,18 +374,37 @@ async def rodar(
         resposta = ''
         interrompido = False
 
+        modo_atual = getattr(getattr(agente, 'escrita', None), 'modo', None)
+        instrucao_modo = ''
+        if modo_atual == 'auto':
+            instrucao_modo = (
+                '## Modo de Execucao: AUTO (Autonomia Total)\n'
+                'Voce esta operando em modo AUTO. Resolva o pedido de ponta a ponta sem pedir permissao:\n'
+                '- Edite arquivos diretamente usando "editar_arquivo" ou "escrever_arquivo".\n'
+                '- Execute comandos de verificacao, build e testes diretamente.\n'
+                '- Nao interrompa o fluxo nem pare para pedir aprovacao antes de gravar ou testar. '
+                'Conclua a resolucao do problema e mostre o resultado final.'
+            )
+        elif modo_atual == 'guarded':
+            instrucao_modo = (
+                '## Modo de Execucao: GUARDED (Supervisionado)\n'
+                'Peca aprovacao do usuario antes de aplicar alteracoes ou rodar comandos destrutivos.'
+            )
+
         sistemas: list[dict[str, str]] = []
         if sessao.sistema:
             sistemas.append({'role': 'system', 'content': sessao.sistema})
         if memoria:
             sistemas.append({'role': 'system', 'content': memoria})
+        if instrucao_modo:
+            sistemas.append({'role': 'system', 'content': instrucao_modo})
 
         mensagens_a_enviar = sistemas + sessao.mensagens
 
         async def consumir() -> None:
             nonlocal resposta
             if agente is not None:
-                sis_itens = [s for s in (sessao.sistema, memoria) if s]
+                sis_itens = [s for s in (sessao.sistema, memoria, instrucao_modo) if s]
                 sis_arg: Any = (
                     sis_itens if len(sis_itens) > 1 else (sis_itens[0] if sis_itens else '')
                 )

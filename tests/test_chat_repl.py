@@ -370,6 +370,24 @@ async def test_rodar_com_agente_nao_duplica_escrita() -> None:
     # o agente escreve o conteudo; rodar escreve apenas o '\n' no final
     assert saida == ['saida direta do agente', '\n']
 
+async def test_rodar_com_agente_informa_modo_auto_no_prompt_de_sistema() -> None:
+    class _EscritaModo:
+        modo = 'auto'
+
+    agente = AgenteFalso(['ok'])
+    agente.escrita = _EscritaModo()
+    cliente = ClienteFalso([])
+    await rodar(
+        cliente,
+        _leitor(['faca algo', '/exit']),
+        lambda _t: None,
+        agente=agente,
+    )
+    assert len(agente.chamadas) == 1
+    sistema_recebido = str(agente.chamadas[0][1])
+    assert 'Modo de Execucao: AUTO' in sistema_recebido
+    assert 'Autonomia Total' in sistema_recebido
+
 
 async def test_rodar_com_agente_interrupcao() -> None:
     cliente = ClienteFalso([])

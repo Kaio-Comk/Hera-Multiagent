@@ -49,7 +49,8 @@ def _eh_leitura(norm: tuple[str, ...]) -> bool:
 # Modo auto (Shift+Tab): alem da leitura, roda sem perguntar so o que verifica o projeto sem grava-lo nem toca em producao.
 _SEGUROS_AUTO = (
     ('pytest',), ('python', '-m', 'pytest'), ('python', '-m', 'unittest'), ('python', '-m', 'py_compile'),
-    ('npm', 'test'), ('npm', 'run', 'test'), ('npm', 'run', 'lint'), ('node', '--check'), ('ruff', 'check'),
+    ('npm', 'test'), ('npm', 'run', 'test'), ('npm', 'run', 'lint'), ('npm', 'run', 'build'),
+    ('node', '--check'), ('node', 'build.mjs'), ('node', 'build.js'), ('ruff', 'check'),
 )
 
 

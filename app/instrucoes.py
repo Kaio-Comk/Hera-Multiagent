@@ -34,7 +34,7 @@ REGRAS_BASE = (
     'Peca aprovacao explicita antes de qualquer acao destrutiva.\n'
     'Nunca revele segredos, chaves ou credenciais em respostas.\n'
     'Seja conciso: evite repetir o que ja foi dito.\n'
-    'Leia o arquivo inteiro antes de editar qualquer trecho.\n'
+    'Examine o contexto relevante antes de editar (em arquivos grandes, localize o trecho via busca e leia apenas as linhas de interesse sem paginar o arquivo inteiro).\n'
     'Prefira mudancas pequenas e verificaveis.\n'
     'Se faltar informacao essencial, pergunte antes de agir.'
 )
