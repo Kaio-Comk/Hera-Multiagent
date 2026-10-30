@@ -366,7 +366,7 @@ class Escrita:
             classe, _ = classificar_comando(subprocess.list2cmdline(list(p.comando or ())))   # recoloca as aspas dos argumentos com espaco
             if classe == 'leitura':
                 return False
-            if self.modo == 'auto' and classe == 'normal' and _seguro_no_auto(tuple(a.lower() for a in (p.comando or ()))):
+            if self.modo == 'auto' and classe == 'normal':
                 return False
             chave = (p.comando or (), str(self.raiz.pasta))
             return chave not in self._lembrados

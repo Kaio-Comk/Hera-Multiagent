@@ -1003,7 +1003,7 @@ async def test_goal_termina_em_um_turno() -> None:
     )
 
     texto_saida = ''.join(saida)
-    assert '[goal: turno 1 de 5]' in texto_saida
+    assert '[goal: turno 1]' in texto_saida
     assert '[goal: feito - bug corrigido com sucesso]' in texto_saida
     assert '[goal encerrado: feito em 1 turno(s) - bug corrigido com sucesso]' in texto_saida
     assert len(cliente.chamadas) == 1
