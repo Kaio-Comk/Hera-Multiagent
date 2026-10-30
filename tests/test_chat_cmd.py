@@ -227,6 +227,41 @@ def _args2(**extra) -> argparse.Namespace:
     return argparse.Namespace(**base)
 
 
+async def test_continue_flag_e_posicional() -> None:
+    parser = argparse.ArgumentParser()
+    chat_cmd.registrar(parser.add_subparsers())
+    assert parser.parse_args(['chat', '--continue']).continuar == ''
+    assert parser.parse_args(['chat', '--continue', 'abc']).continuar == 'abc'
+    assert parser.parse_args(['chat', '-c']).continuar == ''
+    assert parser.parse_args(['chat', '-c', 'abc']).continuar == 'abc'
+    assert parser.parse_args(['chat', 'continue']).posicional == ['continue']
+    assert parser.parse_args(['chat', 'continue', 'abc']).posicional == ['continue', 'abc']
+
+
+async def test_continue_carrega_mensagens_e_passa_ao_principal(capsys) -> None:
+    falsas = SessoesFalsas(conversas=[{'id': 'c9', 'title': 'Antiga'}], mensagens=[{'role': 'user', 'content': 'oi'}, {'role': 'assistant', 'content': 'ola'}])
+    recebido: dict = {}
+
+    async def principal(url, token, modelo, **kw):
+        recebido.update(kw)
+        kw['ao_turno']('pergunta', 'resposta')
+
+    # Testando --continue
+    codigo = await chat_cmd.executar(_args2(continuar=''), raiz=Path('.'), garantir=lambda u, r: True, principal=principal,
+                                     token_de=lambda r: 't', sessoes_de=lambda: falsas)
+    assert codigo == 0
+    assert recebido['mensagens_iniciais'] == falsas.mensagens
+    assert 'Retomando: Antiga (2 mensagens)' in capsys.readouterr().out
+
+    # Testando 'chat continue' posicional
+    recebido.clear()
+    codigo2 = await chat_cmd.executar(_args2(posicional=['continue']), raiz=Path('.'), garantir=lambda u, r: True, principal=principal,
+                                      token_de=lambda r: 't', sessoes_de=lambda: falsas)
+    assert codigo2 == 0
+    assert recebido['mensagens_iniciais'] == falsas.mensagens
+    assert 'Retomando: Antiga (2 mensagens)' in capsys.readouterr().out
+
+
 async def test_registrar_aceita_resume_com_e_sem_valor_e_listar() -> None:
     parser = argparse.ArgumentParser()
     chat_cmd.registrar(parser.add_subparsers())

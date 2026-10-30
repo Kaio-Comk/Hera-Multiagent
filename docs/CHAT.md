@@ -19,6 +19,7 @@ hera chat --agente
 hera chat --modo read-only
 hera chat --modelo gpt-4o-mini
 hera chat --perfil economico
+hera chat --continue        # ou: hera chat continue, hera continue
 hera chat --resume
 hera chat --listar
 ```
@@ -32,6 +33,7 @@ Opções principais:
 - `--sem-maestro`: desliga o Maestro.
 - `--perfil economico|qualidade`: escolhe o perfil.
 - `--janela N`: tamanho da janela em tokens (padrão 32000).
+- `--continue [id|título]`, `-c`, ou `hera chat continue`: continua a conversa mais recente ou indicada (alias de `--resume`).
 - `--resume [id|título]`: retoma uma conversa salva.
 - `--listar`: lista conversas salvas.
 - `--url`: define a URL do servidor.
@@ -82,6 +84,7 @@ Você pode forçar um modelo com `--modelo` ou `/model nome`, voltar ao automát
 /clear
 /model [nome|auto]
 /resume [ref]
+/continue [ref]
 /listar
 /memory [consulta]
 /skills
