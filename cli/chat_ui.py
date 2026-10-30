@@ -11,12 +11,16 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+import re
 import time
 
 from cli.chat_ferramenta_ui import (
     colorir_diff,
     eh_chamada_de_ferramenta,
+    eh_pensamento,
     formatar_chamada_de_ferramenta,
+    formatar_colapso_acoes,
+    formatar_pensamento,
     parece_diff,
 )
 from cli.chat_markdown import Renderizador
@@ -255,7 +259,15 @@ class Visual:
                 linha += self.pensando()
             return linha
 
-        # (b0) Chamada de ferramenta do agente ('-> ler_arquivo x') e diff: ficam fora do Markdown.
+        # (b0) Linha de pensamento ('○ Thought ...', '○ Pensando ...' ou '-> pensamento ...')
+        if eh_pensamento(pedaco):
+            antes = self._esvaziar()
+            prefixo = self._prefixo_apagar()
+            linha = formatar_pensamento(pedaco, self.cor)
+            self.inicio_de_linha = True
+            return prefixo + antes + linha
+
+        # (b1) Chamada de ferramenta do agente ('-> ler_arquivo x') e diff: ficam fora do Markdown.
         if eh_chamada_de_ferramenta(pedaco):
             antes = self._esvaziar()
             prefixo = self._prefixo_apagar()
@@ -327,3 +339,61 @@ class Visual:
     def aprovacao(self, descricao: str) -> str:
         '''Devolve a linha de pedido de aprovacao em amarelo.'''
         return self._aviso('? ' + descricao)
+
+    def formatar_historico_turno(self, conteudo: str) -> str:
+        '''Formata uma mensagem do assistente para exibicao no historico / --continue.
+
+        Detecta e colapsa pensamentos e acoes intermediarias repetitivas no padrao Antigravity CLI:
+        ○ Thought (...)
+        … N more actions (X reads, Y edits, Z commands) …
+        ● <resposta final em Markdown>
+        '''
+        if not conteudo:
+            return ''
+
+        idx_header = None
+        for m in re.finditer(r'\n(?=#{1,3}\s)', conteudo):
+            trecho_antes = conteudo[:m.start()].strip()
+            if any(trecho_antes.startswith(p) for p in ('Vou ', 'Agora ', 'Primeiro ', 'Olhando ', 'Tudo ', 'Todas ', 'A única ', 'As duas ')) or 'trecho' in trecho_antes:
+                idx_header = m
+                break
+
+        if idx_header is not None:
+            pensamento_raw = conteudo[:idx_header.start()].strip()
+            resposta = conteudo[idx_header.start() + 1:].strip()
+        else:
+            linhas = conteudo.splitlines()
+            pensamento_linhas = [l for l in linhas if l.startswith('Vou ') or 'trecho' in l]
+            if len(pensamento_linhas) > 2:
+                pensamento_raw = '\n'.join(pensamento_linhas)
+                resposta = '\n'.join([l for l in linhas if l not in pensamento_linhas]).strip()
+            else:
+                pensamento_raw = ''
+                resposta = conteudo.strip()
+
+        partes_saida = []
+
+        if pensamento_raw:
+            frases = [f.strip() for f in re.split(r'[\.\n]+', pensamento_raw) if f.strip()]
+            primeira = frases[0] if frases else 'Analisando contexto'
+            if len(primeira) > 90:
+                primeira = primeira[:90] + '…'
+            partes_saida.append(formatar_pensamento(f'○ Thought ({primeira})', self.cor))
+
+            total_resto = len(frases) - 1
+            if total_resto > 2:
+                reads = sum(1 for f in frases[1:] if any(w in f.lower() for w in ['ler', 'ver', 'trecho', 'procurar', 'checar']))
+                edits = sum(1 for f in frases[1:] if any(w in f.lower() for w in ['inserir', 'editar', 'adicionar', 'mudar', 'overlay', 'salvar']))
+                cmds = sum(1 for f in frases[1:] if any(w in f.lower() for w in ['build', 'pytest', 'rodar', 'comando', 'node', 'teste']))
+                partes_saida.append(formatar_colapso_acoes(total_resto, reads, edits, cmds, cor=self.cor))
+
+        resposta = re.sub(r'\n?\[limite de \d+ passos atingido[^\n\]]*\]', '', resposta).strip()
+
+        if resposta:
+            self.novo_turno()
+            texto_resp = resposta if resposta.endswith('\n') else (resposta + '\n')
+            saida_md = self.estilizar(texto_resp)
+            resto_md = self._esvaziar()
+            partes_saida.append(saida_md + resto_md)
+
+        return ''.join(partes_saida)

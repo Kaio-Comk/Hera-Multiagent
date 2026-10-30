@@ -212,3 +212,32 @@ def test_tick_so_com_cor_e_indicador_visivel():
     v.marcar_pensando()
     assert v.tick_pensando().startswith('\r\x1b[2K')
     assert Visual(cor=False).tick_pensando() == ''
+
+
+def test_formatar_historico_turno_simples():
+    v = Visual(cor=False)
+    saida = v.formatar_historico_turno('Resposta simples')
+    assert 'Resposta simples' in saida
+
+
+def test_formatar_historico_turno_com_pensamento_e_acoes():
+    v = Visual(cor=False)
+    texto = (
+        'Vou retomar de onde parei. Vou ler os arquivos de configuracao. '
+        'Vou verificar os testes. Agora vou compilar o bundle.\n'
+        '## Resumo\n'
+        'Tudo pronto e funcionando.'
+    )
+    saida = v.formatar_historico_turno(texto)
+    assert '○ Thought (Vou retomar de onde parei)' in saida
+    assert 'more actions' in saida
+    assert '## Resumo' in saida
+    assert 'Tudo pronto e funcionando.' in saida
+
+
+def test_formatar_historico_turno_remove_aviso_limite_passos():
+    v = Visual(cor=False)
+    texto = 'Feito com sucesso.\n[limite de 40 passos atingido; escreva "continue" para seguir]'
+    saida = v.formatar_historico_turno(texto)
+    assert 'Feito com sucesso.' in saida
+    assert 'limite de 40 passos atingido' not in saida

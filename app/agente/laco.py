@@ -223,11 +223,8 @@ class Agente:
             async for ev in self.conversar(msgs, FERRAMENTAS):
                 if ev.tipo == 'texto' and ev.texto:
                     texto_passo += ev.texto
-                    self.escrever(ev.texto)
                 elif ev.tipo == 'chamada' and ev.chamada is not None:
                     chamadas.append(ev.chamada)
-
-            texto_turno += texto_passo
 
             if not chamadas:
                 if not tentou_texto:
@@ -238,6 +235,9 @@ class Agente:
                         chamadas = [lida]
 
             if not chamadas:
+                if texto_passo:
+                    self.escrever(texto_passo)
+                    texto_turno += texto_passo
                 if not texto_turno and houve_ferramenta:
                     final_msgs = list(msgs) + [
                         {'role': 'user', 'content': 'Resuma o que foi feito e o resultado.'}
@@ -249,6 +249,12 @@ class Agente:
                 return texto_turno
 
             houve_ferramenta = True
+            if texto_passo.strip():
+                linha_pensamento = texto_passo.strip().replace('\r', ' ').replace('\n', ' ')
+                if len(linha_pensamento) > 100:
+                    linha_pensamento = linha_pensamento[:100] + '…'
+                self.escrever(f'○ Thought ({linha_pensamento})\n')
+
             msgs.append(mensagem_assistente(texto_passo, chamadas))
 
             chamadas_validas = chamadas[: self.max_chamadas_por_passo]

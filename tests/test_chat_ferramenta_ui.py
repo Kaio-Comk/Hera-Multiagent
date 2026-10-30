@@ -5,7 +5,10 @@ import pytest
 
 from cli.chat_ferramenta_ui import (
     eh_chamada_de_ferramenta,
+    eh_pensamento,
     formatar_chamada_de_ferramenta,
+    formatar_colapso_acoes,
+    formatar_pensamento,
     parece_diff,
     colorir_diff,
 )
@@ -41,19 +44,31 @@ def test_nao_eh_chamada_vazia():
 
 def test_formatar_sem_cor():
     saida = formatar_chamada_de_ferramenta('-> ler_arquivo C:\\x\\a.py', cor=False)
-    assert saida == '  ↳ ler_arquivo C:\\x\\a.py\n'
+    assert saida == '● Explored 1 file (C:\\x\\a.py)\n'
 
 
 def test_formatar_com_cor():
     saida = formatar_chamada_de_ferramenta('-> ler_arquivo C:\\x\\a.py', cor=True)
-    assert saida.startswith('  ↳ \x1b[38;5;37mler_arquivo\x1b[0m ')
-    assert '\x1b[2mC:\\x\\a.py\x1b[0m' in saida
+    assert '\x1b[38;5;37m● \x1b[0m' in saida
+    assert '\x1b[1mExplored 1 file\x1b[0m' in saida
+    assert '\x1b[2m(C:\\x\\a.py)\x1b[0m' in saida
     assert saida.endswith('\n')
 
 
 def test_formatar_sem_cor_sem_ansi():
     saida = formatar_chamada_de_ferramenta('-> ler_arquivo x', cor=False)
     assert '\x1b' not in saida
+    assert saida == '● Explored 1 file (x)\n'
+
+
+def test_formatar_executar_comando():
+    saida = formatar_chamada_de_ferramenta('-> executar_comando pytest -v', cor=False)
+    assert saida == '● Ran (pytest -v)\n'
+
+
+def test_formatar_editar_arquivo():
+    saida = formatar_chamada_de_ferramenta('-> editar_arquivo fix.py', cor=False)
+    assert saida == '● Edited 1 file (fix.py)\n'
 
 
 def test_formatar_argumentos_longos():
@@ -61,7 +76,6 @@ def test_formatar_argumentos_longos():
     saida = formatar_chamada_de_ferramenta('-> ferramenta ' + args, cor=False)
     assert '…' in saida
     assert saida.endswith('\n')
-    # 100 chars + reticencias
     assert 'a' * 100 + '…' in saida
 
 
@@ -74,7 +88,26 @@ def test_formatar_argumentos_com_quebra_de_linha():
 
 def test_formatar_sem_argumentos():
     saida = formatar_chamada_de_ferramenta('-> listar', cor=False)
-    assert saida == '  ↳ listar \n'
+    assert saida == '● Listar\n'
+
+
+def test_eh_pensamento():
+    assert eh_pensamento('○ Thought (analisando)') is True
+    assert eh_pensamento('-> pensamento pensando...') is True
+    assert eh_pensamento('texto normal') is False
+
+
+def test_formatar_pensamento():
+    saida = formatar_pensamento('○ Thought (pensando algo)', cor=False)
+    assert saida == '○ Thought (pensando algo)\n'
+
+    saida_dur = formatar_pensamento('analisando', cor=False, duracao='3m 2s')
+    assert saida_dur == '○ Thought for 3m 2s (analisando)\n'
+
+
+def test_formatar_colapso_acoes():
+    saida = formatar_colapso_acoes(57, leituras=17, edicoes=7, comandos=33, falhas=6, cor=False)
+    assert saida == '… 57 more actions (17 reads, 7 edits, 33 commands: 6 failed) …\n' 
 
 
 # --- parece_diff ---

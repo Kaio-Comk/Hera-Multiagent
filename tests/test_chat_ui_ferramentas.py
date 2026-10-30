@@ -15,7 +15,7 @@ def test_chamadas_de_ferramenta_ficam_uma_por_linha():
     saida = v.estilizar('Vou procurar o projeto.')
     saida += v.estilizar('-> listar_pasta C:\\x')
     saida += v.estilizar('-> ler_arquivo C:\\x\\a.py')
-    assert saida == '● Vou procurar o projeto.\n  ↳ listar_pasta C:\\x\n  ↳ ler_arquivo C:\\x\\a.py\n'
+    assert saida == '● Vou procurar o projeto.\n● Explored (C:\\x)\n● Explored 1 file (C:\\x\\a.py)\n'
 
 
 def test_texto_depois_da_ferramenta_continua_sem_novo_marcador():
