@@ -483,7 +483,14 @@ class Comandos:
                 sessao.mensagens[:] = mensagens
                 self.estado.conversa_id = cid
                 titulo = conv.get('title') or conv.get('titulo') or ''
-                escrever(f'Retomando: {titulo} ({len(mensagens)} mensagens)\n')
+                escrever(f'Retomando: {titulo} ({len(mensagens)} mensagens)\n\n')
+                for m in mensagens:
+                    papel = m.get('role')
+                    conteudo = m.get('content') or ''
+                    if papel == 'user':
+                        escrever(f'❯ {conteudo.strip()}\n')
+                    elif papel == 'assistant':
+                        escrever(f'{conteudo}\n\n')
                 return None
 
             if cmd == '/listar':

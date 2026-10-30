@@ -1260,3 +1260,29 @@ async def test_rodar_liga_o_juiz_de_faixa_ao_maestro() -> None:
     assert maestro.juiz is not None
     assert await maestro.juiz('crie um sistema de filas') == 'leve'
     assert recebidos == [PROMPT_FAIXA + 'crie um sistema de filas']
+
+
+async def test_principal_imprime_mensagens_iniciais(capsys, monkeypatch) -> None:
+    from cli import chat_repl
+
+    async def rodar_simulado(*a, **kw):
+        return kw.get('sessao')
+
+    monkeypatch.setattr(chat_repl, 'rodar', rodar_simulado)
+    monkeypatch.setattr('prompt_toolkit.PromptSession', lambda *a, **k: object())
+
+    mensagens = [
+        {'role': 'user', 'content': 'pergunta anterior'},
+        {'role': 'assistant', 'content': 'resposta anterior'},
+    ]
+
+    await principal(
+        'http://127.0.0.1:8000',
+        'tok',
+        'default',
+        mensagens_iniciais=mensagens,
+    )
+
+    saida = capsys.readouterr().out
+    assert 'pergunta anterior' in saida
+    assert 'resposta anterior' in saida

@@ -813,6 +813,19 @@ async def principal(
     sessao = Sessao(modelo, sistema=sistema, agente=agente)
     if mensagens_iniciais:
         sessao.mensagens = list(mensagens_iniciais)
+        for m in mensagens_iniciais:
+            papel = m.get('role')
+            conteudo = m.get('content') or ''
+            if papel == 'user':
+                print(visual.eco(conteudo.strip()), end='', flush=True)
+            elif papel == 'assistant':
+                visual.novo_turno()
+                texto = conteudo if conteudo.endswith('\n') else (conteudo + '\n')
+                saida = visual.estilizar(texto)
+                resto = visual._esvaziar()
+                print(saida + resto, end='', flush=True)
+                print('\n', end='', flush=True)
+        visual.novo_turno()
 
     resumir_fn = resumir or criar_resumidor(cliente, maestro)
 
