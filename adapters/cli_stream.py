@@ -154,8 +154,9 @@ class AntigravityStream:
 def _kill_tree(proc) -> None:
     try:
         if os.name == "nt" and proc.pid:
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
             subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], stdout=subprocess.DEVNULL,  # nosec B603 B607
-                           stderr=subprocess.DEVNULL, timeout=5, check=False)
+                           stderr=subprocess.DEVNULL, timeout=5, check=False, creationflags=flags)
         else:
             proc.kill()
     except Exception:       # noqa: BLE001 - encerrar nunca pode levantar
@@ -174,9 +175,11 @@ async def run_streaming(cmd: List[str], cwd: Optional[str], timeout: float, pars
                         idle_limit: float = IDLE_LIMIT_SECONDS, stdin_text: Optional[str] = None) -> Tuple[int, str, str]:
     """Executa `cmd`, alimenta `parser` linha a linha e devolve (codigo, stdout_bruto, stderr). Levanta TimeoutError.
     `stdin_text`: texto enviado pela entrada padrao (prompts grandes demais para a linha de comando)."""
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
     proc = await asyncio.create_subprocess_exec(*cmd, cwd=cwd, stdout=asyncio.subprocess.PIPE,
                                                 stderr=asyncio.subprocess.PIPE, limit=STREAM_LIMIT,
-                                                stdin=asyncio.subprocess.PIPE if stdin_text is not None else None)
+                                                stdin=asyncio.subprocess.PIPE if stdin_text is not None else None,
+                                                creationflags=flags)
     if on_proc:
         on_proc(proc)
     if stdin_text is not None and proc.stdin is not None:

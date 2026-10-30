@@ -572,8 +572,9 @@ def _gpu_vram_mb() -> Optional[int]:
         return _GPU_CACHE["mb"]
     mb = None
     try:
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
         proc = subprocess.run(["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],  # nosec B603 B607
-                              capture_output=True, text=True, timeout=3.0)
+                              capture_output=True, text=True, timeout=3.0, creationflags=flags)
         if proc.returncode == 0 and proc.stdout.strip():
             mb = int(float(proc.stdout.strip().splitlines()[0]))
     except Exception:       # noqa: BLE001
@@ -1059,7 +1060,8 @@ async def get_hardware():
             "--query-gpu=name,memory.used,memory.total,utilization.gpu,temperature.gpu",
             "--format=csv,noheader,nounits"
         ]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=2.0)
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=2.0, creationflags=flags)
         if proc.returncode == 0 and proc.stdout.strip():
             parts = [p.strip() for p in proc.stdout.strip().split(",")]
             if len(parts) >= 5:
@@ -2516,7 +2518,8 @@ async def _run_claude(args: List[str], timeout: float) -> Tuple[int, str]:
     binary = _claude_binary()
     if not binary:
         return 127, ""
-    proc = await asyncio.create_subprocess_exec(binary, *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
+    proc = await asyncio.create_subprocess_exec(binary, *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, creationflags=flags)
     try:
         out, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except asyncio.TimeoutError:

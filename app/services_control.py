@@ -8,6 +8,8 @@ Só existe esta lista curta de serviços e os comandos são FIXOS (nada vem da r
 """
 from __future__ import annotations
 
+import sys
+
 import os
 import shutil
 import socket

@@ -175,7 +175,7 @@ def _iniciar_padrao(comando: list[str], cwd: Path) -> Any:
 
         kwargs['creationflags'] = (
 
-            subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+            getattr(subprocess, 'CREATE_NO_WINDOW', 0) | subprocess.CREATE_NEW_PROCESS_GROUP
 
         )
 

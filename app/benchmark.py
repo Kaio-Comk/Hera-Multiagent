@@ -1,3 +1,4 @@
+import sys
 import time
 import httpx
 import shutil
@@ -32,11 +33,13 @@ class LocalBenchmark:
             return {}
 
         try:
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
             res = subprocess.run(
                 ["nvidia-smi", "--query-gpu=name,memory.total,memory.used,memory.free", "--format=csv,noheader,nounits"],
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=5,
+                creationflags=flags
             )
             if res.returncode == 0 and res.stdout.strip():
                 parts = [p.strip() for p in res.stdout.strip().split(",")]

@@ -1,3 +1,4 @@
+import sys
 import os
 import re
 import uuid
@@ -116,6 +117,7 @@ class GitManager:
             custom_env.update(env)
 
         try:
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
             res = subprocess.run(
                 full_cmd,
                 cwd=str(cwd_path),
@@ -123,7 +125,8 @@ class GitManager:
                 text=True,
                 check=check,
                 shell=False,
-                env=custom_env
+                env=custom_env,
+                creationflags=flags
             )
             return res
         except subprocess.CalledProcessError as e:

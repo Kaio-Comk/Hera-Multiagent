@@ -313,6 +313,9 @@ def imagem_da_area_de_transferencia(
     os.close(fd)
     caminho = Path(caminho_str)
     try:
+        kwargs_exec = {'timeout': 10, 'capture_output': True}
+        if sys.platform == 'win32':
+            kwargs_exec['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
         resultado = executar(
             [
                 'powershell',
@@ -322,8 +325,7 @@ def imagem_da_area_de_transferencia(
                 # no powershell -Command os argumentos finais nao viram $args: o destino vai dentro do script
                 "$destino = '" + caminho_str.replace("'", "''") + "';" + _SCRIPT_POWERSHELL,
             ],
-            timeout=10,
-            capture_output=True,
+            **kwargs_exec,
         )
     except Exception:
         try:

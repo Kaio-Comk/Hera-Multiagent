@@ -1,3 +1,4 @@
+import subprocess
 import os
 import re
 import shutil
@@ -39,12 +40,14 @@ class WorktreeManager:
 
     async def _run_git(self, args: list, cwd: Optional[str] = None, timeout: float = 30.0) -> Tuple[int, str, str]:
         working_dir = cwd or self.repo_root
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
         proc = await asyncio.create_subprocess_exec(
             "git",
             *args,
             cwd=working_dir,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
+            creationflags=flags
         )
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)

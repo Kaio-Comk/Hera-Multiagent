@@ -1,3 +1,5 @@
+import subprocess
+import sys
 import os
 import shutil
 import time
@@ -52,11 +54,13 @@ class ClaudeCodeAdapter:
     async def health_check(self) -> HealthStatus:
         """Verifica se o binário do Claude Code está acessível e obtém sua versão."""
         try:
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
             proc = await asyncio.create_subprocess_exec(
                 self.binary_path,
                 "--version",
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
+                creationflags=flags
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10.0)
             if proc.returncode == 0:

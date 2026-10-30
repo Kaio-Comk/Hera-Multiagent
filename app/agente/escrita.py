@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+
 import difflib
 import hashlib
 import os
@@ -113,6 +115,7 @@ def _env_limpo() -> dict[str, str]:
 
 def _executar_padrao(args: tuple[str, ...], cwd: Path, timeout: int) -> tuple[int, str]:
     try:
+        flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if sys.platform == 'win32' else 0
         proc = subprocess.run(
             list(args),
             cwd=str(cwd),
@@ -123,6 +126,7 @@ def _executar_padrao(args: tuple[str, ...], cwd: Path, timeout: int) -> tuple[in
             errors='replace',
             shell=False,
             env=_env_limpo(),
+            creationflags=flags,
         )
         saida = (proc.stdout or '') + (proc.stderr or '')
         return proc.returncode, saida

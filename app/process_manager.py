@@ -89,12 +89,14 @@ class ProcessManager:
         success = False
         try:
             if sys.platform == "win32":
+                flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
                 subprocess.run(
                     ["taskkill", "/F", "/T", "/PID", str(pid)],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     check=False,
                     timeout=timeout_seconds,
+                    creationflags=flags,
                 )
             else:
                 os.kill(pid, 15)  # SIGTERM

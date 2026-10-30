@@ -9,6 +9,9 @@ comandos). Por isso o Hera resolve o ponto de entrada real (`node <script>.js`) 
 """
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import asyncio
 import os
 import re
@@ -94,7 +97,8 @@ class HeadlessCliAdapter:
     # ── saúde ────────────────────────────────────────────────────────────────
     async def _run_quick(self, args: List[str], timeout: float = 20.0):
         base = self.launcher()
-        proc = await asyncio.create_subprocess_exec(*base, *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
+        proc = await asyncio.create_subprocess_exec(*base, *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, creationflags=flags)
         out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         return proc.returncode, (out + b"\n" + err).decode("utf-8", errors="replace").strip()
 

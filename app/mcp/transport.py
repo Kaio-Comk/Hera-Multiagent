@@ -36,8 +36,9 @@ class McpRemoteError(McpTransportError):
 
 def _kill_tree_sync(pid: int) -> None:
     if os.name == "nt":
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
         subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL, timeout=10, check=False)
+                       stderr=subprocess.DEVNULL, timeout=10, check=False, creationflags=flags)
 
 
 class StdioTransport:

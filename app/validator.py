@@ -62,11 +62,13 @@ class TaskValidator:
         """Encerra com segurança a árvore completa de processos no Windows."""
         try:
             if os.name == 'nt' and proc.pid:
+                flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
                 subprocess.run(
                     ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
-                    timeout=5
+                    timeout=5,
+                    creationflags=flags
                 )
             else:
                 proc.kill()
@@ -107,12 +109,14 @@ class TaskValidator:
         # 3. Execução estruturada com shell=False
         try:
             try:
+                flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
                 proc = await asyncio.create_subprocess_exec(
                     *argv,
                     cwd=working_dir,
                     env=env,
                     stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
+                    stderr=asyncio.subprocess.PIPE,
+                    creationflags=flags
                 )
             except Exception as e:
                 return (-500, "", f"Falha ao iniciar processo de validação: {e}")
