@@ -79,7 +79,7 @@ def build_gateway_adapters(cfg: Mapping[str, Any], environ: Optional[Mapping[str
                 tier=tier,
                 timeout=float(p.get("timeout", 60.0)),
                 models=[str(m) for m in (p.get("models") or [])],
-                stream_usage=bool(p.get("stream_usage", False)),
+                stream_usage=bool(p.get("stream_usage", True)),
                 modalities=[str(m) for m in p["modalities"]] if isinstance(p.get("modalities"), list) else None,
                 extra_headers=sanitize_extra_headers(p.get("headers")),
             ))

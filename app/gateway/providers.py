@@ -281,7 +281,7 @@ class CloudOpenAIGatewayAdapter(BaseGatewayAdapter):
         timeout: float = 60.0,
         key_manager: Optional[KeyManager] = None,
         models: Optional[List[str]] = None,
-        stream_usage: bool = False,
+        stream_usage: bool = True,
         modalities: Optional[List[str]] = None,
         extra_headers: Optional[Dict[str, str]] = None,
     ):

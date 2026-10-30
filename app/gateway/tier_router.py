@@ -141,6 +141,8 @@ class TierRouter:
 
     def price(self, adapter_name: str, model: str, prompt_tokens: Optional[int], completion_tokens: Optional[int]) -> Optional[float]:
         """Custo estimado em US$ (preco que VOCE cadastrou). Local e camada gratis custam 0; sem preco: None."""
+        if prompt_tokens is None and completion_tokens is None:
+            return None
         entry = self.pricing.get(f"{adapter_name}/{model}") or self.pricing.get(adapter_name)
         if entry:
             return round(((prompt_tokens or 0) * float(entry.get("in", 0)) + (completion_tokens or 0) * float(entry.get("out", 0))) / 1_000_000, 6)
@@ -550,6 +552,10 @@ class TierRouter:
             raise
 
         rec.provider, rec.model, rec.native = handle.provider, handle.model, handle.native
+        ctx = dict(ctx or {})
+        if "estimated_prompt_tokens" not in ctx and hasattr(request, "messages"):
+            total_chars = sum(len(m.content) for m in request.messages if isinstance(getattr(m, "content", None), str))
+            ctx["estimated_prompt_tokens"] = max(1, int(total_chars / 3.5))
         return self._stream_events(handle, rec, release, ctx)
 
     async def _stream_events(self, handle, rec: StreamRecord, release, ctx: Optional[Dict[str, Any]] = None) -> AsyncIterator[str]:
@@ -644,11 +650,18 @@ class TierRouter:
             else:
                 self.guard.report_failure(rec.provider, rec.error or "")
             if self.usage is not None:
-                self.usage.record(rec.provider, rec.model, done, 200 if rec.outcome != "error" else 502, rec.prompt_tokens,
-                                  rec.completion_tokens, rec.total_ms, True, client=ctx.get("client"),
+                pt = rec.prompt_tokens
+                ct = rec.completion_tokens
+                if pt is None and ctx.get("estimated_prompt_tokens"):
+                    pt = ctx["estimated_prompt_tokens"]
+                if ct is None and rec.chars:
+                    ct = max(1, int(rec.chars / 3.5))
+                calculated_cost = self.price(rec.provider, rec.model, pt, ct) if done else None
+                self.usage.record(rec.provider, rec.model, done, 200 if rec.outcome != "error" else 502, pt,
+                                  ct, rec.total_ms, True, client=ctx.get("client"),
                                   requested_model=ctx.get("requested") or rec.model, request_id=ctx.get("rid"),
                                   error=(PrivacyGuard.sanitize_content(rec.error)[:240] if rec.error else None),
-                                  cost=self.price(rec.provider, rec.model, rec.prompt_tokens, rec.completion_tokens) if done else None)
+                                  cost=calculated_cost)
             logging.getLogger("hera.gateway").info(
                 "[stream] %s provider=%s model=%s outcome=%s ttfb_ms=%s total_ms=%s chunks=%s fallbacks=%s native=%s",
                 rec.request_id, rec.provider, rec.model, rec.outcome, rec.ttfb_ms, rec.total_ms, rec.chunks,
