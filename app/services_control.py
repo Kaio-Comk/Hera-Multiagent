@@ -131,8 +131,9 @@ class ServiceManager:
                 raise PermissionError(f"{spec['label']} foi aberto fora do Hera; feche-o pelo ícone da bandeja ou pelo terminal onde abriu.")
             return {**self.status(name), "message": f"{spec['label']} já está parado."}
         if sys.platform == "win32":                       # encerra a ÁRVORE (cmd -> node -> filhos)
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
             subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],  # nosec B603 B607
-                           capture_output=True, timeout=20, check=False)
+                           capture_output=True, timeout=20, check=False, creationflags=flags)
         else:
             proc.terminate()
         try:

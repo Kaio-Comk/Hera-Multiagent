@@ -59,7 +59,8 @@ def build_command() -> list[str]:
 
 def main() -> int:
     try:
-        return subprocess.call(build_command(), env=build_env())
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
+        return subprocess.call(build_command(), env=build_env(), creationflags=flags)
     except KeyboardInterrupt:
         return 130
 
