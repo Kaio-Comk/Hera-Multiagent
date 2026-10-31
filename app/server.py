@@ -363,6 +363,31 @@ autofix = AutoFixEngine(
     console=CONSOLE,
 )
 
+# Ponte Telegram e Auto-Cura de Bugs (NetHub BR e ES)
+from app.telegram import AutoFixService, CustomerSupportService, init_telegram_services, telegram_router
+
+async def _telegram_llm_caller(mensagens: list[dict]) -> str:
+    try:
+        msgs = [ChatMessage(role=m.get("role", "user"), content=m.get("content", "")) for m in mensagens]
+        req = ChatCompletionRequest(
+            model="hera_router",
+            messages=msgs,
+            stream=False,
+            temperature=0.2,
+            max_tokens=250,
+        )
+        resp = await _gateway_call(req, label="hera (suporte telegram)")
+        if resp.choices:
+            return resp.choices[0].message.content or ""
+    except Exception as _e:
+        task_log.warning("Falha ao responder duvida via gateway Hera: %s", _e)
+    return ""
+
+telegram_autofix = AutoFixService()
+telegram_support = CustomerSupportService(autofix_service=telegram_autofix, llm_caller=_telegram_llm_caller)
+init_telegram_services(telegram_autofix, telegram_support)
+app.include_router(telegram_router)
+
 # Schemas Pydantic
 # Limites de entrada (fase 3): a API nao aceita corpo ilimitado nem comando gigante.
 ShortStr = Annotated[str, StringConstraints(max_length=300)]

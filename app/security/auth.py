@@ -35,8 +35,17 @@ TOKEN_ENV = "HERA_API_KEY"
 ALLOWED_HOSTS_ENV = "HERA_ALLOWED_HOSTS"
 _MIN_TOKEN_LEN = 24
 
-DEFAULT_PUBLIC_PATHS = frozenset({"/", "/healthz", "/favicon.ico", "/api/oauth/callback"})   # callback: valida o `state`
-DEFAULT_PUBLIC_PREFIXES = ("/static/",)        # CSS, fontes e bibliotecas da UI: arquivos publicos, sem dados
+DEFAULT_PUBLIC_PATHS = frozenset({
+    "/",
+    "/healthz",
+    "/favicon.ico",
+    "/api/oauth/callback",
+    "/api/telegram/customer-message",
+    "/api/telegram/system-error",
+    "/api/telegram/auto-heal",
+    "/api/telegram/status",
+})
+DEFAULT_PUBLIC_PREFIXES = ("/static/", "/api/telegram/")        # CSS, fontes e bibliotecas da UI, e webhook local do Telegram
 DEFAULT_MAX_BODY_BYTES = 1 * 1024 * 1024                       # 1 MiB para a maioria das rotas
 DEFAULT_BODY_LIMITS: Dict[str, int] = {
     "/v1/chat/completions": 8 * 1024 * 1024,      # conversas longas
