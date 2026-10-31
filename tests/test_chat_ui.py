@@ -241,3 +241,16 @@ def test_formatar_historico_turno_remove_aviso_limite_passos():
     saida = v.formatar_historico_turno(texto)
     assert 'Feito com sucesso.' in saida
     assert 'limite de 40 passos atingido' not in saida
+
+
+def test_pensamento_durante_espera_mantem_indicador():
+    v = Visual(cor=True, largura=80)
+    v.novo_turno()
+    v.marcar_pensando()
+    saida = v.estilizar("○ Thought for 4s (Analisando arquitetura)\n")
+    assert "Thought for 4s" in saida
+    assert saida.endswith("Pensando…\x1b[0m")
+    assert v.pensando_visivel is True
+    saida_resp = v.estilizar("Resposta final\n")
+    assert "Pensando" not in saida_resp
+    assert v.pensando_visivel is False

@@ -265,6 +265,10 @@ class Visual:
             prefixo = self._prefixo_apagar()
             linha = formatar_pensamento(pedaco, self.cor)
             self.inicio_de_linha = True
+            if self.cor:
+                self.pensando_visivel = True
+                self._pensando_desde = time.monotonic()
+                linha += self.pensando()
             return prefixo + antes + linha
 
         # (b1) Chamada de ferramenta do agente ('-> ler_arquivo x') e diff: ficam fora do Markdown.
