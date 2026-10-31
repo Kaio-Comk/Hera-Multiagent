@@ -67,6 +67,13 @@ class AutoFixService:
             "recent_fixes": recentes,
         }
 
+    @staticmethod
+    def _run_async_in_thread(coro_fn, *args):
+        try:
+            asyncio.run(coro_fn(*args))
+        except Exception as exc:
+            log.exception("[autofix_thread] Erro na execucao em thread: %s", exc)
+
     # -------------------------------------------------------------
     # 1. AUTO-FIX DE BUG DE CLIENTE
     # -------------------------------------------------------------
@@ -91,7 +98,7 @@ class AutoFixService:
             "criado_em": time.time(),
         }
         self._tarefas[task_id] = info
-        asyncio.create_task(self._executar_autofix_cliente_background(task_id, info))
+        asyncio.create_task(asyncio.to_thread(self._run_async_in_thread, self._executar_autofix_cliente_background, task_id, info))
         return task_id
 
     async def _executar_autofix_cliente_background(self, task_id: str, info: Dict[str, Any]) -> None:
@@ -201,7 +208,7 @@ class AutoFixService:
             "criado_em": agora,
         }
         self._tarefas[task_id] = info
-        asyncio.create_task(self._executar_autoheal_sistema_background(task_id, info))
+        asyncio.create_task(asyncio.to_thread(self._run_async_in_thread, self._executar_autoheal_sistema_background, task_id, info))
         return "started", f"Auto-cura iniciada com sucesso (Task: {task_id})"
 
     async def _executar_autoheal_sistema_background(self, task_id: str, info: Dict[str, Any]) -> None:

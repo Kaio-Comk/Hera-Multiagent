@@ -106,8 +106,9 @@ async def test_customer_support_bug_dispara_autofix():
 
 
 @pytest.mark.asyncio
-async def test_autofix_deduplicacao_e_ruido_transitorio():
+async def test_autofix_deduplicacao_e_ruido_transitorio(monkeypatch):
     autofix = AutoFixService()
+    monkeypatch.setattr(autofix, "_executar_autoheal_sistema_background", AsyncMock())
 
     # 1. Erro transitorio deve ser descartado
     alert_transitorio = SystemErrorAlert(
