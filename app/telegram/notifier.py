@@ -64,6 +64,9 @@ def carregar_credenciais(edicao: str = "br") -> tuple[str, str]:
 
 def enviar_telegram_kaio(texto: str, edicao: str = "br", titulo: str = "") -> bool:
     """Envia notificacao ao Kaio (ADMIN_ID) pelo Bot do Telegram."""
+    if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("HERA_ENV") == "test":
+        log.debug("[notifier] Ambiente de teste detectado: envio ao Telegram suprimido.")
+        return True
     token, admin_id = carregar_credenciais(edicao)
     if not token or not admin_id:
         log.warning("[notifier] Sem BOT_TOKEN ou ADMIN_ID para alertar Kaio.")
@@ -95,6 +98,9 @@ def enviar_telegram_kaio(texto: str, edicao: str = "br", titulo: str = "") -> bo
 
 def notificar_cliente(chat_id: int, texto: str, porta: int = 8088) -> bool:
     """Notifica o cliente diretamente na conversa de suporte via webhook local do ia_suporte.py."""
+    if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("HERA_ENV") == "test":
+        log.debug("[notifier] Ambiente de teste detectado: notificacao de cliente suprimida.")
+        return True
     texto_limpo = limpar_estilo(texto)
     if not texto_limpo:
         return False

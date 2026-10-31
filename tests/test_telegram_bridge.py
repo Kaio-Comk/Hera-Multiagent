@@ -17,6 +17,16 @@ from app.telegram.schemas import (
 from app.server import app
 
 
+
+@pytest.fixture(autouse=True)
+def mock_enviar_telegram(monkeypatch):
+    mock = MagicMock(return_value=True)
+    monkeypatch.setattr("app.telegram.customer_support.enviar_telegram_kaio", mock)
+    monkeypatch.setattr("app.telegram.autofix_service.enviar_telegram_kaio", mock)
+    monkeypatch.setattr("app.telegram.notifier.enviar_telegram_kaio", mock)
+    return mock
+
+
 def test_notifier_limpar_estilo():
     # Verifica remocao estrita de emojis e travessoes soltos
     texto_com_emoji = "Ola! 🚀 Segue o link do NetHub 🔥 — aproveite!"
