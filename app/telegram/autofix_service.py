@@ -25,7 +25,7 @@ log = logging.getLogger("hera.telegram.autofix")
 
 NETHUB_BR_DIR = Path(os.environ.get("NETHUB_BR_PATH", r"B:\Projetos\NetHub\NetHub BR"))
 NETHUB_ES_DIR = Path(os.environ.get("NETHUB_ES_PATH", r"B:\Projetos\NetHub\NetHub ES"))
-VAULT_NETHUB = Path(os.environ.get("NETHUB_VAULT", r"C:\Users\Kaio Lima\Documents\Obsidian Vault")) / "NetHub"
+VAULT_NETHUB = Path(os.environ.get("NETHUB_VAULT") or (Path.home() / "Documents" / "Obsidian Vault")) / "NetHub"
 GIT_AUTHOR_NAME = "Kaio Lima"
 GIT_AUTHOR_EMAIL = "kaiocomkamil@gmail.com"
 

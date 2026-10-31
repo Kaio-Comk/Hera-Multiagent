@@ -10,7 +10,7 @@ import re
 
 log = logging.getLogger("hera.telegram.facts")
 
-DEFAULT_VAULT = Path(os.environ.get("NETHUB_VAULT") or r"C:\Users\Kaio Lima\Documents\Obsidian Vault") / "NetHub"
+DEFAULT_VAULT = Path(os.environ.get("NETHUB_VAULT") or (Path.home() / "Documents" / "Obsidian Vault")) / "NetHub"
 FACTS_REL_PATH = "03 Operação/Atendimento — Base da IA.md"
 
 
