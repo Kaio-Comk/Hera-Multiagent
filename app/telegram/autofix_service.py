@@ -283,7 +283,7 @@ class AutoFixService:
         token = self._obter_token()
         cliente = ClienteHera(self.base_url, token, modelo="hera_router")
 
-        raiz = Raiz(workspace, permitir_tudo=True)
+        raiz = Raiz(workspace, acesso_total=True)
         checkpoints_dir = workspace / ".hera_checkpoints"
         ck = Checkpoints(checkpoints_dir, workspace)
         leitura = Leitura(raiz)
