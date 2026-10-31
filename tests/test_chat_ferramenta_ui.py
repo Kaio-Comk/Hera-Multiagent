@@ -8,6 +8,7 @@ from cli.chat_ferramenta_ui import (
     eh_pensamento,
     formatar_chamada_de_ferramenta,
     formatar_colapso_acoes,
+    formatar_grupo_acoes,
     formatar_pensamento,
     parece_diff,
     colorir_diff,
@@ -178,3 +179,59 @@ def test_colorir_diff_indenta_dois_espacos():
 def test_colorir_diff_linha_contexto_sem_cor():
     saida = colorir_diff('@@ -1 +1 @@\n contexto', cor=True)
     assert '   contexto\n' in saida
+
+
+# --- formatar_grupo_acoes e estilo Antigravity ---
+
+def test_eh_chamada_bullet():
+    assert eh_chamada_de_ferramenta('● Ran 9 commands') is True
+    assert eh_chamada_de_ferramenta('● Edited 1 file (x.py)') is True
+
+
+def test_formatar_pensamento_com_duracao_na_string():
+    saida = formatar_pensamento('○ Thought for 1m 18s (analisando o contexto)', cor=False)
+    assert saida == '○ Thought for 1m 18s (analisando o contexto)\n'
+
+
+def test_formatar_grupo_acoes_comandos():
+    acoes = [{'tipo': 'executar_comando', 'alvo': 'powershell -Command ...', 'ok': True}] * 9
+    saida = formatar_grupo_acoes(acoes, cor=False)
+    assert saida == '● Ran 9 commands (powershell -Command ... ×9)\n'
+
+
+def test_formatar_grupo_acoes_comando_unico():
+    acoes = [{'tipo': 'executar_comando', 'alvo': 'git status', 'ok': True}]
+    saida = formatar_grupo_acoes(acoes, cor=False)
+    assert saida == '● Ran (git status)\n'
+
+
+def test_formatar_grupo_acoes_comandos_com_falha():
+    acoes = [
+        {'tipo': 'executar_comando', 'alvo': 'python "C:\\Projects\\app\\test.py"', 'ok': True},
+        {'tipo': 'executar_comando', 'alvo': 'powershell -Command ...', 'ok': False},
+    ]
+    saida = formatar_grupo_acoes(acoes, cor=False)
+    assert '● Ran 2 commands' in saida
+    assert ': failed)' in saida
+
+
+def test_formatar_grupo_acoes_edicao_unica():
+    acoes = [{'tipo': 'editar_arquivo', 'alvo': 'check_autofix_git.py', 'ok': True}]
+    saida = formatar_grupo_acoes(acoes, cor=False)
+    assert saida == '● Edited 1 file (check_autofix_git.py)\n'
+
+
+def test_formatar_grupo_acoes_edicao_caminho_longo_usa_basename():
+    acoes = [{'tipo': 'editar_arquivo', 'alvo': 'C:\\Projects\\app\\test_webplayer_build.py', 'ok': True}]
+    saida = formatar_grupo_acoes(acoes, cor=False)
+    assert saida == '● Edited 1 file (test_webplayer_build.py)\n'
+
+
+def test_formatar_grupo_acoes_misto_com_expand():
+    acoes = [{'tipo': 'executar_comando', 'alvo': 'python "C:\\Projects\\app\\test.py"', 'ok': True}] * 6 + [
+        {'tipo': 'delegar_tarefa', 'alvo': 'task-1', 'ok': True},
+        {'tipo': 'delegar_tarefa', 'alvo': 'task-2', 'ok': True},
+    ]
+    saida = formatar_grupo_acoes(acoes, cor=False, expansivel=True)
+    assert '● Ran 6 commands, checked 2 tasks' in saida
+    assert '(ctrl+o to expand)' in saida

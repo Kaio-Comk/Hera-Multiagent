@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 from typing import Any, AsyncIterator, Awaitable, Callable, Iterable, Sequence
 
+from cli.chat_ferramenta_ui import formatar_grupo_acoes
 from cli.chat_ferramentas import (
     ChamadaFerramenta,
     Evento,
@@ -168,6 +170,16 @@ FERRAMENTAS: list[dict[str, Any]] = [
 _NOMES_VALIDOS = [f['function']['name'] for f in FERRAMENTAS]
 
 
+
+def _formatar_duracao(segundos: float) -> str:
+    s = max(1, int(round(segundos)))
+    if s >= 60:
+        m = s // 60
+        resto = s % 60
+        return f'{m}m {resto}s' if resto else f'{m}m'
+    return f'{s}s'
+
+
 class Agente:
     def __init__(
         self,
@@ -220,6 +232,7 @@ class Agente:
             texto_passo = ''
             chamadas: list[ChamadaFerramenta] = []
 
+            t0 = time.monotonic()
             async for ev in self.conversar(msgs, FERRAMENTAS):
                 if ev.tipo == 'texto' and ev.texto:
                     texto_passo += ev.texto
@@ -240,7 +253,7 @@ class Agente:
                     texto_turno += texto_passo
                 if not texto_turno and houve_ferramenta:
                     final_msgs = list(msgs) + [
-                        {'role': 'user', 'content': 'Resuma o que foi feito e o resultado.'}
+                        {'role': 'user', 'content': 'Resuma o que foi feito com clareza no formato: Contexto / Diagnóstico, O que foi feito (com caminhos de arquivos) e Como verificar / Validação.'}
                     ]
                     async for ev in self.conversar(final_msgs, []):
                         if ev.tipo == 'texto' and ev.texto:
@@ -253,7 +266,8 @@ class Agente:
                 linha_pensamento = texto_passo.strip().replace('\r', ' ').replace('\n', ' ')
                 if len(linha_pensamento) > 100:
                     linha_pensamento = linha_pensamento[:100] + '…'
-                self.escrever(f'○ Thought ({linha_pensamento})\n')
+                dur_str = _formatar_duracao(time.monotonic() - t0)
+                self.escrever(f'○ Thought for {dur_str} ({linha_pensamento})\n')
 
             msgs.append(mensagem_assistente(texto_passo, chamadas))
 
@@ -283,8 +297,38 @@ class Agente:
                 for idx, r in zip(indices_delegar, res_delegar):
                     resultados[idx] = r
 
+            # Agrupa chamadas consecutivas por categoria para visualização limpa no padrão Antigravity
+            grupos: list[list[int]] = []
             for idx in indices_outras:
-                resultados[idx] = await self._executar(chamadas_validas[idx])
+                if not grupos:
+                    grupos.append([idx])
+                else:
+                    tipo_ant = chamadas_validas[grupos[-1][0]].nome
+                    tipo_atual = chamadas_validas[idx].nome
+                    mesmo_grupo = (
+                        (tipo_ant == tipo_atual)
+                        or (tipo_ant in ('ler_arquivo', 'listar_pasta', 'buscar') and tipo_atual in ('ler_arquivo', 'listar_pasta', 'buscar'))
+                        or (tipo_ant in ('editar_arquivo', 'escrever_arquivo') and tipo_atual in ('editar_arquivo', 'escrever_arquivo'))
+                    )
+                    if mesmo_grupo:
+                        grupos[-1].append(idx)
+                    else:
+                        grupos.append([idx])
+
+            for grp in grupos:
+                acoes_grp = []
+                for idx in grp:
+                    ch = chamadas_validas[idx]
+                    res_texto, ok = await self._executar(ch, eco=False)
+                    resultados[idx] = res_texto
+                    alvo = ''
+                    if ch.argumentos_validos:
+                        args = ch.argumentos_json
+                        alvo = args.get('comando') or args.get('caminho') or args.get('padrao') or args.get('nome') or ''
+                    acoes_grp.append({'tipo': ch.nome, 'alvo': alvo, 'ok': ok})
+                linha_formatada = formatar_grupo_acoes(acoes_grp)
+                if linha_formatada:
+                    self.escrever(linha_formatada)
 
             for i, ch in enumerate(chamadas):
                 if i >= self.max_chamadas_por_passo:
@@ -300,8 +344,10 @@ class Agente:
             {
                 'role': 'user',
                 'content': (
-                    'Voce atingiu o limite de passos deste pedido. Sem usar ferramentas, resuma em poucas linhas: '
-                    'o que descobriu (arquivos e linhas), qual e a causa provavel e o que falta para concluir.'
+                    'Voce atingiu o limite de passos deste pedido. Sem usar ferramentas, estruture a resposta em: '
+                    '1. Contexto/Diagnóstico (o que descobriu, arquivos e linhas). '
+                    '2. O que foi feito até agora. '
+                    '3. O que falta para concluir.'
                 ),
             }
         ]
@@ -373,40 +419,48 @@ class Agente:
     async def _executar_delegar(self, ch: ChamadaFerramenta) -> str:
         try:
             async with self._semaforo_delegar:
-                return await self._executar(ch)
+                res = await self._executar(ch, eco=True)
+                return res[0] if isinstance(res, tuple) else res
         except asyncio.CancelledError:
             raise
         except Exception as e:  # noqa: BLE001
             return f'erro: {type(e).__name__}: {e}'
 
-    async def _executar(self, ch: ChamadaFerramenta) -> str:
+    async def _executar(self, ch: ChamadaFerramenta, eco: bool = True) -> tuple[str, bool]:
         if not ch.argumentos_validos:
-            return 'argumentos invalidos (JSON)'
+            return 'argumentos invalidos (JSON)', False
         if ch.nome not in _NOMES_VALIDOS:
-            return 'ferramenta desconhecida. validas: ' + ', '.join(_NOMES_VALIDOS)
+            return 'ferramenta desconhecida. validas: ' + ', '.join(_NOMES_VALIDOS), False
 
         args = ch.argumentos_json
         try:
             if ch.nome == 'ler_arquivo':
-                self.escrever(f'-> ler_arquivo {args.get("caminho", "")}')
+                if eco:
+                    self.escrever(f'-> ler_arquivo {args.get("caminho", "")}')
                 r = self.leitura.ler_arquivo(
                     args['caminho'], inicio=args.get('inicio', 1), fim=args.get('fim')
                 )
-                return r.texto
+                ok = not r.texto.startswith('erro')
+                return r.texto, ok
             if ch.nome == 'listar_pasta':
-                self.escrever(f'-> listar_pasta {args.get("caminho", ".")}')
+                if eco:
+                    self.escrever(f'-> listar_pasta {args.get("caminho", ".")}')
                 r = self.leitura.listar_pasta(args.get('caminho', '.'))
-                return r.texto
+                ok = not r.texto.startswith('erro')
+                return r.texto, ok
             if ch.nome == 'buscar':
-                self.escrever(f'-> buscar {args.get("padrao", "")}')
+                if eco:
+                    self.escrever(f'-> buscar {args.get("padrao", "")}')
                 r = self.leitura.buscar(
                     args['padrao'],
                     caminho=args.get('caminho', '.'),
                     glob=args.get('glob', '*'),
                 )
-                return r.texto
+                ok = not r.texto.startswith('erro')
+                return r.texto, ok
             if ch.nome == 'editar_arquivo':
-                self.escrever(f'-> editar_arquivo {args.get("caminho", "")}')
+                if eco:
+                    self.escrever(f'-> editar_arquivo {args.get("caminho", "")}')
                 r = self.escrita.propor_edicao(
                     args['caminho'],
                     args['antigo'],
@@ -414,45 +468,60 @@ class Agente:
                     todas=bool(args.get('todas', False)),
                 )
                 if not r.ok:
-                    return r.texto
-                return await self._confirmar()
+                    return r.texto, False
+                res_txt = await self._confirmar(eco=eco)
+                ok = res_txt.startswith('aplicado:')
+                return res_txt, ok
             if ch.nome == 'escrever_arquivo':
-                self.escrever(f'-> escrever_arquivo {args.get("caminho", "")}')
+                if eco:
+                    self.escrever(f'-> escrever_arquivo {args.get("caminho", "")}')
                 r = self.escrita.propor_escrita(args['caminho'], args['conteudo'])
                 if not r.ok:
-                    return r.texto
-                return await self._confirmar()
+                    return r.texto, False
+                res_txt = await self._confirmar(eco=eco)
+                ok = res_txt.startswith('aplicado:')
+                return res_txt, ok
             if ch.nome == 'executar_comando':
-                self.escrever(f'-> executar_comando {args.get("comando", "")}')
+                if eco:
+                    self.escrever(f'-> executar_comando {args.get("comando", "")}')
                 r = self.escrita.propor_comando(
                     args['comando'], timeout=int(args.get('timeout', 120))
                 )
                 if not r.ok:
-                    return r.texto
-                return await self._confirmar()
+                    return r.texto, False
+                res_txt = await self._confirmar(eco=eco)
+                ok = not res_txt.startswith('erro') and not (res_txt.startswith('codigo ') and not res_txt.startswith('codigo 0\n'))
+                return res_txt, ok
             if ch.nome == 'usar_skill':
                 nome = str(args.get('nome', '')).strip()
-                self.escrever(f'-> usar_skill {nome}')
-                return self._usar_skill(nome)
+                if eco:
+                    self.escrever(f'-> usar_skill {nome}')
+                res_txt = self._usar_skill(nome)
+                ok = not res_txt.startswith('skill desconhecida') and not res_txt.startswith('erro')
+                return res_txt, ok
             if ch.nome == 'delegar_tarefa':
                 faixa = str(args.get('faixa') or 'leve')
                 tarefa = str(args.get('tarefa') or '')
                 self.escrever(f'-> delegar_tarefa [{faixa}] {tarefa[:60]}')
                 if self.delegar is None:
-                    return 'sub-agentes indisponiveis'
+                    return 'sub-agentes indisponiveis', False
                 res = await self.delegar(tarefa, faixa)
-                return str(res)[:4000]
+                txt = str(res)[:4000]
+                ok = not txt.startswith('erro')
+                return txt, ok
         except asyncio.CancelledError:
             raise
         except Exception as e:  # noqa: BLE001
-            return f'erro: {type(e).__name__}: {e}'
+            return f'erro: {type(e).__name__}: {e}', False
 
-        return 'ferramenta desconhecida. validas: ' + ', '.join(_NOMES_VALIDOS)
+        return 'ferramenta desconhecida. validas: ' + ', '.join(_NOMES_VALIDOS), False
 
-    async def _confirmar(self) -> str:
+    async def _confirmar(self, eco: bool = True) -> str:
         p = self.escrita.pendentes()[-1]
-        self.escrever(p.diff if p.diff else p.resumo)
-        if self.escrita.precisa_aprovacao(p):
+        precisa = self.escrita.precisa_aprovacao(p)
+        if precisa or eco:
+            self.escrever(p.diff if p.diff else p.resumo)
+        if precisa:
             try:
                 r = await self.aprovar(p)
             except asyncio.CancelledError:

@@ -36,7 +36,12 @@ REGRAS_BASE = (
     'Seja conciso: evite repetir o que ja foi dito.\n'
     'Examine o contexto relevante antes de editar (em arquivos grandes, localize o trecho via busca e leia apenas as linhas de interesse sem paginar o arquivo inteiro).\n'
     'Prefira mudancas pequenas e verificaveis.\n'
-    'Se faltar informacao essencial, pergunte antes de agir.'
+    'Se faltar informacao essencial, pergunte antes de agir.\n'
+    'Ao concluir qualquer turno ou tarefa, estruture sua resposta final sempre com Markdown profissional:\n'
+    '- Contexto / Diagnóstico objetivo\n'
+    '- O que foi feito (detalhando arquivos alterados com caminhos claros)\n'
+    '- Como verificar / Validação (testes e comandos executados)\n'
+    '- Próximos passos (se houver)'
 )
 
 
