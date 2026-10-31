@@ -146,7 +146,7 @@ class OllamaGatewayAdapter(BaseGatewayAdapter):
         request: ChatCompletionRequest,
         client: httpx.AsyncClient
     ) -> ChatCompletionResponse:
-        model = request.model if request.model and request.model != "default" else self.default_model
+        model = request.model if request.model and request.model not in ("default", "hera_router", "auto") else self.default_model
         await self._refuse_if_too_big(model)
         
         # Formatar mensagens para a API nativa do Ollama (/api/chat)
@@ -237,7 +237,7 @@ class OllamaGatewayAdapter(BaseGatewayAdapter):
     async def open_stream(self, request: ChatCompletionRequest, client: httpx.AsyncClient):
         """Streaming nativo do Ollama (`/api/chat` com stream=true, NDJSON)."""
         from app.gateway.streaming import ndjson_deltas, preflight
-        model = request.model if request.model and request.model != "default" else self.default_model
+        model = request.model if request.model and request.model not in ("default", "hera_router", "auto") else self.default_model
         await self._refuse_if_too_big(model)
         payload = {
             "model": model,
@@ -407,7 +407,7 @@ class CloudOpenAIGatewayAdapter(BaseGatewayAdapter):
         raise last_error or GatewayProviderError(f"Falha desconhecida com {self.name}", status_code=502, retryable=True)
 
     def _payload(self, request: ChatCompletionRequest, stream: bool) -> Dict[str, Any]:
-        model = request.model if request.model and request.model != "default" else self.default_model
+        model = request.model if request.model and request.model not in ("default", "hera_router", "auto") else self.default_model
         payload: Dict[str, Any] = {
             "model": model,
             "messages": [m.model_dump(exclude_none=True) for m in request.messages],

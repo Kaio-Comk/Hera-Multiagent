@@ -93,7 +93,7 @@ class TierRouter:
     def _adapters_for_model(self, adapters: List[BaseGatewayAdapter], model: Optional[str]) -> List[BaseGatewayAdapter]:
         """`default`: todos. Modelo específico: provedores de nuvem que o declaram; o local atende o que
         nenhuma nuvem reivindica (assim `qwen2.5-coder` vai ao Ollama e `deepseek-chat` não)."""
-        if not model or model == "default":
+        if not model or model in ("default", "hera_router", "auto"):
             return list(adapters)
         claimed = self._claimed_models()
         out = []
