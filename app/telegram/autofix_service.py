@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 import re
-import subprocess
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -16,6 +16,7 @@ from app.agente.escrita import Escrita, Pendencia
 from app.agente.laco import Agente
 from app.agente.leitura import Leitura
 from app.paths import home_hera
+from app.telegram import autodeploy
 from app.telegram.notifier import enviar_telegram_kaio, limpar_estilo, notificar_cliente
 from app.telegram.schemas import SystemErrorAlert
 from cli.chat_client import ClienteHera, ler_token
@@ -28,6 +29,10 @@ NETHUB_ES_DIR = Path(os.environ.get("NETHUB_ES_PATH", r"B:\Projetos\NetHub\NetHu
 VAULT_NETHUB = Path(os.environ.get("NETHUB_VAULT") or (Path.home() / "Documents" / "Obsidian Vault")) / "NetHub"
 GIT_AUTHOR_NAME = "Kaio Lima"
 GIT_AUTHOR_EMAIL = "kaiocomkamil@gmail.com"
+
+# Uma auto-cura por vez: o livro-razão de checkpoints e o git são da pasta inteira, e duas
+# correções simultâneas misturariam os arquivos de uma no commit da outra.
+_TRAVA_PUBLICACAO = threading.Lock()
 
 # Erros de rede transitorios ou de robo de varredura que nao devem disparar auto-cura de codigo
 IGNORAR_ERROS = (
@@ -124,18 +129,21 @@ class AutoFixService:
         )
 
         try:
-            resumo_correcao = await self._executar_laco_agente(workspace, prompt, max_passos=35)
-            commit_hash = await self._fazer_commit_git(
-                workspace,
-                f"fix(suporte): correcao de bug relatado pelo cliente {chat_id} - {limpar_estilo(texto[:50])}",
-            )
+            with _TRAVA_PUBLICACAO:
+                resumo_correcao, pub = await self._corrigir_e_publicar(
+                    workspace, edicao, prompt, 35,
+                    f"fix(suporte): correcao de bug relatado pelo cliente {chat_id} - {limpar_estilo(texto[:50])}",
+                )
+            commit_hash = pub.commit
 
             info["status"] = "succeeded"
             info["concluido_em"] = time.time()
             info["resumo"] = resumo_correcao
             info["commit"] = commit_hash
+            info["no_ar"] = pub.no_ar
+            info["deploy"] = pub.mensagem
 
-            # Notificar cliente que o problema foi corrigido
+            # Cliente só ouve "corrigido" quando a correção está no ar de verdade
             msg_cliente = (
                 "Pronto! O problema que você relatou foi corrigido e testado com sucesso pelo nosso sistema autônomo. "
                 "Você já pode testar novamente no NetHub. Se precisar de mais alguma coisa, estou por aqui à disposição!"
@@ -143,7 +151,8 @@ class AutoFixService:
                 else "¡Listo! El problema que reportaste fue corregido y probado con éxito por nuestro sistema autónomo. "
                 "Ya puedes probarlo nuevamente en NetHub. Cualquier duda, ¡estoy a tu disposición!"
             )
-            notificar_cliente(chat_id, msg_cliente)
+            if pub.no_ar:
+                notificar_cliente(chat_id, msg_cliente)
 
             # Notificar Kaio
             msg_kaio = (
@@ -152,9 +161,9 @@ class AutoFixService:
                 f"Edição: NetHub {edicao.upper()}\n"
                 f"Problema relatado: {texto}\n"
                 f"Correção aplicada: {resumo_correcao[:300]}\n"
-                f"Commit: {commit_hash or 'sem alterações pendentes'}"
+                f"Deploy: {pub.mensagem}"
             )
-            enviar_telegram_kaio(msg_kaio, edicao=edicao, titulo="AUTO-FIX CONCLUIDO")
+            enviar_telegram_kaio(msg_kaio, edicao=edicao, titulo="AUTO-FIX NO AR" if pub.no_ar else "AUTO-FIX SEM DEPLOY")
 
             # Documentar no Obsidian Vault
             self._registrar_adr_obsidian(
@@ -236,17 +245,20 @@ class AutoFixService:
         )
 
         try:
-            resumo_correcao = await self._executar_laco_agente(workspace, prompt, max_passos=30)
             nome_arq = Path(arquivo).name if arquivo else servico
-            commit_hash = await self._fazer_commit_git(
-                workspace,
-                f"fix({servico}): auto-cura de erro em {nome_arq} - {limpar_estilo(mensagem[:40])}",
-            )
+            with _TRAVA_PUBLICACAO:
+                resumo_correcao, pub = await self._corrigir_e_publicar(
+                    workspace, edicao, prompt, 30,
+                    f"fix({servico}): auto-cura de erro em {nome_arq} - {limpar_estilo(mensagem[:40])}",
+                )
+            commit_hash = pub.commit
 
             info["status"] = "succeeded"
             info["concluido_em"] = time.time()
             info["resumo"] = resumo_correcao
             info["commit"] = commit_hash
+            info["no_ar"] = pub.no_ar
+            info["deploy"] = pub.mensagem
 
             # Notificar Kaio
             msg_kaio = (
@@ -256,9 +268,9 @@ class AutoFixService:
                 f"Arquivo: {arquivo}:{linha}\n"
                 f"Erro capturado: {mensagem}\n"
                 f"Solução aplicada: {resumo_correcao[:300]}\n"
-                f"Commit: {commit_hash or 'sem alterações pendentes'}"
+                f"Deploy: {pub.mensagem}"
             )
-            enviar_telegram_kaio(msg_kaio, edicao=edicao, titulo="AUTO-CURA DE SISTEMA CONCLUIDA")
+            enviar_telegram_kaio(msg_kaio, edicao=edicao, titulo="AUTO-CURA NO AR" if pub.no_ar else "AUTO-CURA SEM DEPLOY")
 
             # Documentar no Obsidian Vault
             self._registrar_adr_obsidian(
@@ -331,68 +343,22 @@ class AutoFixService:
     # -------------------------------------------------------------
     # 4. GIT E OBSIDIAN HELPERS
     # -------------------------------------------------------------
-    async def _fazer_commit_git(self, workspace: Path, mensagem: str) -> str:
-        """Adiciona arquivos modificados e commita com a identidade oficial do Kaio."""
-        msg_limpa = limpar_estilo(mensagem)
-        try:
-            # 1. Verifica se houve alteracoes
-            status_proc = await asyncio.to_thread(
-                subprocess.run,
-                ["git", "-C", str(workspace), "status", "--porcelain"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if not status_proc.stdout.strip():
-                log.info("[autofix] Nenhuma alteração pendente para commit em %s", workspace)
-                return ""
-
-            # 2. git add dos arquivos modificados (exceto checkpoints/temporarios)
-            await asyncio.to_thread(
-                subprocess.run,
-                ["git", "-C", str(workspace), "add", "-u"],
-                capture_output=True,
-                check=False,
-            )
-
-            # 3. git commit com identidade Kaio Lima
-            cmd_commit = [
-                "git",
-                "-C",
-                str(workspace),
-                "-c",
-                f"user.name={GIT_AUTHOR_NAME}",
-                "-c",
-                f"user.email={GIT_AUTHOR_EMAIL}",
-                "commit",
-                "-m",
-                msg_limpa,
-            ]
-            commit_proc = await asyncio.to_thread(
-                subprocess.run,
-                cmd_commit,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if commit_proc.returncode != 0:
-                log.warning("[autofix] git commit falhou: %s", commit_proc.stderr)
-                return ""
-
-            # 4. Obter hash
-            hash_proc = await asyncio.to_thread(
-                subprocess.run,
-                ["git", "-C", str(workspace), "rev-parse", "--short", "HEAD"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            commit_hash = hash_proc.stdout.strip()
-            log.info("[autofix] Commit gerado em %s: %s", workspace, commit_hash)
-            return commit_hash
-        except Exception as exc:
-            log.warning("[autofix] Erro ao executar git commit: %s", exc)
-            return ""
+    async def _corrigir_e_publicar(
+        self, workspace: Path, edicao: str, prompt: str, max_passos: int, mensagem_commit: str,
+    ) -> Tuple[str, "autodeploy.Resultado"]:
+        """Roda o agente e publica SÓ o que ele editou (commit + portões + reinício)."""
+        sujos_antes = await asyncio.to_thread(autodeploy.arquivos_sujos, workspace)
+        falhas_antes = await asyncio.to_thread(autodeploy.falhas_da_suite, workspace)
+        inicio = time.time()
+        resumo = await self._executar_laco_agente(workspace, prompt, max_passos=max_passos)
+        ck = Checkpoints(workspace / ".hera_checkpoints", workspace)
+        arquivos = autodeploy.arquivos_do_agente(ck.listar(100000), inicio)
+        pub = await asyncio.to_thread(
+            autodeploy.publicar, workspace, arquivos, sujos_antes, falhas_antes, edicao,
+            limpar_estilo(mensagem_commit), GIT_AUTHOR_NAME, GIT_AUTHOR_EMAIL,
+        )
+        log.info("[autofix] %s: arquivos=%s | %s", workspace.name, arquivos, pub.mensagem)
+        return resumo, pub
 
     def _registrar_adr_obsidian(
         self,
