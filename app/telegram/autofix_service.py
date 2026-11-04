@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.agente.caminhos import Raiz
 from app.agente.checkpoints import Checkpoints
-from app.agente.escrita import Escrita, Pendencia
+from app.agente.escrita import Escrita, Pendencia, Resultado
 from app.agente.laco import Agente
 from app.agente.leitura import Leitura
 from app.paths import home_hera
@@ -43,7 +43,71 @@ IGNORAR_ERROS = (
     "ClientPayloadError",
     "ServerDisconnectedError",
     "Cannot connect to host api.telegram.org",
+    # Queda da internet de 04/11/2026 (10:30 a 10:48): estes viraram 6 auto-curas, 3 delas EDITANDO o Telethon
+    # dentro do .venv. São rede, não bug do NetHub.
+    "InvalidBufferError",
+    "already waiting for incoming data",
+    "_call_connection_lost",
+    "Error executing high-level request after reconnect",
+    "Unhandled error while receiving data",
+    "Unexpected exception in the receive loop",
+    "WinError 10054",
+    "WinError 1232",
+    "WinError 64",
+    "ConnectionResetError",
 )
+
+# A auto-cura só mexe no CÓDIGO DO PROJETO. Em 04/11/2026 ela editou telethon/connection.py, mtprotosender.py e
+# updates.py no .venv do NetHub BR (fora do git, sem revisão) e o autodeploy reiniciou o gateway com isso.
+_TRECHOS_PROIBIDOS = ("\\.venv\\", "\\venv\\", "\\site-packages\\", "\\node_modules\\", "\\.git\\",
+                      "\\dist-packages\\", "\\.hera_checkpoints\\")
+
+
+def caminho_proibido_na_autocura(alvo: Path | str, workspace: Path | str) -> bool:
+    """True = a auto-cura não pode gravar aqui: fora do projeto, ambiente virtual, biblioteca, git."""
+    try:
+        alvo = Path(alvo)
+        if not alvo.is_absolute():                     # o rastreio às vezes manda "Bot/main.py": é do projeto
+            alvo = Path(workspace) / alvo
+        p = str(alvo.resolve()).lower().replace("/", "\\")
+        w = str(Path(workspace).resolve()).lower().replace("/", "\\").rstrip("\\")
+    except (OSError, ValueError):
+        return True
+    if not p.startswith(w + "\\"):
+        return True
+    return any(t in p + "\\" for t in _TRECHOS_PROIBIDOS)
+
+
+def erro_so_em_biblioteca(alert_arquivo: str, traceback: str, workspace: Path | str) -> bool:
+    """O erro nasceu numa biblioteca e o traceback não passa por nenhum arquivo do projeto: não há o que corrigir
+    no NetHub (o certo é tratar no código do projeto que chama a biblioteca, e só se ele aparecer no traceback)."""
+    if not alert_arquivo or not caminho_proibido_na_autocura(alert_arquivo, workspace):
+        return False
+    for arq in re.findall(r'File "([^"]+)"', traceback or ""):
+        if not caminho_proibido_na_autocura(arq, workspace):
+            return False
+    return True
+
+
+class EscritaAutocura(Escrita):
+    """Escrita do agente da auto-cura: recusa gravar fora do código do projeto (no modo auto não há aprovação)."""
+
+    def __init__(self, *args, workspace: Path, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._workspace = workspace
+
+    def _barrar(self, caminho) -> Resultado | None:
+        alvo = self._resolver(caminho)
+        if alvo is None or caminho_proibido_na_autocura(alvo, self._workspace):
+            return Resultado(False, "a auto-cura só edita o código do projeto: nunca .venv, bibliotecas, git "
+                                    "ou arquivos fora do repositório. Corrija no código do NetHub que chama a biblioteca.")
+        return None
+
+    def propor_edicao(self, caminho, *args, **kwargs) -> Resultado:
+        return self._barrar(caminho) or super().propor_edicao(caminho, *args, **kwargs)
+
+    def propor_escrita(self, caminho, *args, **kwargs) -> Resultado:
+        return self._barrar(caminho) or super().propor_escrita(caminho, *args, **kwargs)
 
 
 class AutoFixService:
@@ -194,6 +258,10 @@ class AutoFixService:
         tb_cru = alert.traceback or ""
         if any(ignorar in msg_crua or ignorar in tb_cru for ignorar in IGNORAR_ERROS):
             return "ignored_transient", "Erro transitório de rede ou requisição malformada ignorado."
+        workspace_alvo = NETHUB_ES_DIR if (alert.edicao or "").lower() == "es" else NETHUB_BR_DIR
+        if erro_so_em_biblioteca(alert.arquivo or "", tb_cru, workspace_alvo):
+            log.info("[autoheal] ignorado: erro só dentro de biblioteca (%s)", alert.arquivo)
+            return "ignored_library", "Erro dentro de biblioteca sem arquivo do projeto no traceback; nada a corrigir no NetHub."
 
         # Deduplicacao
         sig = f"{alert.servico}|{alert.arquivo}|{alert.linha}|{msg_crua[:100]}"
@@ -302,11 +370,11 @@ class AutoFixService:
         token = self._obter_token()
         cliente = ClienteHera(self.base_url, token, modelo="hera_router")
 
-        raiz = Raiz(workspace, acesso_total=True)
+        raiz = Raiz(workspace, acesso_total=False)      # 04/11/2026: só a pasta do projeto (antes: o PC inteiro)
         checkpoints_dir = workspace / ".hera_checkpoints"
         ck = Checkpoints(checkpoints_dir, workspace)
         leitura = Leitura(raiz)
-        escrita = Escrita(raiz, ck, modo="auto")
+        escrita = EscritaAutocura(raiz, ck, modo="auto", workspace=workspace)
 
         async def _aprovar_tudo(p: Pendencia) -> str:
             return "sim"
@@ -353,6 +421,13 @@ class AutoFixService:
         resumo = await self._executar_laco_agente(workspace, prompt, max_passos=max_passos)
         ck = Checkpoints(workspace / ".hera_checkpoints", workspace)
         arquivos = autodeploy.arquivos_do_agente(ck.listar(100000), inicio)
+        proibidos = [a for a in arquivos if caminho_proibido_na_autocura(workspace / a, workspace)]
+        if proibidos:                                  # segunda trava: nem commit nem reinício
+            pub = autodeploy.Resultado()
+            pub.mensagem = ("não publiquei: o agente gravou fora do código do projeto "
+                            f"({', '.join(proibidos)}); revise e restaure à mão")
+            log.warning("[autofix] %s: %s", workspace.name, pub.mensagem)
+            return resumo, pub
         pub = await asyncio.to_thread(
             autodeploy.publicar, workspace, arquivos, sujos_antes, falhas_antes, edicao,
             limpar_estilo(mensagem_commit), GIT_AUTHOR_NAME, GIT_AUTHOR_EMAIL,

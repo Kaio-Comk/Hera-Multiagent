@@ -179,3 +179,84 @@ def test_api_endpoints_integration():
     assert resp_sys.status_code == 200
     dados_sys = resp_sys.json()
     assert dados_sys["status"] == "ignored_transient"
+
+
+# ---------------------------------------------------------------- 04/11/2026: conta do cliente e "não sei" de verdade
+
+from app.telegram.customer_support import NAO_SEI, fatos_da_conta  # noqa: E402
+
+
+def test_fatos_da_conta_viram_frases_sem_dado_pessoal():
+    ctx = {"plano": "pro", "ativo": True, "valido_ate": "03/12/2026", "tem_conta_site": True,
+           "pedidos": [{"titulo": "Are You Sure?!", "status": "pendente"}, {"titulo": "Pecadores", "status": "adicionado"}]}
+    fatos = fatos_da_conta(ctx, "pt")
+    assert "Este cliente tem o plano pro ativo até 03/12/2026." in fatos
+    assert any("Are You Sure?!" in f and "não há prazo" in f for f in fatos)
+    assert any("Pecadores" in f and "já está no catálogo" in f for f in fatos)
+    assert fatos_da_conta({}, "pt") == []
+
+
+@pytest.mark.asyncio
+async def test_duvida_usa_a_conta_no_prompt():
+    vistos = []
+
+    async def llm(mensagens):
+        vistos.append(mensagens[0]["content"])
+        return "Seu plano está ativo até 03/12/2026."
+
+    support = CustomerSupportService(llm_caller=llm)
+    req = CustomerMessageRequest(chat_id=1, texto="meu plano ainda vale para a tv?", edicao="br",
+                                 contexto={"plano": "pro", "ativo": True, "valido_ate": "03/12/2026"})
+    res = await support.processar_mensagem(req)
+    assert res.motivo == "duvida" and "03/12/2026" in vistos[0]
+
+
+@pytest.mark.asyncio
+async def test_quando_a_ia_nao_sabe_o_motivo_e_nao_sei():
+    async def llm(mensagens):
+        return NAO_SEI["pt"]
+
+    support = CustomerSupportService(llm_caller=llm)
+    res = await support.processar_mensagem(CustomerMessageRequest(chat_id=1, texto="vocês têm app para geladeira?",
+                                                                  edicao="br"))
+    assert res.motivo == "nao_sei" and res.status == "escalated"
+
+
+def test_contexto_e_opcional_no_pedido():
+    assert CustomerMessageRequest(chat_id=1, texto="oi").contexto == {}
+
+
+# ---------------------------------------------------------------- 04/11/2026: a auto-cura não edita biblioteca
+
+from pathlib import Path as _P  # noqa: E402
+
+from app.telegram.autofix_service import caminho_proibido_na_autocura, erro_so_em_biblioteca  # noqa: E402
+
+
+def test_autocura_nao_grava_no_venv_nem_fora_do_projeto(tmp_path):
+    ws = tmp_path / "NetHub BR"
+    (ws / "Bot" / "gateway").mkdir(parents=True)
+    assert not caminho_proibido_na_autocura(ws / "Bot" / "gateway" / "gw_server.py", ws)
+    assert caminho_proibido_na_autocura(ws / ".venv" / "Lib" / "site-packages" / "telethon" / "network" / "x.py", ws)
+    assert caminho_proibido_na_autocura(ws / ".git" / "config", ws)
+    assert caminho_proibido_na_autocura(tmp_path / "outro" / "a.py", ws)
+    assert caminho_proibido_na_autocura(_P("C:/Python312/Lib/asyncio/base_events.py"), ws)
+
+
+def test_erro_so_em_biblioteca_nao_vira_autocura(tmp_path):
+    ws = tmp_path / "NetHub BR"
+    lib = str(ws / ".venv" / "Lib" / "site-packages" / "telethon" / "network" / "mtprotosender.py")
+    tb_lib = f'Traceback (most recent call last):\n  File "{lib}", line 525, in _recv_loop\nRuntimeError: x'
+    assert erro_so_em_biblioteca(lib, tb_lib, ws)
+    tb_projeto = tb_lib + f'\n  File "{ws / "Bot" / "gateway" / "gw_server.py"}", line 10, in h'
+    assert not erro_so_em_biblioteca(lib, tb_projeto, ws)
+    assert not erro_so_em_biblioteca(str(ws / "Bot" / "main.py"), "", ws)
+
+
+@pytest.mark.asyncio
+async def test_ruido_da_queda_de_rede_e_ignorado():
+    svc = AutoFixService()
+    alerta = SystemErrorAlert(servico="gateway", edicao="br", mensagem="Unhandled error while receiving data",
+                              traceback="RuntimeError: readexactly() called while another coroutine is already waiting for incoming data")
+    status, _ = await svc.agendar_autoheal_sistema(alerta)
+    assert status == "ignored_transient"

@@ -101,6 +101,40 @@ _APP_TRAVADO_RE = re.compile(
 )
 
 
+def fatos_da_conta(contexto: dict, idioma: str) -> list[str]:
+    """Resumo da conta (vindo do NetHub, sem dado pessoal) em fatos para o modelo. Só o que o NetHub conferiu no banco."""
+    if not contexto:
+        return []
+    es = idioma == "es"
+    fatos = []
+    plano = str(contexto.get("plano") or "").strip()
+    ate = str(contexto.get("valido_ate") or "").strip()
+    if plano:
+        if contexto.get("ativo") and ate:
+            fatos.append(f"Este cliente tiene el plan {plano} activo hasta el {ate}." if es
+                         else f"Este cliente tem o plano {plano} ativo até {ate}.")
+        elif ate:
+            fatos.append(f"El plan de este cliente venció el {ate}." if es else f"O plano deste cliente venceu em {ate}.")
+    if "tem_conta_site" in contexto:
+        if contexto.get("tem_conta_site"):
+            fatos.append("Este cliente ya tiene la cuenta con correo y contraseña." if es
+                         else "Este cliente já tem a conta do site e dos apps (e-mail e senha).")
+        else:
+            fatos.append("Este cliente todavía no creó la cuenta con correo y contraseña." if es
+                         else "Este cliente ainda não criou a conta do site e dos apps (e-mail e senha).")
+    for p in (contexto.get("pedidos") or [])[:5]:
+        titulo, status = str(p.get("titulo") or "").strip(), str(p.get("status") or "").strip()
+        if not titulo:
+            continue
+        if status == "adicionado":
+            fatos.append(f"El pedido de este cliente \"{titulo}\" ya está en el catálogo." if es
+                         else f"O pedido deste cliente \"{titulo}\" já está no catálogo.")
+        elif status == "pendente":
+            fatos.append(f"El pedido de este cliente \"{titulo}\" está registrado y todavía no entró; no hay plazo." if es
+                         else f"O pedido deste cliente \"{titulo}\" está registrado e ainda não entrou; não há prazo.")
+    return fatos
+
+
 class CustomerSupportService:
     def __init__(self, autofix_service=None, llm_caller=None):
         self.autofix_service = autofix_service
@@ -138,8 +172,10 @@ class CustomerSupportService:
 
         return None, None
 
-    async def responder_duvida_com_ia(self, texto: str, idioma: str, facts, historico: list) -> str:
+    async def responder_duvida_com_ia(self, texto: str, idioma: str, facts, historico: list,
+                                      contexto: Optional[dict] = None) -> str:
         fatos_lista = facts.fatos.get(idioma) or facts.fatos.get("pt") or []
+        fatos_lista = list(fatos_lista) + fatos_da_conta(contexto or {}, idioma)
         fatos_formatados = "\n".join(f"- {f}" for f in fatos_lista)
 
         prompt_sistema = (
@@ -261,10 +297,14 @@ class CustomerSupportService:
                 motivo="duvida",
             )
 
-        # Caso geral: dúvida analisada com IA
-        resposta_ia = await self.responder_duvida_com_ia(req.texto, idioma, facts, req.historico)
+        # Caso geral: dúvida analisada com IA (com os dados da conta, quando o NetHub mandou)
+        resposta_ia = limpar_estilo(await self.responder_duvida_com_ia(req.texto, idioma, facts, req.historico,
+                                                                       contexto=req.contexto))
+        # "Vou verificar" é pendência: o NetHub avisa o Kaio e a ficha fica aberta (04/11/2026, antes ia como "duvida").
+        nao_sei = resposta_ia.strip() == limpar_estilo(NAO_SEI[idioma]).strip()
         return CustomerMessageResponse(
-            status="answered",
-            resposta_cliente=limpar_estilo(resposta_ia),
-            motivo="duvida",
+            status="escalated" if nao_sei else "answered",
+            resposta_cliente=resposta_ia,
+            motivo="nao_sei" if nao_sei else "duvida",
+            detalhes="a IA não achou a resposta nos fatos nem na conta" if nao_sei else None,
         )

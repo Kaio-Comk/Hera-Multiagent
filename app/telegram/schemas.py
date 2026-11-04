@@ -12,6 +12,9 @@ class CustomerMessageRequest(BaseModel):
     edicao: str = Field(default="br", max_length=10)
     anexo: bool = False
     historico: List[Any] = Field(default_factory=list)
+    # Resumo da conta do cliente montado pelo NetHub (04/11/2026), SEM dado pessoal: plano, ativo, valido_ate,
+    # tem_conta_site e pedidos [{titulo, status}]. Vazio quando o NetHub não conseguiu ler a conta.
+    contexto: dict[str, Any] = Field(default_factory=dict)
 
 
 class CustomerMessageResponse(BaseModel):
