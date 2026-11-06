@@ -135,7 +135,22 @@ class ExpenseManager:
         # 5. Atualizar Obsidian Vault se acessível
         self._append_to_obsidian(audit_entry)
 
-        # 6. Sincronizar snapshot do app Fluxo (Android)
+        # 6. Gravar diretamente no banco SQLite central do Fluxo (PC)
+        try:
+            from app.finance.fluxo_db import fluxo_db
+            fluxo_db.add_transaction(
+                descricao=descricao,
+                valor=valor,
+                tipo="EXPENSE",
+                data_transacao=dt.date(),
+                observacao=observacao,
+                import_key=f"telegram_{int(datetime.now().timestamp())}",
+            )
+            log.info("Lançamento gravado diretamente no banco SQLite do Fluxo (B:\\Finanças\\fluxo.db)")
+        except Exception as err:
+            log.warning(f"Erro ao gravar no fluxo.db: {err}")
+
+        # 7. Sincronizar snapshot do app Fluxo (Android)
         try:
             from app.finance.fluxo_exporter import build_fluxo_backup
             build_fluxo_backup()
