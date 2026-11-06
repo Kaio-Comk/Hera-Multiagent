@@ -235,6 +235,9 @@ class HeraTelegramBot:
                 msg_models = (
                     f"🤖 *Modelo Atual:* `{self.current_model}` (100% Nuvem)\n\n"
                     "💡 *Modelos disponíveis via Gateway (Nuvem):*\n"
+                    "• `claude-sonnet-4-6` — Claude Sonnet (via Vyce AI)\n"
+                    "• `gpt-6-luna` — OpenAI GPT Luna (via Vyce AI)\n"
+                    "• `deepseek-v4.1` — DeepSeek V4.1 (via Vyce AI / River)\n"
                     "• `default` — River (DeepSeek-V4.1-Flash com fallback 100% nuvem)\n"
                     "• `gemini-3.8-flash` — Google Gemini (Nuvem)\n"
                     "• `Meta-Llama-3.3-70B-Instruct` — Sambanova / Groq (Nuvem 70B)\n"
