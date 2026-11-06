@@ -279,6 +279,9 @@ async def main():
     gui_parser = subparsers.add_parser("gui", help="Abrir interface Desktop nativa do Windows (1 clique)")
     gui_parser.add_argument("--port", type=int, default=8000, help="Porta do servidor interno (padrão: 8000)")
 
+    # Comando: bot (Telegram Bot privado @hera_kaio_bot)
+    subparsers.add_parser("bot", help="Iniciar bot privado do Telegram (@hera_kaio_bot) para conversar pelo celular")
+
     args = parser.parse_args()
     if args.command is None:
         # `hera` sozinho abre a interface web (porta padrao, com navegador).
@@ -298,6 +301,10 @@ async def main():
         sys.exit(providers_cmd.executar(args))
     if args.command == "skills":
         sys.exit(skills_cmd.executar(args))
+    if args.command == "bot":
+        from app.telegram.bot_service import main as bot_main
+        await bot_main()
+        return
 
     orchestrator = MultiagentOrchestrator()
 
