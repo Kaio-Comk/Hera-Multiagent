@@ -31,7 +31,8 @@ log = logging.getLogger("hera.telegram.bot")
 # ID oficial do Kaio no Telegram
 ADMIN_ID = 8110665027
 
-SYSTEM_PROMPT = """Você é a Hera Assistente, uma inteligência artificial e orquestradora autônoma pessoal.
+SYSTEM_PROMPT = """Você é a Hera Assistente, uma inteligência artificial e orquestradora autônoma pessoal de ponta.
+Seu motor de raciocínio é alimentado por modelos de fronteira em nuvem de alta capacidade.
 Seu nome é exclusivamente Hera Assistente.
 Nunca mencione ou repita o nome do usuário nas suas respostas. Trate o usuário de forma direta, ágil, inteligente e profissional (usando 'você' se necessário).
 Você está conversando diretamente pelo Telegram no celular.
@@ -68,29 +69,19 @@ class HeraTelegramBot:
         self._offset = 0
 
     def init_gateway(self) -> None:
-        """Inicializa adaptadores de IA e o TierRouter do Hera."""
+        """Inicializa adaptadores de IA e o TierRouter do Hera (100% Nuvem)."""
         secret_store = SecretStore(self.data_dir / ".hera_provider_keys.json")
         cfg_mgr = ConfigManager(str(self.config_path))
         cfg = cfg_mgr.load_config()
-        adapters = build_gateway_adapters(cfg, secrets=secret_store)
+        all_adapters = build_gateway_adapters(cfg, secrets=secret_store)
 
-        # Checagem de disponibilidade local (Ollama)
-        import socket
-        def is_port_open(host: str, port: int) -> bool:
-            try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.settimeout(0.3)
-                    return s.connect_ex((host, port)) == 0
-            except Exception:
-                return False
+        # Regra estrita: 100% Nuvem (modelos locais desativados permanentemente para o bot)
+        adapters = [a for a in all_adapters if not getattr(a, "is_local", False)]
 
-        if not is_port_open("127.0.0.1", 11434):
-            adapters = [a for a in adapters if not getattr(a, "is_local", False)]
-            log.info("[HeraTelegramBot] Ollama offline (porta 11434 fechada). Adaptador local removido do fallback.")
-
-        tier_order = (cfg.get("gateway") or {}).get("default_tier_order") or ["cloud_cheap", "cloud_free", "local"]
+        # Camadas exclusivamente de nuvem (cloud_cheap -> cloud_free)
+        tier_order = ["cloud_cheap", "cloud_free"]
         self.router = TierRouter(adapters=adapters, tier_order=tier_order)
-        log.info("[HeraTelegramBot] Gateway inicializado com %d provedores ativos", len(adapters))
+        log.info("[HeraTelegramBot] Gateway 100%% Nuvem inicializado com %d provedores (locais desativados)", len(adapters))
 
     async def send_message(
         self,
@@ -175,7 +166,8 @@ class HeraTelegramBot:
 
         lines.extend([
             "",
-            f"🤖 *Modelo Ativo:* `{self.current_model}` (River DeepSeek V4.1 / Fallback)",
+            f"🤖 *Modelo Ativo:* `{self.current_model}` (River DeepSeek V4.1 / 100% Nuvem)",
+            f"☁️ *Infra de IA:* Nuvem Exclusiva (Modelos locais desativados)",
             f"💬 *Turnos na Memória:* {len(self.conversation_history) // 2}",
             f"🌐 *NetHub:* {'🟢 Online' if nethub_active else '🔴 Offline'}",
             f"📱 *Telegram Desktop:* {'🟢 Rodando' if telegram_active else '⚪ Inativo'}",
@@ -233,16 +225,22 @@ class HeraTelegramBot:
             parts = text.split()
             if len(parts) > 1:
                 new_model = parts[1].strip()
+                # Bloqueio explícito de modelos locais (Ollama, qwen, etc.)
+                if any(x in new_model.lower() for x in ("ollama", "qwen2.5-coder", "local")):
+                    await self.send_message(chat_id, "⚠️ *Modelos locais estão desativados.* O bot opera exclusivamente com modelos de nuvem (DeepSeek, Gemini, Llama 70B, etc.).")
+                    return
                 self.current_model = new_model
-                await self.send_message(chat_id, f"✅ Modelo alterado para: `{self.current_model}`")
+                await self.send_message(chat_id, f"✅ Modelo alterado para: `{self.current_model}` (100% Nuvem)")
             else:
                 msg_models = (
-                    f"🤖 *Modelo Atual:* `{self.current_model}`\n\n"
-                    "💡 *Modelos disponíveis via Gateway:*\n"
-                    "• `default` — River (DeepSeek-V4.1-Flash com fallback automático)\n"
-                    "• `gemini-3.8-flash` — Google Gemini\n"
-                    "• `Meta-Llama-3.3-70B-Instruct` — Sambanova / Groq\n"
-                    "• `agnes-2.5-flash` — Agnes AI\n\n"
+                    f"🤖 *Modelo Atual:* `{self.current_model}` (100% Nuvem)\n\n"
+                    "💡 *Modelos disponíveis via Gateway (Nuvem):*\n"
+                    "• `default` — River (DeepSeek-V4.1-Flash com fallback 100% nuvem)\n"
+                    "• `gemini-3.8-flash` — Google Gemini (Nuvem)\n"
+                    "• `Meta-Llama-3.3-70B-Instruct` — Sambanova / Groq (Nuvem 70B)\n"
+                    "• `agnes-2.5-flash` — Agnes AI (Nuvem)\n"
+                    "• `gpt-4o-mini` — GitHub Models (Nuvem)\n\n"
+                    "🔒 _(Modelos locais estão permanentemente desativados.)_\n\n"
                     "Para trocar, digite: `/model <nome_do_modelo>`"
                 )
                 await self.send_message(chat_id, msg_models)
