@@ -260,3 +260,133 @@ async def test_ruido_da_queda_de_rede_e_ignorado():
                               traceback="RuntimeError: readexactly() called while another coroutine is already waiting for incoming data")
     status, _ = await svc.agendar_autoheal_sistema(alerta)
     assert status == "ignored_transient"
+
+
+# ---------------------------------------------------------------- Testes de Atendimento Aprimorado (Intenção de Compra, Anti-Loop, Suporte)
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("frase", [
+    "me passa seu pix P eu te pagar",
+    "Quanto tenho Q pagar P assistir esses filmes",
+    "Vc vai me ajudar a entrar / Me passa seu pix",
+    "como faco para assinar?",
+    "qual o valor da mensalidade?",
+    "qual a chave pix",
+    "quero assinar",
+    "onde pago o plano",
+])
+async def test_intencao_de_compra_nao_pede_comprovante(frase):
+    support = CustomerSupportService()
+    req = CustomerMessageRequest(chat_id=9159757918, texto=frase, edicao="br")
+    res = await support.processar_mensagem(req)
+
+    assert res.status == "answered"
+    assert res.motivo == "duvida"
+    assert "comprovante" not in res.resposta_cliente.lower()
+    assert "print" not in res.resposta_cliente.lower()
+    assert "9,90" in res.resposta_cliente or "/assinatura" in res.resposta_cliente
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("frase", [
+    "cómo puedo pagar la suscripción?",
+    "cuánto cuesta el plan?",
+    "dónde puedo pagar?",
+    "quiero suscribirme",
+])
+async def test_intencao_de_compra_espanhol(frase):
+    support = CustomerSupportService()
+    req = CustomerMessageRequest(chat_id=12345, texto=frase, edicao="es")
+    res = await support.processar_mensagem(req)
+
+    assert res.status == "answered"
+    assert res.motivo == "duvida"
+    assert "comprobante" not in res.resposta_cliente.lower()
+    assert "@NetHub_Peliculas_Bot" in res.resposta_cliente
+
+
+@pytest.mark.asyncio
+async def test_recuperacao_senha_codigo_orienta_pastas_e_conta():
+    support = CustomerSupportService()
+    texto = "Não estou conseguindo ter acesso a minha senha, pedi o código no e-mail mas não chegou. Verifiquei tudo e spam nada"
+    req = CustomerMessageRequest(chat_id=8759280405, texto=texto, edicao="br")
+    res = await support.processar_mensagem(req)
+
+    assert res.status == "answered"
+    assert res.motivo == "duvida"
+    assert "código de recuperação" in res.resposta_cliente.lower()
+    assert "promoções" in res.resposta_cliente.lower()
+    assert "/conta" in res.resposta_cliente
+
+
+@pytest.mark.asyncio
+async def test_config_servidor_provedor_responde_url():
+    support = CustomerSupportService()
+    req = CustomerMessageRequest(chat_id=111, texto="o app da tv ta pedindo provedor de midia e url", edicao="br")
+    res = await support.processar_mensagem(req)
+
+    assert res.status == "answered"
+    assert res.motivo == "duvida"
+    assert "https://gw.nethubfilmes.org" in res.resposta_cliente
+    assert "Conectar Servidor" in res.resposta_cliente
+
+
+@pytest.mark.asyncio
+async def test_anti_repeticao_evita_loop_de_respostas_iguais(mock_enviar_telegram):
+    support = CustomerSupportService()
+
+    # 1. Caso de pagamento repetido:
+    primeira_resposta_financeiro = "Oi! Vou conferir isso aqui pra você. Me manda o comprovante ou um print, por favor? Já te respondo."
+    historico_fin = [
+        ["cliente", "fiz o pix mas nao liberou"],
+        ["nethub", primeira_resposta_financeiro],
+    ]
+    req_fin_repetido = CustomerMessageRequest(
+        chat_id=123,
+        texto="mas eu fiz o pix ontem de noite",
+        edicao="br",
+        historico=historico_fin,
+    )
+    res_fin = await support.processar_mensagem(req_fin_repetido)
+
+    assert res_fin.status == "escalated"
+    assert res_fin.motivo == "pagamento"
+    # Não deve repetir a mesma mensagem pedindo comprovante
+    assert res_fin.resposta_cliente != primeira_resposta_financeiro
+    assert "chamei o kaio" in res_fin.resposta_cliente.lower()
+
+    # 2. Caso de assinatura/pix repetido:
+    req_pix_1 = CustomerMessageRequest(chat_id=456, texto="me passa seu pix", edicao="br")
+    res_pix_1 = await support.processar_mensagem(req_pix_1)
+    historico_pix = [
+        ["cliente", "me passa seu pix"],
+        ["nethub", res_pix_1.resposta_cliente],
+    ]
+    req_pix_2 = CustomerMessageRequest(
+        chat_id=456,
+        texto="vc vai me ajudar a entrar? me passa seu pix",
+        edicao="br",
+        historico=historico_pix,
+    )
+    res_pix_2 = await support.processar_mensagem(req_pix_2)
+
+    assert res_pix_2.resposta_cliente != res_pix_1.resposta_cliente
+    assert "como te falei" in res_pix_2.resposta_cliente.lower()
+
+
+@pytest.mark.asyncio
+async def test_nao_sei_notifica_kaio_imediatamente(mock_enviar_telegram):
+    async def mock_llm(mensagens):
+        return NAO_SEI["pt"]
+
+    support = CustomerSupportService(llm_caller=mock_llm)
+    req = CustomerMessageRequest(chat_id=777, texto="como instalar na geladeira brastemp?", edicao="br")
+    res = await support.processar_mensagem(req)
+
+    assert res.status == "escalated"
+    assert res.motivo == "nao_sei"
+    assert res.resposta_cliente == NAO_SEI["pt"]
+
+    # Verifica que Kaio foi alertado da dúvida não coberta
+    chamadas_titulos = [k.get("titulo") or "" for _, k in mock_enviar_telegram.call_args_list if isinstance(k, dict)]
+    assert any("DÚVIDA NÃO COBERTA" in t for t in chamadas_titulos)

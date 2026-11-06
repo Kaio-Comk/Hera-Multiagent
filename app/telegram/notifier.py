@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import html
 import json
 import logging
 import os
@@ -8,7 +7,6 @@ import re
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Optional
 
 from dotenv import dotenv_values
 
@@ -89,7 +87,7 @@ def enviar_telegram_kaio(texto: str, edicao: str = "br", titulo: str = "") -> bo
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:  # nosec B310 - URL fixa https://api.telegram.org
             return resp.status == 200
     except Exception as exc:
         log.warning("[notifier] Falha ao enviar mensagem para Kaio no Telegram: %s", exc)
@@ -113,7 +111,7 @@ def notificar_cliente(chat_id: int, texto: str, porta: int = 8088) -> bool:
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 - URL fixa http://127.0.0.1:<porta int>
             if resp.status == 200:
                 log.info("[notifier] Mensagem entregue ao cliente %s via porta %d", chat_id, porta)
                 return True
@@ -134,7 +132,7 @@ def notificar_cliente(chat_id: int, texto: str, porta: int = 8088) -> bool:
                 data=dados,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
-            with urllib.request.urlopen(req_bot, timeout=10) as resp:
+            with urllib.request.urlopen(req_bot, timeout=10) as resp:  # nosec B310 - URL fixa https://api.telegram.org
                 if resp.status == 200:
                     log.info("[notifier] Mensagem entregue ao cliente %s via Bot API fallback", chat_id)
                     return True

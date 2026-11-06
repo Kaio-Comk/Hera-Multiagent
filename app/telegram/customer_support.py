@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import json
 import logging
 import re
-from typing import Any, Optional, Sequence
+from typing import Any, Optional
 
 from app.telegram.facts_loader import get_support_facts, sem_acento
 from app.telegram.notifier import enviar_telegram_kaio, limpar_estilo
@@ -17,11 +16,53 @@ CUMPRIMENTO = {
 }
 CONFIRMACAO = {
     "pt": "Combinado! Se precisar de algo, estou por aqui.",
-    "es": "¡Listo! Cualquier duda, estoy por aquí.",
+    "es": "¡Listo! Qualquer dúvida, estou por aqui.",
 }
 AGRADECIMENTO = {
     "pt": "Por nada! Se precisar de qualquer coisa, só chamar por aqui.",
     "es": "¡De nada! Cualquier duda, estoy por aquí.",
+}
+INTENCAO_ASSINATURA = {
+    "pt": (
+        "O Plano Completo sai por R$ 9,90 por mês e dá acesso total pelo Telegram, site e apps de celular e TV. "
+        "O pagamento é por PIX direto no bot @NetHub_Filme_Bot: é só abrir o bot, mandar /assinatura "
+        "(ou tocar em Assinar no menu) que ele gera o QR Code e o código Pix copia e cola na hora."
+    ),
+    "es": (
+        "La suscripción a NetHub te da acceso total por Telegram, sitio web y apps. "
+        "El pago se realiza directamente en el bot @NetHub_Peliculas_Bot con tarjeta (vía Stripe) o con Telegram Stars: "
+        "solo abre el bot y manda /suscripcion (o toca en Suscribirse en el menú) para ver los planes."
+    ),
+}
+CONFIG_SERVIDOR = {
+    "pt": (
+        "A URL do provedor para preencher na TV ou no app é https://gw.nethubfilmes.org. "
+        "Depois de digitar a URL, clique em Conectar Servidor para carregar o catálogo. "
+        "Em seguida, basta entrar com o e-mail e a senha da sua conta Pro (criada com /conta no bot)."
+    ),
+    "es": (
+        "La URL del proveedor para ingresar en la TV o en la app es https://gw.nethubfilmes.org. "
+        "Después de ingresar la URL, pulsa en Conectar Servidor para cargar el catálogo. "
+        "Luego, inicia sesión con el correo y la contraseña de tu cuenta Pro (creada con /conta en el bot)."
+    ),
+}
+INFO_RECEBIDA = {
+    "pt": "Recebi as informações! Já passei para conferência do time responsável e te respondo aqui.",
+    "es": "¡Recibí la información! Ya se lo pasé al equipo responsable para revisarlo y te respondo por aquí.",
+}
+RECUPERACAO_SENHA = {
+    "pt": (
+        "O código de recuperação é enviado para o e-mail cadastrado na sua conta Pro. "
+        "Dê uma olhada nas pastas de Spam, Promoções e Atualizações. "
+        "Se ainda assim não chegar ou você não lembrar o e-mail cadastrado, mande /conta no bot @NetHub_Filme_Bot "
+        "para conferir os dados da sua conta. Se precisar, me avise aqui que eu te ajudo."
+    ),
+    "es": (
+        "El código de recuperación se envía al correo registrado en tu cuenta Pro. "
+        "Revisa también las carpetas de Spam, Promociones y Notificaciones de tu correo. "
+        "Si aún no llega o no recuerdas el correo registrado, envía /conta al bot @NetHub_Peliculas_Bot "
+        "para verificar los datos de tu cuenta. Si necesitas ayuda, avísame por aquí."
+    ),
 }
 PEDIDO_TITULO = {
     "pt": (
@@ -68,6 +109,34 @@ NAO_SEI = {
     "es": "Voy a verificarlo y te respondo enseguida.",
 }
 
+# Respostas anti-repetição (quando a IA acabou de mandar exatamente o mesmo texto)
+REPETICAO_FINANCEIRO = {
+    "pt": "Já anotei aqui e chamei o Kaio para te atender diretamente por aqui mesmo. Fica tranquilo que ele já vai te responder.",
+    "es": "Ya lo anoté y avisé a Kaio para que te atienda directamente por aquí. No te preocupes, en breve te responde.",
+}
+REPETICAO_ASSINATURA = {
+    "pt": (
+        "Como te falei, o Pix é gerado automaticamente pelo bot @NetHub_Filme_Bot ao mandar /assinatura. "
+        "Se você estiver com qualquer dificuldade para gerar por lá, me avisa que o Kaio já vem te ajudar por aqui."
+    ),
+    "es": (
+        "Como te comenté, la suscripción se realiza directamente en el bot @NetHub_Peliculas_Bot con /suscripcion. "
+        "Si tienes cualquier dificultad, avísame que Kaio te ayuda enseguida por aquí."
+    ),
+}
+REPETICAO_CONFIG_OU_PRESO = {
+    "pt": "Se você já tentou esses passos e ainda não deu certo, me explica o que apareceu na tela que eu aviso o Kaio para te ajudar.",
+    "es": "Si ya intentaste estos pasos y no funcionó, cuéntame qué te aparece en pantalla y le aviso a Kaio para que te ayude.",
+}
+REPETICAO_NAO_SEI = {
+    "pt": "Já passei sua dúvida diretamente para o Kaio e ele vai te responder assim que ver. Obrigado pela paciência!",
+    "es": "Ya le pasé tu consulta directamente a Kaio y te responderá en cuanto lo vea. ¡Gracias por la paciencia!",
+}
+REPETICAO_GERAL = {
+    "pt": "Já anotei o que você precisa e avisei o Kaio para te atender por aqui em instantes.",
+    "es": "Ya anoté lo que necesitas y le avisé a Kaio para que te atienda por aquí en breve.",
+}
+
 # Regex patterns
 _CUMPRIMENTO_RE = re.compile(
     r"^(?:\W|oi+e?|ola|bom dia|boa tarde|boa noite|tudo bem|td bem|tudo bom|e ai|eai|opa|salve|hola|buenas|buen dia|"
@@ -85,6 +154,77 @@ _FECHAMENTO_CONFIRMACAO_RE = re.compile(
     r"compreendi|tranquilo|fechou|maravilha|"
     r"vale|dale|listo|perfecto|genial|buenisimo|joya|de\s+acuerdo)+$"
 )
+_APENAS_EMAIL_RE = re.compile(
+    r"^(?:(?:meu\s+)?e?mail(?:\s+[eé])?\s*[:=]?\s*)?[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
+)
+_CONFIG_SERVIDOR_RE = re.compile(
+    r"(?:\bprovedor\b|"
+    r"\burl\s+do\s+servidor\b|"
+    r"\bservidor\b.*\b(?:tv|app|aplicativo|colocar|preencher|conectar)\b|"
+    r"\b(?:tv|app|aplicativo|colocar|preencher)\b.*\bservidor\b|"
+    r"\bconectar\s+servidor\b|"
+    r"\bconfigura[cç][aã]o\s+de\s+gateway\b|"
+    r"\bpedindo\s+url\b|"
+    r"\bpedindo\s+servidor\b|"
+    r"\bqual\s+url\b|"
+    r"\bqual\s+[eé]\s+a\s+url\b|"
+    r"\bqual\s+o\s+servidor\b|"
+    r"\bqual\s+servidor\b|"
+    r"\bproveedor\b|"
+    r"\burl\s+del\s+servidor\b|"
+    r"\bpidiendo\s+url\b|"
+    r"\bpidiendo\s+servidor\b)",
+    re.IGNORECASE,
+)
+_PROBLEMA_PAGAMENTO_RE = re.compile(
+    r"(?:\b(?:j[aá]\s+)?(?:fiz|fizemos|mandei|mandamos|enviei|efetuei|transferi|paguei|pagamos|cobrou|debitou)\b.*"
+    r"\b(?:pix|pagamento|valor|grana|dinheiro|mensalidade|assinatura|taxa|cartao|cart[aã]o|pago)\b|"
+    r"\b(?:pix|pagamento|valor|cartao|cart[aã]o)\b.*\b(?:j[aá]\s+)?(?:fiz|fizemos|mandei|mandamos|enviei|efetuei|transferi|paguei|pagamos|cobrou|debitou)\b|"
+    r"\b(?:j[aá]\s+)?paguei\b|\b(?:j[aá]|est[aá]|t[aá]|foi)\s+pago\b|\b(?:j[aá]\s+)?fiz\s+(?:o\s+)?pix\b|\b(?:j[aá]\s+)?mandei\s+(?:o\s+)?pix\b|"
+    r"\b(?:n[aã]o|nao)\s+(?:ativou|liberou|caiu|entrou|compensou|atualizou)\b|"
+    r"\bcomprovante\b|\bprint\s+do\s+pix\b|\bprint\s+do\s+pagamento\b|"
+    r"\breembolso\b|\bestorno\b|\bdevolver\s+dinheiro\b|\bdevolu[cç][aã]o\b|\bcancelar\s+(?:a\s+)?assinatura\b|"
+    r"\bcancelar\s+(?:o\s+)?plano\b|\bcancelamento\b|"
+    r"\bcobran[cç]a\s+indevida\b|\bcobrou\s+duas\s+vezes\b|\bcobrou\s+errado\b|"
+    r"\bbloqueio\b|\bbloquead[oa]\b|\bconta\s+suspensa\b|\bbanid[oa]\b|"
+    r"\bgolpe\b|\bprocon\b|\badvogad[oa]\b|\bprocesso\b|\bden[uú]ncia\b|"
+    # ES
+    r"\b(?:ya\s+)?(?:pagu[eé]|pagamos|hice|transfer[ií]|mand[eé]|envi[eé])\b.*"
+    r"\b(?:pago|tarjeta|dinero|suscripci[oó]n|transferencia)\b|"
+    r"\b(?:ya\s+)?pagu[eé]\b|\b(?:ya\s+)?hice\s+el\s+pago\b|"
+    r"\bno\s+(?:se\s+)?(?:activ[oó]|acredito|reflej[oó]|desbloque[oó])\b|"
+    r"\bcomprobante\b|\bcaptura\s+del\s+pago\b|\breembolso\b|\bdevoluci[oó]n\b|"
+    r"\bcancelar\s+(?:la\s+)?suscripci[oó]n\b|\bcancelar\s+plan\b|\bestafa\b|\bdenuncia\b)",
+    re.IGNORECASE,
+)
+_INTENCAO_COMPRA_RE = re.compile(
+    r"(?:\b(?:me\s+)?(?:passa|manda|envia|informa)\s+(?:o|seu|a|chave)?\s*pix\b|"
+    r"\bqual\s+(?:[eé]\s+)?(?:o|a\s+chave|seu)?\s*pix\b|"
+    r"\bchave\s+pix\b|"
+    r"\b(?:como|onde|qual\s+lugar)\s+(?:eu\s+)?(?:fa[cç]o\s+(?:pra|para|p/|p)\s+|consigo\s+)?(?:pagar|pago|fazer\s+o\s+pix|assinar|comprar)\b|"
+    r"\bcomo\s+(?:se\s+)?assina\b|\bcomo\s+(?:assinar|assino)\b|\bcomo\s+(?:pagar|pago)\b|\bonde\s+(?:pagar|pago|assinar|assino)\b|"
+    r"\bquero\s+(?:pagar|assinar|comprar|o\s+plano|renovar|contratar|adquirir|ter\s+acesso)\b|"
+    r"\bquanto\s+(?:tenho\s+(?:que|q|de)|devo|preciso|custa|sai|fica)\s+(?:a\s+)?(?:pagar|p/|pra|para)?\b|"
+    r"\bquanto\s+(?:custa|sai|fica|[eé])\s*(?:o\s+plano|a\s+assinatura|o\s+acesso|o\s+nethub|por\s+m[eê]s)?\b|"
+    r"\bqual\s+(?:[eé]\s+)?(?:o\s+)?(?:valor|pre[cç]o)\s*(?:do\s+plano|da\s+assinatura|mensal)?\b|"
+    r"\baceita\s+(?:pix|cartao|cart[aã]o)\b|\bformas?\s+de\s+pagamento\b|"
+    r"\bquais\s+(?:s[aã]o\s+os|os)\s+planos\b|\bqual\s+plano\b|"
+    r"\b(?:para|pra|p)\s+(?:eu\s+)?te\s+pagar\b|"
+    # ES
+    r"\bc[oó]mo\s+(?:puedo\s+|hago\s+para\s+)?(?:pagar|pago|suscribirme|contratar)\b|"
+    r"\bd[oó]nde\s+(?:puedo\s+)?(?:pagar|pago)\b|"
+    r"\bquiero\s+(?:pagar|suscribirme|el\s+plan|renovar|contratar)\b|"
+    r"\bcu[aá]nto\s+(?:cuesta|tengo\s+que\s+pagar|vale|sale)\b|"
+    r"\bcu[aá]l\s+es\s+el\s+precio\b|\bformas\s+de\s+pago\b|\baceptan\s+tarjeta\b)",
+    re.IGNORECASE,
+)
+_RECUPERACAO_SENHA_RE = re.compile(
+    r"(?:\b(?:c[oó]digo|senha|link)\b.*\b(?:n[aã]o|nao)\s+(?:chega|chegou|recebi|veio|caiu)\b|"
+    r"\b(?:n[aã]o|nao)\s+(?:chega|chegou|recebi|veio|caiu)\b.*\b(?:c[oó]digo|senha|link)\b|"
+    r"\besqueci\s+(?:a\s+)?senha\b|\bperdi\s+(?:a\s+)?senha\b|\btrocar\s+(?:a\s+)?senha\b|"
+    r"\bno\s+llega\s+(?:el\s+)?c[oó]digo\b|\bolvid[eé]\s+(?:la\s+)?contrase[nñ]a\b)",
+    re.IGNORECASE,
+)
 _PALAVRA_CONTEUDO_RE = re.compile(
     r"\b(?:series?|filmes?|temporadas?|episodios?|novelas?|animes?|desenhos?|documentarios?|catalogos?|peliculas?|capitulos?)\b"
 )
@@ -101,6 +241,23 @@ _APP_TRAVADO_RE = re.compile(
 )
 
 
+def obter_ultima_resposta_assistente(historico: Optional[list]) -> Optional[str]:
+    """Retorna o texto da última resposta enviada pelo assistente/IA no histórico."""
+    if not historico:
+        return None
+    for item in reversed(historico):
+        if isinstance(item, (list, tuple)) and len(item) >= 2:
+            papel = str(item[0]).lower()
+            if papel in ("nethub", "ia", "assistant", "bot"):
+                return str(item[1]).strip()
+        elif isinstance(item, dict):
+            papel = str(item.get("role") or item.get("papel") or "").lower()
+            if papel in ("nethub", "ia", "assistant", "bot"):
+                conteudo = item.get("content") or item.get("texto") or ""
+                return str(conteudo).strip()
+    return None
+
+
 def fatos_da_conta(contexto: dict, idioma: str) -> list[str]:
     """Resumo da conta (vindo do NetHub, sem dado pessoal) em fatos para o modelo. Só o que o NetHub conferiu no banco."""
     if not contexto:
@@ -111,27 +268,46 @@ def fatos_da_conta(contexto: dict, idioma: str) -> list[str]:
     ate = str(contexto.get("valido_ate") or "").strip()
     if plano:
         if contexto.get("ativo") and ate:
-            fatos.append(f"Este cliente tiene el plan {plano} activo hasta el {ate}." if es
-                         else f"Este cliente tem o plano {plano} ativo até {ate}.")
+            fatos.append(
+                f"Este cliente tiene el plan {plano} activo hasta el {ate}."
+                if es
+                else f"Este cliente tem o plano {plano} ativo até {ate}."
+            )
         elif ate:
-            fatos.append(f"El plan de este cliente venció el {ate}." if es else f"O plano deste cliente venceu em {ate}.")
+            fatos.append(
+                f"El plan de este cliente venció el {ate}."
+                if es
+                else f"O plano deste cliente venceu em {ate}."
+            )
     if "tem_conta_site" in contexto:
         if contexto.get("tem_conta_site"):
-            fatos.append("Este cliente ya tiene la cuenta con correo y contraseña." if es
-                         else "Este cliente já tem a conta do site e dos apps (e-mail e senha).")
+            fatos.append(
+                "Este cliente ya tiene la cuenta con correo y contraseña."
+                if es
+                else "Este cliente já tem a conta do site e dos apps (e-mail e senha)."
+            )
         else:
-            fatos.append("Este cliente todavía no creó la cuenta con correo y contraseña." if es
-                         else "Este cliente ainda não criou a conta do site e dos apps (e-mail e senha).")
+            fatos.append(
+                "Este cliente todavía no creó la cuenta con correo y contraseña."
+                if es
+                else "Este cliente ainda não criou a conta do site e dos apps (e-mail e senha)."
+            )
     for p in (contexto.get("pedidos") or [])[:5]:
         titulo, status = str(p.get("titulo") or "").strip(), str(p.get("status") or "").strip()
         if not titulo:
             continue
         if status == "adicionado":
-            fatos.append(f"El pedido de este cliente \"{titulo}\" ya está en el catálogo." if es
-                         else f"O pedido deste cliente \"{titulo}\" já está no catálogo.")
+            fatos.append(
+                f"El pedido de este cliente \"{titulo}\" ya está en el catálogo."
+                if es
+                else f"O pedido deste cliente \"{titulo}\" já está no catálogo."
+            )
         elif status == "pendente":
-            fatos.append(f"El pedido de este cliente \"{titulo}\" está registrado y todavía no entró; no hay plazo." if es
-                         else f"O pedido deste cliente \"{titulo}\" está registrado e ainda não entrou; não há prazo.")
+            fatos.append(
+                f"El pedido de este cliente \"{titulo}\" está registrado y todavía no entró; no hay plazo."
+                if es
+                else f"O pedido deste cliente \"{titulo}\" está registrado e ainda não entrou; não há prazo."
+            )
     return fatos
 
 
@@ -154,11 +330,27 @@ class CustomerSupportService:
             if _FECHAMENTO_CONFIRMACAO_RE.match(t_norm):
                 return "fechamento", CONFIRMACAO[idioma]
 
-        # Trava financeira / escala
-        if any(sem_acento(item) in t_norm for item in facts.escalar):
+        # Cliente enviou apenas endereço de e-mail (geralmente resposta a pedido de conta)
+        if _APENAS_EMAIL_RE.match(texto.strip()):
+            return "pagamento", INFO_RECEBIDA[idioma]
+
+        # Configuração de gateway / provedor de mídia na TV ou app
+        if _CONFIG_SERVIDOR_RE.search(t_norm) and not _PROBLEMA_PAGAMENTO_RE.search(t_norm):
+            return "duvida", CONFIG_SERVIDOR[idioma]
+
+        # Reclamação real de pagamento / já pago / comprovante / estorno / bloqueio
+        if _PROBLEMA_PAGAMENTO_RE.search(t_norm):
             return "pagamento", ESCALAR_FINANCEIRO[idioma]
 
-        # Pedido de titulo
+        # Intenção de compra / assinar / pedir chave pix / quanto custa / como pagar
+        if _INTENCAO_COMPRA_RE.search(t_norm):
+            return "duvida", INTENCAO_ASSINATURA[idioma]
+
+        # Recuperação de senha / código não chega no e-mail
+        if _RECUPERACAO_SENHA_RE.search(t_norm):
+            return "duvida", RECUPERACAO_SENHA[idioma]
+
+        # Pedido de título
         if _PALAVRA_CONTEUDO_RE.search(t_norm) and _EXPRESSAO_DISPONIBILIDADE_RE.search(t_norm):
             return "duvida", PEDIDO_TITULO[idioma]
 
@@ -170,10 +362,25 @@ class CustomerSupportService:
         if any(sem_acento(termo) in t_norm for termo in facts.bug):
             return "bug", BUG_RECONHECIDO[idioma]
 
+        # Trava financeira / escala genérica para termos não capturados acima
+        # (evita falsos positivos com palavras genéricas como "pix" isolado que já foram tratadas)
+        termos_escalar_especificos = [
+            item for item in facts.escalar
+            if sem_acento(item).strip() not in ("pix", "pagamento", "cartao", "tarjeta", "pago")
+        ]
+        if any(sem_acento(item) in t_norm for item in termos_escalar_especificos):
+            return "pagamento", ESCALAR_FINANCEIRO[idioma]
+
         return None, None
 
-    async def responder_duvida_com_ia(self, texto: str, idioma: str, facts, historico: list,
-                                      contexto: Optional[dict] = None) -> str:
+    async def responder_duvida_com_ia(
+        self,
+        texto: str,
+        idioma: str,
+        facts,
+        historico: list,
+        contexto: Optional[dict] = None,
+    ) -> str:
         fatos_lista = facts.fatos.get(idioma) or facts.fatos.get("pt") or []
         fatos_lista = list(fatos_lista) + fatos_da_conta(contexto or {}, idioma)
         fatos_formatados = "\n".join(f"- {f}" for f in fatos_lista)
@@ -195,10 +402,10 @@ class CustomerSupportService:
         if historico:
             for item in historico[-4:]:
                 if isinstance(item, (list, tuple)) and len(item) >= 2:
-                    papel = "assistant" if item[0] in ("nethub", "ia", "assistant") else "user"
+                    papel = "assistant" if item[0] in ("nethub", "ia", "assistant", "bot") else "user"
                     mensagens.append({"role": papel, "content": str(item[1])})
                 elif isinstance(item, dict):
-                    papel = "assistant" if item.get("role") in ("nethub", "ia", "assistant") else "user"
+                    papel = "assistant" if item.get("role") in ("nethub", "ia", "assistant", "bot") else "user"
                     mensagens.append({"role": papel, "content": str(item.get("content", ""))})
 
         mensagens.append({"role": "user", "content": texto})
@@ -240,10 +447,72 @@ class CustomerSupportService:
         # Checagem de intenção rápida
         motivo, resposta_rapida = self.identificar_intencao_rapida(req.texto, idioma, facts)
 
-        if motivo == "cumprimento" or motivo == "fechamento":
+        # Se não casou intenção rápida, tenta LLM / fatos
+        if not motivo:
+            resposta_ia = await self.responder_duvida_com_ia(
+                req.texto, idioma, facts, req.historico or [], contexto=req.contexto
+            )
+            nao_sei = resposta_ia.strip() == limpar_estilo(NAO_SEI[idioma]).strip()
+            motivo = "nao_sei" if nao_sei else "duvida"
+            resposta_candidata = resposta_ia
+        else:
+            resposta_candidata = resposta_rapida or ""
+
+        resposta_limpa = limpar_estilo(resposta_candidata)
+
+        # ── ANTI-REPETIÇÃO / ANTI-LOOPING ──────────────────────────────────
+        # Se a IA já enviou exatamente a mesma resposta na interação imediatamente anterior,
+        # não repete como papagaio; oferece variação empática e alerta o Kaio.
+        ult_resp = obter_ultima_resposta_assistente(req.historico)
+        if ult_resp and sem_acento(resposta_limpa) == sem_acento(ult_resp):
+            log.info(
+                "[customer_support] Resposta repetida detectada para chat %s. Aplicando anti-loop.",
+                req.chat_id,
+            )
+            if motivo == "pagamento":
+                resposta_limpa = limpar_estilo(REPETICAO_FINANCEIRO[idioma])
+                enviar_telegram_kaio(
+                    f"ATENÇÃO: Cliente {req.nome or req.username or req.chat_id} (id: {req.chat_id}) insistindo em assunto financeiro / comprovante.\n"
+                    f"Mensagem: \"{req.texto}\"\n"
+                    f"Resposta adaptada enviada: \"{resposta_limpa}\"",
+                    edicao=edicao,
+                    titulo="FINANCEIRO REPETIDO - ATENÇÃO HUMANA",
+                )
+            elif "assinatura" in sem_acento(resposta_limpa) or "pix" in sem_acento(resposta_limpa):
+                resposta_limpa = limpar_estilo(REPETICAO_ASSINATURA[idioma])
+                enviar_telegram_kaio(
+                    f"CLIENTE COM DÚVIDA REPETIDA DE ASSINATURA/PIX:\n"
+                    f"Cliente {req.nome or req.username or req.chat_id} (id: {req.chat_id})\n"
+                    f"Mensagem: \"{req.texto}\"\n"
+                    f"Pode estar com dificuldade em usar o bot. Verifique.",
+                    edicao=edicao,
+                    titulo="DIFICULDADE ASSINATURA / PIX",
+                )
+            elif motivo == "nao_sei":
+                resposta_limpa = limpar_estilo(REPETICAO_NAO_SEI[idioma])
+                enviar_telegram_kaio(
+                    f"CLIENTE AGUARDANDO RESPOSTA HUMANA (REPETIDA):\n"
+                    f"Cliente: {req.nome or req.username or req.chat_id} (id: {req.chat_id})\n"
+                    f"Mensagem: \"{req.texto}\"",
+                    edicao=edicao,
+                    titulo="CLIENTE AGUARDANDO RETORNO",
+                )
+            else:
+                resposta_limpa = limpar_estilo(REPETICAO_GERAL[idioma])
+                motivo = "nao_sei"
+                enviar_telegram_kaio(
+                    f"CLIENTE REPETINDO DÚVIDA / INSISTINDO:\n"
+                    f"Cliente: {req.nome or req.username or req.chat_id} (id: {req.chat_id})\n"
+                    f"Mensagem: \"{req.texto}\"",
+                    edicao=edicao,
+                    titulo="CLIENTE REPETINDO MENSAGEM",
+                )
+
+        # ── ROTEAMENTO DOS CASOS E NOTIFICAÇÕES ─────────────────────────────
+        if motivo in ("cumprimento", "fechamento"):
             return CustomerMessageResponse(
                 status="answered",
-                resposta_cliente=limpar_estilo(resposta_rapida or ""),
+                resposta_cliente=resposta_limpa,
                 motivo=motivo,
             )
 
@@ -256,7 +525,7 @@ class CustomerSupportService:
             )
             return CustomerMessageResponse(
                 status="escalated",
-                resposta_cliente=limpar_estilo(resposta_rapida or ""),
+                resposta_cliente=resposta_limpa,
                 motivo="pagamento",
                 detalhes="Escalado para conferência de pagamento pelo Kaio",
             )
@@ -284,27 +553,33 @@ class CustomerSupportService:
 
             return CustomerMessageResponse(
                 status="bug_investigating",
-                resposta_cliente=limpar_estilo(resposta_rapida or BUG_RECONHECIDO[idioma]),
+                resposta_cliente=resposta_limpa or limpar_estilo(BUG_RECONHECIDO[idioma]),
                 motivo="bug",
                 task_id=task_id,
                 detalhes="Auto-fix autônomo iniciado para diagnosticar e reparar o bug relatado.",
             )
 
-        if resposta_rapida and motivo == "duvida":
+        if motivo == "nao_sei":
+            enviar_telegram_kaio(
+                f"DÚVIDA NÃO COBERTA PELA IA:\n"
+                f"Cliente: {req.nome or req.username or req.chat_id} (id: {req.chat_id})\n"
+                f"Edição: NetHub {edicao.upper()}\n"
+                f"Mensagem: \"{req.texto}\"\n"
+                f"Resposta enviada: \"{resposta_limpa}\"\n"
+                f"Ação: Kaio precisa responder o cliente no Telegram.",
+                edicao=edicao,
+                titulo="DÚVIDA NÃO COBERTA - KAIO",
+            )
             return CustomerMessageResponse(
-                status="answered",
-                resposta_cliente=limpar_estilo(resposta_rapida),
-                motivo="duvida",
+                status="escalated",
+                resposta_cliente=resposta_limpa,
+                motivo="nao_sei",
+                detalhes="a IA não achou a resposta nos fatos nem na conta",
             )
 
-        # Caso geral: dúvida analisada com IA (com os dados da conta, quando o NetHub mandou)
-        resposta_ia = limpar_estilo(await self.responder_duvida_com_ia(req.texto, idioma, facts, req.historico,
-                                                                       contexto=req.contexto))
-        # "Vou verificar" é pendência: o NetHub avisa o Kaio e a ficha fica aberta (04/11/2026, antes ia como "duvida").
-        nao_sei = resposta_ia.strip() == limpar_estilo(NAO_SEI[idioma]).strip()
+        # Caso geral de dúvida respondida
         return CustomerMessageResponse(
-            status="escalated" if nao_sei else "answered",
-            resposta_cliente=resposta_ia,
-            motivo="nao_sei" if nao_sei else "duvida",
-            detalhes="a IA não achou a resposta nos fatos nem na conta" if nao_sei else None,
+            status="answered",
+            resposta_cliente=resposta_limpa,
+            motivo="duvida",
         )
