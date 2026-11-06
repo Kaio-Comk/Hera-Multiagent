@@ -10,10 +10,10 @@ import psutil
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Dict, Any, List, Literal, Optional, Tuple, Union
+from typing import Dict, Any, List, Literal, Optional, Tuple
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks, Request
-from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Response, JSONResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, Response, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, StringConstraints
 from typing_extensions import Annotated
@@ -32,7 +32,7 @@ from app.vault.obsidian import ObsidianVaultWriter
 from app.vault.memory import ObsidianMemoryManager
 from app.validator import TaskValidator
 from app.auto_fix import AutoFixEngine
-from app.dag_scheduler import TaskDAG, DAGScheduler
+from app.dag_scheduler import DAGScheduler
 from app import orchestration
 from app.engine_profiles import build_catalog, filter_ollama_models, models_map_of
 from app.console_bus import ConsoleBus
@@ -62,7 +62,7 @@ from app.gateway.secret_store import SecretStore, SecretStoreError
 from app.gateway.usage import UsageLedger
 from adapters.hera_router import HeraRouterAdapter
 from app.gateway.privacy import GatewayPrivacyManager
-from app.gateway.providers import OllamaGatewayAdapter, GatewayProviderError
+from app.gateway.providers import GatewayProviderError
 from app.gateway.provider_policy import SSRFSecurityError, sanitize_extra_headers, validate_provider_url
 from app.gateway.safe_transport import make_safe_async_client
 from app.gateway.factory import build_gateway_adapters, parse_daily_budget, parse_sticky_minutes
@@ -73,19 +73,14 @@ from app.hitl.schemas import (
     ApprovalRequest,
     RejectRequest,
     RequestChangesRequest,
-    DiffProposal,
-    MergeResult,
 )
 from app.hitl.service import HitlService
-from app.hitl.git_manager import GitManager
-from app.hitl.diff_analyzer import DiffAnalyzer
 from app.hitl.approval_engine import ApprovalEngine
 
 from app.mcp.schemas import (
     McpServerConfig,
     McpToolDefinition,
     McpToolCallRequest,
-    McpToolCallResult,
 )
 from app.mcp.catalog import McpCatalog, McpSecurityError, McpPermissionDeniedError
 from app.mcp.launch import McpLaunchError, validate_stdio_server
@@ -93,10 +88,7 @@ from app.mcp.transport import McpTransportError
 from app.mcp.client import McpClientManager
 
 from app.arena.schemas import (
-    ArenaCandidate,
-    CandidateResult,
     ArenaRunRequest,
-    ArenaRunReport,
 )
 from app.arena.runner import ArenaRunner
 from contextlib import asynccontextmanager
@@ -367,18 +359,25 @@ autofix = AutoFixEngine(
 from app.telegram import AutoFixService, CustomerSupportService, init_telegram_services, telegram_router
 
 async def _telegram_llm_caller(mensagens: list[dict]) -> str:
+    """Chama a IA em nuvem do Hera (Groq, SambaNova, SiliconFlow, Gemini) para atendimento em tempo real (< 1.5s)."""
     try:
         msgs = [ChatMessage(role=m.get("role", "user"), content=m.get("content", "")) for m in mensagens]
-        req = ChatCompletionRequest(
-            model="hera_router",
-            messages=msgs,
-            stream=False,
-            temperature=0.2,
-            max_tokens=250,
-        )
-        resp = await _gateway_call(req, label="hera (suporte telegram)")
-        if resp.choices:
-            return resp.choices[0].message.content or ""
+        for prov in ("groq", "sambanova", "siliconflow", "gemini", None):
+            try:
+                req = ChatCompletionRequest(
+                    model="default",
+                    messages=msgs,
+                    stream=False,
+                    temperature=0.2,
+                    max_tokens=250,
+                )
+                resp = await _gateway_call(req, only_provider=prov, label="hera (suporte telegram)")
+                if resp.choices and resp.choices[0].message.content:
+                    txt = resp.choices[0].message.content.strip()
+                    if txt:
+                        return txt
+            except Exception as prov_err:
+                task_log.debug("Provedor %s falhou para suporte telegram: %s", prov or "auto", prov_err)
     except Exception as _e:
         task_log.warning("Falha ao responder duvida via gateway Hera: %s", _e)
     return ""
