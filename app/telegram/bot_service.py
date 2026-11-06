@@ -8,12 +8,14 @@ Acesso estritamente restrito ao Kaio Lima (ID: 8110665027).
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import psutil
 import shutil
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -21,6 +23,8 @@ import httpx
 
 # Imports internos do Hera
 from app.config_manager import ConfigManager
+from app.finance.expense_manager import ExpenseManager
+from app.finance.receipt_parser import ReceiptParser
 from app.gateway.factory import build_gateway_adapters
 from app.gateway.secret_store import SecretStore
 from app.gateway.tier_router import TierRouter
@@ -67,6 +71,10 @@ class HeraTelegramBot:
         self.current_model = "default"
         self._running = False
         self._offset = 0
+
+        # Módulos Financeiros (Planilhas & Comprovantes)
+        self.expense_manager = ExpenseManager()
+        self.receipt_parser = ReceiptParser()
 
     def init_gateway(self) -> None:
         """Inicializa adaptadores de IA e o TierRouter do Hera (100% Nuvem)."""
@@ -175,7 +183,7 @@ class HeraTelegramBot:
         return "\n".join(lines)
 
     async def handle_update(self, update: Dict[str, Any]) -> None:
-        """Processa uma atualização (mensagem recebida)."""
+        """Processa uma atualização (mensagem de texto, comprovante ou foto)."""
         msg = update.get("message")
         if not msg:
             return
@@ -183,6 +191,9 @@ class HeraTelegramBot:
         chat_id = msg.get("chat", {}).get("id")
         user_id = msg.get("from", {}).get("id")
         text = (msg.get("text") or "").strip()
+        caption = (msg.get("caption") or "").strip()
+        photo = msg.get("photo")
+        document = msg.get("document")
 
         # Trava de segurança: apenas admin autorizado
         if user_id != self.admin_id:
@@ -190,26 +201,52 @@ class HeraTelegramBot:
             await self.send_message(chat_id, "⛔ *Acesso Restrito.* Esta assistente é privada.")
             return
 
-        if not text:
-            await self.send_message(chat_id, "Recebi sua mensagem, mas não há texto para processar.")
+        # ── 1. Comprovantes (Foto ou Documento PDF/Imagem) ────────────────────────
+        if photo or (document and any(ext in (document.get("file_name") or "").lower() for ext in (".pdf", ".png", ".jpg", ".jpeg", ".webp"))):
+            file_id = photo[-1]["file_id"] if photo else document["file_id"]
+            file_name = document.get("file_name") if document else "comprovante.jpg"
+            await self.send_chat_action(chat_id, "typing")
+            await self.send_message(chat_id, "⏳ *Processando comprovante Pix...*")
+            await self._process_receipt(chat_id, file_id=file_id, file_name=file_name, user_comment=caption)
             return
 
-        # ── Comandos ─────────────────────────────────────────────────────────────
+        # Se não há texto nem comprovante
+        if not text:
+            await self.send_message(chat_id, "Recebi sua mensagem, mas não identifiquei texto ou comprovante.")
+            return
+
+        # ── 2. Comandos do Sistema ────────────────────────────────────────────────
         cmd = text.split()[0].lower()
 
         if cmd in ("/start", "/help"):
             welcome = (
                 "🦚 *Olá! Eu sou a Hera Assistente.*\n\n"
-                "Estou conectada diretamente ao sistema e pronta para ajudar. "
-                "Pode conversar comigo normalmente ou pedir o que precisar por aqui!\n\n"
-                "📌 *Comandos disponíveis:*\n"
+                "Estou conectada ao sistema e às suas finanças. "
+                "Pode conversar comigo, pedir análises ou enviar comprovantes Pix!\n\n"
+                "📌 *Comandos & Recursos:*\n"
+                "• 🧾 *Envio de Comprovante:* Mande a foto do comprovante com o comentário (ex: _comprei um sorvete_) e eu adiciono na sua planilha!\n"
+                "• 💸 *Gasto por Texto:* Digite algo como _comprei um sorvete de 40 reais_ e eu adiciono automaticamente.\n"
+                "• `/gastos` — Ver os últimos gastos lançados via Telegram\n"
                 "• `/status` — Ver uso de CPU, RAM, GPU e serviços\n"
-                "• `/model` — Ver ou alternar modelo de IA\n"
+                "• `/model` — Ver ou alternar modelo de IA (100% Nuvem)\n"
                 "• `/clear` — Limpar histórico da conversa e reiniciar contexto\n"
                 "• `/help` — Ver esta ajuda\n\n"
-                "💬 *Pode me mandar uma pergunta ou instrução agora!*"
+                "💬 *Pode me mandar uma mensagem ou comprovante agora!*"
             )
             await self.send_message(chat_id, welcome)
+            return
+
+        elif cmd == "/gastos":
+            from app.finance.expense_manager import AUDIT_LOG_PATH
+            if not AUDIT_LOG_PATH.exists() or AUDIT_LOG_PATH.stat().st_size == 0:
+                await self.send_message(chat_id, "📂 *Nenhum gasto lançado via Telegram ainda.*")
+                return
+            lines = [json.loads(l) for l in AUDIT_LOG_PATH.read_text(encoding="utf-8").strip().split("\n") if l.strip()]
+            recent = lines[-5:]
+            msg_g = ["📊 *Últimos Gastos Lançados via Telegram:*\n"]
+            for g in reversed(recent):
+                msg_g.append(f"• `{g['data']}` — *R$ {g['valor']:.2f}* — {g['descricao']} ({g['categoria']})")
+            await self.send_message(chat_id, "\n".join(msg_g))
             return
 
         elif cmd == "/status":
@@ -249,6 +286,12 @@ class HeraTelegramBot:
                 await self.send_message(chat_id, msg_models)
             return
 
+        # ── 3. Intenção Financeira por Texto (Ex: 'comprei sorvete R$ 40') ────────
+        if self.receipt_parser.is_financial_intent(text):
+            await self.send_chat_action(chat_id, "typing")
+            await self._process_receipt(chat_id, file_id=None, file_name=None, user_comment=text)
+            return
+
         # ── Conversa Normal com IA ───────────────────────────────────────────────
         await self.send_chat_action(chat_id, "typing")
 
@@ -284,6 +327,86 @@ class HeraTelegramBot:
             log.exception("[HeraTelegramBot] Erro ao consultar modelo: %s", exc)
             err_msg = f"⚠️ *Erro ao processar com a IA:*\n`{exc}`"
             await self.send_message(chat_id, err_msg)
+
+    async def _process_receipt(
+        self,
+        chat_id: int,
+        file_id: Optional[str] = None,
+        file_name: Optional[str] = None,
+        user_comment: str = "",
+    ) -> None:
+        """Processa comprovante (imagem, PDF ou texto) e lança na planilha de gastos do Kaio."""
+        temp_file: Optional[Path] = None
+        raw_text = ""
+
+        try:
+            if file_id:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    res = await client.get(f"{self.api_url}/getFile?file_id={file_id}")
+                    if res.status_code != 200 or not res.json().get("ok"):
+                        await self.send_message(chat_id, "⚠️ Não consegui acessar o arquivo no Telegram.")
+                        return
+                    file_path = res.json()["result"]["file_path"]
+                    download_url = f"https://api.telegram.org/file/bot{self.token}/{file_path}"
+                    file_resp = await client.get(download_url)
+                    if file_resp.status_code != 200:
+                        await self.send_message(chat_id, "⚠️ Falha ao baixar o comprovante do Telegram.")
+                        return
+
+                    ext = Path(file_path).suffix or ".jpg"
+                    temp_file = self.data_dir / f"temp_{uuid.uuid4().hex[:8]}{ext}"
+                    temp_file.write_bytes(file_resp.content)
+
+                # Extração de texto via OCR ou PDF
+                if temp_file.suffix.lower() == ".pdf":
+                    raw_text = self.receipt_parser.extract_text_from_pdf(temp_file)
+                else:
+                    raw_text = self.receipt_parser.extract_text_from_image(temp_file)
+
+            # Interpretação por IA (TierRouter 100% Nuvem)
+            parsed = await self.receipt_parser.parse_receipt(raw_text, user_comment, self.router)
+            valor = float(parsed.get("valor", 0.0))
+
+            if valor <= 0:
+                await self.send_message(
+                    chat_id,
+                    "⚠️ *Não identifiquei o valor da despesa.*\n"
+                    "Por favor informe o valor (ex: `R$ 40,00 Sorvete`)."
+                )
+                return
+
+            # Gravação atômica na planilha oficial do Kaio
+            entry = self.expense_manager.record_expense(parsed, receipt_path=temp_file)
+
+            msg_confirm = (
+                "🧾 *Comprovante Pix Lançado com Sucesso!*\n\n"
+                f"💰 *Valor:* `R$ {entry['valor']:.2f}`\n"
+                f"🏷️ *Descrição:* *{entry['descricao']}*\n"
+                f"📂 *Categoria:* `{entry['categoria']}`\n"
+                f"🏦 *Forma / Banco:* {entry['forma']} ({entry['banco']})\n"
+                f"📅 *Data:* {entry['data']} ({entry['mes']})\n"
+            )
+            if entry.get("beneficiario"):
+                msg_confirm += f"👤 *Beneficiário:* {entry['beneficiario']}\n"
+            if entry.get("observacao"):
+                msg_confirm += f"📝 *Obs:* _{entry['observacao']}_\n"
+            msg_confirm += (
+                "\n📊 *Planilhas Atualizadas Automaticamente:*\n"
+                "• `Finanças Kaio.xlsx` (Gastos & Extrato)\n"
+                "• `Gastos 2026.xlsx` (Orçamento Mensal)\n"
+                "• `Obsidian Vault` (Finanças.md)"
+            )
+            await self.send_message(chat_id, msg_confirm)
+
+        except Exception as exc:
+            log.exception("[HeraTelegramBot] Erro ao processar comprovante: %s", exc)
+            await self.send_message(chat_id, f"⚠️ *Erro ao lançar despesa na planilha:*\n`{exc}`")
+        finally:
+            if temp_file and temp_file.exists():
+                try:
+                    temp_file.unlink()
+                except Exception:
+                    pass
 
     async def run(self) -> None:
         """Laço principal de Long Polling do Telegram."""
