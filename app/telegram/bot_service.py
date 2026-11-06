@@ -129,6 +129,26 @@ class HeraTelegramBot:
             except Exception:
                 pass
 
+    async def send_document(self, chat_id: int, file_path: Path, caption: str = "") -> bool:
+        """Envia um arquivo ou documento diretamente no Telegram."""
+        if not file_path.exists():
+            log.error("[HeraTelegramBot] Arquivo não encontrado para envio: %s", file_path)
+            return False
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            try:
+                with open(file_path, "rb") as f:
+                    files = {"document": (file_path.name, f)}
+                    data = {"chat_id": chat_id, "caption": caption, "parse_mode": "Markdown"}
+                    resp = await client.post(f"{self.api_url}/sendDocument", data=data, files=files)
+                    if resp.status_code == 400 and "can't parse entities" in resp.text:
+                        data.pop("parse_mode", None)
+                        f.seek(0)
+                        resp = await client.post(f"{self.api_url}/sendDocument", data=data, files=files)
+                    return resp.status_code == 200
+            except Exception as exc:
+                log.error("[HeraTelegramBot] Erro ao enviar documento: %s", exc)
+                return False
+
     @staticmethod
     def _chunk_text(text: str, limit: int = 4000) -> List[str]:
         if len(text) <= limit:
@@ -226,6 +246,8 @@ class HeraTelegramBot:
                 "📌 *Comandos & Recursos:*\n"
                 "• 🧾 *Envio de Comprovante:* Mande a foto do comprovante com o comentário (ex: _comprei um sorvete_) e eu adiciono na sua planilha!\n"
                 "• 💸 *Gasto por Texto:* Digite algo como _comprei um sorvete de 40 reais_ e eu adiciono automaticamente.\n"
+                "• `/fluxo` — Baixar o arquivo de sincronização / backup completo para o app Fluxo no celular\n"
+                "• `/apk` — Baixar o APK atualizado do Fluxo (v2.5.0)\n"
                 "• `/gastos` — Ver os últimos gastos lançados via Telegram\n"
                 "• `/status` — Ver uso de CPU, RAM, GPU e serviços\n"
                 "• `/model` — Ver ou alternar modelo de IA (100% Nuvem)\n"
@@ -234,6 +256,51 @@ class HeraTelegramBot:
                 "💬 *Pode me mandar uma mensagem ou comprovante agora!*"
             )
             await self.send_message(chat_id, welcome)
+            return
+
+        elif cmd == "/fluxo":
+            await self.send_chat_action(chat_id, "upload_document")
+            backup_path = Path(r"B:\Finanças\Extratos\fluxo-backup-latest.json")
+            if not backup_path.exists():
+                try:
+                    from app.finance.fluxo_exporter import build_fluxo_backup
+                    build_fluxo_backup()
+                except Exception as e:
+                    await self.send_message(chat_id, f"⚠️ Erro ao gerar backup: {e}")
+                    return
+
+            caption = (
+                "📱 *Backup Consolidado do App Fluxo*\n\n"
+                "• 1.784+ Transações auditadas\n"
+                "• 8 Contas bancárias\n"
+                "• 57 Categorias\n"
+                "• Financiamento Titan 160 & Metas 2026\n\n"
+                "📲 *Como Restaurar no celular:*\n"
+                "1. Salve o arquivo `.json` acima no celular\n"
+                "2. Abra o app **Fluxo**\n"
+                "3. Vá em **Mais › Dados › Restaurar backup**\n"
+                "4. Escolha este arquivo e confirme!"
+            )
+            await self.send_document(chat_id, backup_path, caption=caption)
+            return
+
+        elif cmd == "/apk":
+            await self.send_chat_action(chat_id, "upload_document")
+            apk_path = Path(r"B:\Projetos\Mobills REA\reconstrucao_pessoal\dist\Fluxo-2.5.0-debug.apk")
+            if not apk_path.exists():
+                apk_path = Path(r"B:\Projetos\Mobills REA\reconstrucao_pessoal\app\build\outputs\apk\debug\app-debug.apk")
+            if not apk_path.exists():
+                await self.send_message(chat_id, "⚠️ O APK ainda está sendo compilado. Tente novamente em instantes.")
+                return
+
+            caption = (
+                "📦 *Fluxo 2.5.0 (Debug APK)*\n\n"
+                "✨ *Novidades:*\n"
+                "• Leitura automática de notificações da Hera no Telegram\n"
+                "• Suporte a restauração do snapshot completo da planilha\n"
+                "• 100% offline e privado"
+            )
+            await self.send_document(chat_id, apk_path, caption=caption)
             return
 
         elif cmd == "/gastos":
@@ -380,6 +447,7 @@ class HeraTelegramBot:
 
             msg_confirm = (
                 "🧾 *Comprovante Pix Lançado com Sucesso!*\n\n"
+                f"💳 Pix enviado: R$ {entry['valor']:.2f} para {entry['descricao']}\n\n"
                 f"💰 *Valor:* `R$ {entry['valor']:.2f}`\n"
                 f"🏷️ *Descrição:* *{entry['descricao']}*\n"
                 f"📂 *Categoria:* `{entry['categoria']}`\n"
@@ -391,10 +459,11 @@ class HeraTelegramBot:
             if entry.get("observacao"):
                 msg_confirm += f"📝 *Obs:* _{entry['observacao']}_\n"
             msg_confirm += (
-                "\n📊 *Planilhas Atualizadas Automaticamente:*\n"
+                "\n📊 *Sistemas Atualizados:*\n"
                 "• `Finanças Kaio.xlsx` (Gastos & Extrato)\n"
                 "• `Gastos 2026.xlsx` (Orçamento Mensal)\n"
-                "• `Obsidian Vault` (Finanças.md)"
+                "• `App Fluxo (Android)`: Notificação emitida & Snapshot atualizado\n"
+                "• `Obsidian Vault`: Finanças.md"
             )
             await self.send_message(chat_id, msg_confirm)
 

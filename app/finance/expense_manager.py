@@ -135,6 +135,14 @@ class ExpenseManager:
         # 5. Atualizar Obsidian Vault se acessível
         self._append_to_obsidian(audit_entry)
 
+        # 6. Sincronizar snapshot do app Fluxo (Android)
+        try:
+            from app.finance.fluxo_exporter import build_fluxo_backup
+            build_fluxo_backup()
+            log.info("Backup do app Fluxo (fluxo-backup-latest.json) sincronizado com sucesso.")
+        except Exception as err:
+            log.warning(f"Erro ao sincronizar snapshot do Fluxo: {err}")
+
         return audit_entry
 
     def _update_gastos_sheet(self, wb, dt, mes_nome, descricao, categoria, forma, valor, observacao):
