@@ -100,7 +100,31 @@ gateway_http_client: Optional[httpx.AsyncClient] = None
 async def lifespan(app: FastAPI):
     global gateway_http_client
     gateway_http_client = make_safe_async_client(timeout=60.0)   # valida o destino na conexão (anti-rebinding)
+
+    # Inicia o servidor de sincronização sem fio do Fluxo (porta 8765)
+    try:
+        import threading
+        from app.finance.fluxo_sync_server import start_server as start_fluxo
+        threading.Thread(target=lambda: start_fluxo(port=8765), daemon=True, name="HeraFluxoSync").start()
+        logging.getLogger("hera.server").info("[Hera] Servidor Fluxo Sync iniciado na porta 8765.")
+    except Exception as exc:
+        logging.getLogger("hera.server").warning("[Hera] Falha ao iniciar Fluxo Sync: %s", exc)
+
+    # Inicia o bot privado do Telegram (@hera_kaio_bot)
+    bot_task = None
+    token_file = Path(r"B:\Projetos\Hera\data\.hera_telegram_token")
+    if token_file.exists() and token_file.read_text(encoding="utf-8").strip():
+        try:
+            from app.telegram.bot_service import main as bot_main
+            bot_task = asyncio.create_task(bot_main())
+            logging.getLogger("hera.server").info("[Hera] Bot privado do Telegram (@hera_kaio_bot) iniciado em segundo plano.")
+        except Exception as exc:
+            logging.getLogger("hera.server").warning("[Hera] Falha ao iniciar bot do Telegram: %s", exc)
+
     yield
+
+    if bot_task:
+        bot_task.cancel()
     await mcp_client.close_all()                              # encerra os servidores MCP lançados
     if gateway_http_client:
         await gateway_http_client.aclose()
