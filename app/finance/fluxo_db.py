@@ -134,6 +134,33 @@ class FluxoDatabase:
                 )
             counts["cards"] = len(s.get("cards", []))
 
+            # Compras do cartão
+            for p in s.get("purchases", []):
+                cursor.execute(
+                    """INSERT INTO card_purchases (
+                           id, cardId, description, categoryId, totalCents, installmentCount,
+                           purchaseDate, kind, notes, createdAt, fixedRuleId, currency,
+                           originalAmountCents, latitude, longitude, importKey
+                       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);""",
+                    (p["id"], p["cardId"], p["description"], p["categoryId"], p["totalCents"],
+                     p["installmentCount"], p["purchaseDate"], p.get("kind", "PURCHASE"),
+                     p.get("notes", ""), p.get("createdAt", int(datetime.now().timestamp() * 1000)),
+                     p.get("fixedRuleId"), p.get("currency", "BRL"), p.get("originalAmountCents"),
+                     p.get("latitude"), p.get("longitude"), p.get("importKey"))
+                )
+            counts["purchases"] = len(s.get("purchases", []))
+
+            # Parcelas do cartão
+            for inst in s.get("installments", []):
+                cursor.execute(
+                    """INSERT INTO card_installments (
+                           id, purchaseId, cardId, number, amountCents, invoiceMonth
+                       ) VALUES (?, ?, ?, ?, ?, ?);""",
+                    (inst["id"], inst["purchaseId"], inst["cardId"], inst["number"],
+                     inst["amountCents"], inst["invoiceMonth"])
+                )
+            counts["installments"] = len(s.get("installments", []))
+
             # Transações
             for t in s.get("transactions", []):
                 cursor.execute(
@@ -243,6 +270,14 @@ class FluxoDatabase:
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            if categoria_id is None and tipo in ("INCOME", "EXPENSE"):
+                cat_row = cursor.execute(
+                    "SELECT id FROM categories WHERE kind = ? AND archived = 0 ORDER BY id LIMIT 1;",
+                    (tipo,)
+                ).fetchone()
+                if cat_row:
+                    categoria_id = cat_row[0]
+
             cursor.execute(
                 """INSERT INTO transactions (
                        type, amountCents, date, description, notes, accountId, toAccountId,
@@ -276,6 +311,9 @@ class FluxoDatabase:
             for c in cards:
                 c["archived"] = bool(c["archived"])
 
+            purchases = [dict(r) for r in cursor.execute("SELECT * FROM card_purchases ORDER BY id;").fetchall()]
+            installments = [dict(r) for r in cursor.execute("SELECT * FROM card_installments ORDER BY id;").fetchall()]
+
             transactions = [dict(r) for r in cursor.execute("SELECT * FROM transactions ORDER BY date DESC, id DESC;").fetchall()]
             for t in transactions:
                 t["isPaid"] = bool(t["isPaid"])
@@ -303,8 +341,8 @@ class FluxoDatabase:
             "accounts": accounts,
             "categories": categories,
             "cards": cards,
-            "purchases": [],
-            "installments": [],
+            "purchases": purchases,
+            "installments": installments,
             "transactions": transactions,
             "budgets": [],
             "goals": goals,
@@ -334,15 +372,13 @@ class FluxoDatabase:
         with self.get_connection() as conn:
             cursor = conn.cursor()
 
-            # Saldo por conta
+            # Saldo por conta (alinhado 100% com Room BALANCES_SQL)
             balances = cursor.execute("""
-                SELECT a.id, a.name, a.type, a.initialBalanceCents,
+                SELECT a.id, a.name, a.type, a.initialBalanceCents, a.includeInTotal,
                        COALESCE(SUM(CASE
                            WHEN t.type = 'INCOME' THEN t.amountCents
-                           WHEN t.type = 'EXPENSE' THEN -t.amountCents
-                           WHEN t.type = 'TRANSFER' AND t.accountId = a.id THEN -t.amountCents
                            WHEN t.type = 'TRANSFER' AND t.toAccountId = a.id THEN t.amountCents
-                           ELSE 0 END), 0) as movementCents
+                           ELSE -t.amountCents END), 0) as movementCents
                 FROM accounts a
                 LEFT JOIN transactions t ON (t.accountId = a.id OR t.toAccountId = a.id) AND t.isPaid = 1
                 WHERE a.archived = 0
@@ -357,8 +393,10 @@ class FluxoDatabase:
                     "id": b["id"],
                     "nome": b["name"],
                     "saldo": current_cents / 100.0,
+                    "include_in_total": bool(b["includeInTotal"]),
                 })
-                total_balance_cents += current_cents
+                if b["includeInTotal"]:
+                    total_balance_cents += current_cents
 
             # Total de transações
             total_tx = cursor.execute("SELECT COUNT(*) FROM transactions;").fetchone()[0]
