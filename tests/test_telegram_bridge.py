@@ -390,3 +390,43 @@ async def test_nao_sei_notifica_kaio_imediatamente(mock_enviar_telegram):
     # Verifica que Kaio foi alertado da dúvida não coberta
     chamadas_titulos = [k.get("titulo") or "" for _, k in mock_enviar_telegram.call_args_list if isinstance(k, dict)]
     assert any("DÚVIDA NÃO COBERTA" in t for t in chamadas_titulos)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("frase,idioma", [
+    ("como assistir na roku tv?", "br"),
+    ("tem app pra roku?", "br"),
+    ("funciona na minha tv roku express?", "br"),
+    ("cómo puedo ver en roku tv?", "es"),
+    ("tienen app para roku?", "es"),
+])
+async def test_suporte_roku_responde_com_magic_player_e_iptv(frase, idioma):
+    support = CustomerSupportService()
+    req = CustomerMessageRequest(chat_id=999, texto=frase, edicao=idioma)
+    res = await support.processar_mensagem(req)
+
+    assert res.status == "answered"
+    assert res.motivo == "duvida"
+    assert "Magic Player" in res.resposta_cliente
+    assert "m3u_plus" in res.resposta_cliente
+    assert "Braziper" in res.resposta_cliente or "Assist" in res.resposta_cliente
+    if idioma == "br":
+        assert "canais" in res.resposta_cliente.lower()
+    else:
+        assert "en vivo" in res.resposta_cliente.lower()
+
+
+@pytest.mark.asyncio
+async def test_roku_com_pagamento_ou_bug_nao_responde_roku_direto():
+    support = CustomerSupportService()
+    # Reclamação financeira em roku
+    req_fin = CustomerMessageRequest(chat_id=999, texto="fiz o pix pra roku e não liberou", edicao="br")
+    res_fin = await support.processar_mensagem(req_fin)
+    assert res_fin.motivo == "pagamento"
+    assert "Magic Player" not in res_fin.resposta_cliente
+
+    # Bug report em roku
+    req_bug = CustomerMessageRequest(chat_id=999, texto="o roku deu erro e travou", edicao="br")
+    res_bug = await support.processar_mensagem(req_bug)
+    assert res_bug.motivo == "bug"
+

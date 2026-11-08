@@ -90,6 +90,18 @@ APP_PRESO = {
         "y la contraseña de tu cuenta Pro. Si aún no creaste la cuenta, envía /conta al bot. Si sigue igual, avísame por aquí."
     ),
 }
+ROKU_TV = {
+    "pt": (
+        "Na Roku TV e Roku Express você pode assistir pelo app Magic Player da loja da Roku. "
+        "Basta ir em Add Playlist, colocar Nome NetHub e a URL M3U https://gw.nethubfilmes.org/get.php?username=SEU_EMAIL&password=SUA_SENHA&type=m3u_plus com o e-mail e senha da sua conta Pro. "
+        "Também funcionam os apps Braziper TV e Assist via MAC, e lembramos que nosso catálogo tem filmes e séries sob demanda, sem canais de TV ao vivo."
+    ),
+    "es": (
+        "En Roku TV y Roku Express puedes ver usando la app Magic Player de la tienda de Roku. "
+        "Solo ve a Add Playlist, pon Nombre NetHub y la URL M3U https://gw.nethubfilmes.org/get.php?username=TU_CORREO&password=TU_CONTRASEÑA&type=m3u_plus con el correo y contraseña de tu cuenta Pro. "
+        "También funcionan Braziper TV y Assist vía MAC, y recordamos que nuestro catálogo tiene películas y series bajo demanda, sin canales de TV en vivo."
+    ),
+}
 ESCALAR_FINANCEIRO = {
     "pt": "Oi! Vou conferir isso aqui pra você. Me manda o comprovante ou um print, por favor? Já te respondo.",
     "es": "¡Hola! Voy a revisarlo ahora mismo. ¿Me envías el comprobante o una captura, por favor? Te respondo enseguida.",
@@ -239,6 +251,7 @@ _APP_TRAVADO_RE = re.compile(
     r"(?:\bnao esta indo\b|\bnao ta indo\b|\bnao vai\b|\bnao abre\b|\bnao carrega\b|\btravad[oa]\b"
     r"|\bpres[oa]\b|\bcarregando\b|\bno abre\b|\bno carga\b|\bcargando\b)"
 )
+_ROKU_RE = re.compile(r"\broku\b", re.IGNORECASE)
 
 
 def obter_ultima_resposta_assistente(historico: Optional[list]) -> Optional[str]:
@@ -357,6 +370,10 @@ class CustomerSupportService:
         # App preso
         if "carregando perfil" in t_norm or "cargando perfil" in t_norm or (_APP_RE.search(t_norm) and _APP_TRAVADO_RE.search(t_norm)):
             return "duvida", APP_PRESO[idioma]
+
+        # Roku TV / Roku Express
+        if _ROKU_RE.search(t_norm) and not any(sem_acento(termo) in t_norm for termo in facts.bug):
+            return "duvida", ROKU_TV[idioma]
 
         # Bug report
         if any(sem_acento(termo) in t_norm for termo in facts.bug):
