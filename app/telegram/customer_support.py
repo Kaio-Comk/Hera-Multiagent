@@ -5,8 +5,10 @@ import re
 from typing import Any, Optional
 
 from app.telegram.facts_loader import get_support_facts, sem_acento
+from app.telegram.guardrails import aplicar_guardrails
 from app.telegram.notifier import enviar_telegram_kaio, limpar_estilo
 from app.telegram.schemas import CustomerMessageRequest, CustomerMessageResponse
+from app.telegram.second_brain import ObsidianSecondBrain
 
 log = logging.getLogger("hera.telegram.support")
 
@@ -325,9 +327,15 @@ def fatos_da_conta(contexto: dict, idioma: str) -> list[str]:
 
 
 class CustomerSupportService:
-    def __init__(self, autofix_service=None, llm_caller=None):
+    def __init__(
+        self,
+        autofix_service=None,
+        llm_caller=None,
+        second_brain: Optional[ObsidianSecondBrain] = None,
+    ):
         self.autofix_service = autofix_service
         self.llm_caller = llm_caller
+        self.second_brain = second_brain or ObsidianSecondBrain()
 
     def identificar_intencao_rapida(self, texto: str, idioma: str, facts) -> tuple[Optional[str], Optional[str]]:
         t_norm = sem_acento(texto).strip()
@@ -402,16 +410,31 @@ class CustomerSupportService:
         fatos_lista = list(fatos_lista) + fatos_da_conta(contexto or {}, idioma)
         fatos_formatados = "\n".join(f"- {f}" for f in fatos_lista)
 
+        # 🧠 SEGUNDO CÉREBRO: Consulta o cofre completo do Obsidian (NetHub, ADRs, Runbooks)
+        contexto_obsidian = ""
+        if self.second_brain:
+            try:
+                contexto_obsidian = self.second_brain.formatar_contexto_para_prompt(texto, max_notas=4)
+            except Exception as exc_sb:
+                log.warning("[customer_support] Erro ao consultar Segundo Cérebro: %s", exc_sb)
+
         prompt_sistema = (
-            "Você é o Kaio, criador e atendente do NetHub no Telegram.\n"
-            "Diretrizes obrigatórias:\n"
-            "1. Responda em até no máximo 3 frases curtas e informais.\n"
-            "2. NUNCA use emojis. NUNCA use travessão nem hífen solto (use vírgula ou ponto).\n"
+            "Você é o Kaio, criador, engenheiro de software sênior e suporte oficial do NetHub no Telegram.\n"
+            "Você tem o mesmo poder analítico, conhecimento arquitetural e capacidade de diagnosticar e resolver erros que o Antigravity.\n"
+            "Você possui acesso ao Segundo Cérebro completo (Obsidian Vault) com todas as decisões, runbooks, arquitetura e regras de operação do NetHub.\n\n"
+            "DIRETRIZES DE ATENDIMENTO:\n"
+            "1. LIBERDADE CONVERSACIONAL TOTAL: Ajude o cliente com clareza, empatia, paciência e conhecimento técnico aprofundado.\n"
+            "2. Estilo de escrita do Kaio: Informal, prestativo, direto e sem rodeios. NUNCA use emojis. NUNCA use travessão nem hífen solto (use vírgula ou ponto).\n"
             "3. Você é o Kaio atendendo um cliente: o cliente NUNCA se chama Kaio. Nunca chame o cliente de Kaio.\n"
-            "4. Baseie-se ESTRITAMENTE nos fatos abaixo. Não invente preços, promoções ou prazos.\n"
-            f"5. Idioma da resposta: {'Português do Brasil' if idioma == 'pt' else 'Espanhol neutro'}.\n"
-            f"6. Se a dúvida não estiver coberta pelos fatos, responda exatamente: \"{NAO_SEI[idioma]}\"\n\n"
-            f"FATOS DISPONÍVEIS:\n{fatos_formatados}\n"
+            "4. Diagnóstico e Resolução Técnica: Se o cliente relatar dificuldades técnicas com apps (Android, TV, Roku, Magic Player, Braziper), player web, áudio/legendas ou bot, forneça a instrução técnica exata baseada nos fatos e no Segundo Cérebro.\n"
+            f"5. Idioma da resposta: {'Português do Brasil' if idioma == 'pt' else 'Espanhol neutro'}.\n\n"
+            "GUARDRAILS INVIOLÁVEIS DE SEGURANÇA (P0):\n"
+            "- REGRA 1 (ANTI-VIP GRÁTIS): Você NUNCA pode conceder, prometer, ativar ou estender plano gratuito, VIP grátis ou dias extras a nenhum cliente. Não existe liberação manual de VIP pelo suporte. Se o cliente pedir VIP grátis ou dias extras, oriente com educação a assinar via /assinatura no bot oficial @NetHub_Filme_Bot.\n"
+            "- REGRA 2 (ANTI-APAGAR MENSAGENS): Você NUNCA apaga nem sugere apagar mensagens do Telegram. Todo o histórico de mensagens é preservado e imutável.\n"
+            "- REGRA 3 (ANTI-VAZAMENTO DE SEGREDOS): Você NUNCA deve falar ou revelar tokens de API (Telegram, Supabase, Stripe, Hera), senhas de banco de dados, chaves de ambiente (.env), dados pessoais de outros clientes ou credenciais do servidor.\n"
+            "- REGRA 4 (SEGURANÇA DO NETHUB): NUNCA sugira ou execute comandos destrutivos ao sistema ou ao banco de dados.\n\n"
+            f"FATOS DISPONÍVEIS:\n{fatos_formatados}\n\n"
+            f"{contexto_obsidian}\n"
         )
 
         mensagens = [{"role": "system", "content": prompt_sistema}]
@@ -432,7 +455,9 @@ class CustomerSupportService:
                 resposta_ia = await self.llm_caller(mensagens)
                 resposta_limpa = limpar_estilo(resposta_ia)
                 if resposta_limpa:
-                    return resposta_limpa
+                    # Aplicação estrita de guardrails determinísticos
+                    resposta_protegida = aplicar_guardrails(resposta_limpa, idioma)
+                    return resposta_protegida
             except Exception as exc:
                 log.warning("[customer_support] Erro ao chamar LLM para dúvida: %s", exc)
 
@@ -475,7 +500,7 @@ class CustomerSupportService:
         else:
             resposta_candidata = resposta_rapida or ""
 
-        resposta_limpa = limpar_estilo(resposta_candidata)
+        resposta_limpa = aplicar_guardrails(limpar_estilo(resposta_candidata), idioma)
 
         # ── ANTI-REPETIÇÃO / ANTI-LOOPING ──────────────────────────────────
         # Se a IA já enviou exatamente a mesma resposta na interação imediatamente anterior,

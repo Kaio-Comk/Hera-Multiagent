@@ -1,4 +1,10 @@
 import os
+from pathlib import Path
+try:
+    import dotenv
+    dotenv.load_dotenv(Path(r"B:\Projetos\Hera\.env"))
+except Exception:
+    pass
 import re
 import sys
 import logging
@@ -9,7 +15,6 @@ import asyncio
 import psutil
 import shutil
 import subprocess
-from pathlib import Path
 from typing import Dict, Any, List, Literal, Optional, Tuple
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, BackgroundTasks, Request
@@ -380,7 +385,13 @@ autofix = AutoFixEngine(
 )
 
 # Ponte Telegram e Auto-Cura de Bugs (NetHub BR e ES)
-from app.telegram import AutoFixService, CustomerSupportService, init_telegram_services, telegram_router
+from app.telegram import (
+    AutoFixService,
+    CustomerSupportService,
+    ObsidianSecondBrain,
+    init_telegram_services,
+    telegram_router,
+)
 
 async def _telegram_llm_caller(mensagens: list[dict]) -> str:
     """Chama a IA em nuvem do Hera (Groq, SambaNova, SiliconFlow, Gemini) para atendimento em tempo real (< 1.5s)."""
@@ -407,7 +418,12 @@ async def _telegram_llm_caller(mensagens: list[dict]) -> str:
     return ""
 
 telegram_autofix = AutoFixService()
-telegram_support = CustomerSupportService(autofix_service=telegram_autofix, llm_caller=_telegram_llm_caller)
+telegram_second_brain = ObsidianSecondBrain()
+telegram_support = CustomerSupportService(
+    autofix_service=telegram_autofix,
+    llm_caller=_telegram_llm_caller,
+    second_brain=telegram_second_brain,
+)
 init_telegram_services(telegram_autofix, telegram_support)
 app.include_router(telegram_router)
 
