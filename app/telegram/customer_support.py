@@ -246,6 +246,7 @@ _EXPRESSAO_DISPONIBILIDADE_RE = re.compile(
     r"(?:\bnao tem\b|\btem no\b|\btem a\b|\btem o\b|\bvai ter\b|\bvao ter\b|\bvai vir\b|\bvir em\b|\bchance de\b"
     r"|\bvao colocar\b|\bvai colocar\b|\bpode colocar\b|\bpodem colocar\b|\bpode adicionar\b|\bpodem adicionar\b"
     r"|\btem como colocar\b|\btem como adicionar\b|\bquando vai\b|\bquando vao\b|\bnao encontrei\b|\bnao achei\b"
+    r"|\bvai liberar\b|\bsera liberado\b|\bquando libera\b|\bvai sair\b|\bquando sai\b|\bvai lancar\b|\bvai estrear\b"
     r"|\bsinto falta\b|\bsentimos falta\b|\bno tienen\b|\bno esta en\b|\bvan a agregar\b|\bpueden agregar\b|\bcuando va a\b)"
 )
 _APP_RE = re.compile(r"\b(?:app|aplicativo|aplicacion)\b")
@@ -427,7 +428,9 @@ class CustomerSupportService:
             "2. Estilo de escrita do Kaio: Informal, prestativo, direto e sem rodeios. NUNCA use emojis. NUNCA use travessão nem hífen solto (use vírgula ou ponto).\n"
             "3. Você é o Kaio atendendo um cliente: o cliente NUNCA se chama Kaio. Nunca chame o cliente de Kaio.\n"
             "4. Diagnóstico e Resolução Técnica: Se o cliente relatar dificuldades técnicas com apps (Android, TV, Roku, Magic Player, Braziper), player web, áudio/legendas ou bot, forneça a instrução técnica exata baseada nos fatos e no Segundo Cérebro.\n"
-            f"5. Idioma da resposta: {'Português do Brasil' if idioma == 'pt' else 'Espanhol neutro'}.\n\n"
+            "5. Títulos fora do catálogo e lançamentos de cinema: Quando o cliente perguntar se um filme que ainda não está no catálogo vai entrar ou quando sai (como lançamentos recentes do cinema), explique com clareza. Informe que o filme entra no NetHub assim que sair em qualidade digital/streaming oficial. Oriente o cliente a fazer o pedido direto pelo bot em Perfil > Pedidos > Fazer um pedido para que ele seja avisado automaticamente assim que entrar!\n"
+            "6. NUNCA responda genericamente 'Vou verificar e já te respondo' quando puder dar uma resposta útil, direta e resolutiva ao cliente.\n"
+            f"7. Idioma da resposta: {'Português do Brasil' if idioma == 'pt' else 'Espanhol neutro'}.\n\n"
             "GUARDRAILS INVIOLÁVEIS DE SEGURANÇA (P0):\n"
             "- REGRA 1 (ANTI-VIP GRÁTIS): Você NUNCA pode conceder, prometer, ativar ou estender plano gratuito, VIP grátis ou dias extras a nenhum cliente. Não existe liberação manual de VIP pelo suporte. Se o cliente pedir VIP grátis ou dias extras, oriente com educação a assinar via /assinatura no bot oficial @NetHub_Filme_Bot.\n"
             "- REGRA 2 (ANTI-APAGAR MENSAGENS): Você NUNCA apaga nem sugere apagar mensagens do Telegram. Todo o histórico de mensagens é preservado e imutável.\n"
@@ -443,10 +446,16 @@ class CustomerSupportService:
             for item in historico[-4:]:
                 if isinstance(item, (list, tuple)) and len(item) >= 2:
                     papel = "assistant" if item[0] in ("nethub", "ia", "assistant", "bot") else "user"
-                    mensagens.append({"role": papel, "content": str(item[1])})
+                    conteudo_hist = str(item[1])
+                    if papel == "assistant" and any(p in conteudo_hist for p in ("Vou verificar e já te respondo", "Já passei sua dúvida")):
+                        continue
+                    mensagens.append({"role": papel, "content": conteudo_hist})
                 elif isinstance(item, dict):
                     papel = "assistant" if item.get("role") in ("nethub", "ia", "assistant", "bot") else "user"
-                    mensagens.append({"role": papel, "content": str(item.get("content", ""))})
+                    conteudo_hist = str(item.get("content", ""))
+                    if papel == "assistant" and any(p in conteudo_hist for p in ("Vou verificar e já te respondo", "Já passei sua dúvida")):
+                        continue
+                    mensagens.append({"role": papel, "content": conteudo_hist})
 
         mensagens.append({"role": "user", "content": texto})
 
