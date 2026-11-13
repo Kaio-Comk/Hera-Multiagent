@@ -26,7 +26,26 @@ log = logging.getLogger("hera.telegram.autofix")
 
 NETHUB_BR_DIR = Path(os.environ.get("NETHUB_BR_PATH", r"B:\Projetos\NetHub\NetHub BR"))
 NETHUB_ES_DIR = Path(os.environ.get("NETHUB_ES_PATH", r"B:\Projetos\NetHub\NetHub ES"))
-VAULT_NETHUB = Path(os.environ.get("NETHUB_VAULT") or (Path.home() / "Documents" / "Obsidian Vault")) / "NetHub"
+def _descobrir_vault_nethub() -> Path:
+    if os.environ.get("NETHUB_VAULT"):
+        return Path(os.environ["NETHUB_VAULT"])
+    home_vault = Path.home() / "Documents" / "Obsidian Vault"
+    if home_vault.exists():
+        return home_vault / "NetHub"
+    users_dir = Path(os.environ.get("SystemDrive", "C:") + r"\Users")
+    if users_dir.is_dir():
+        try:
+            for u in users_dir.iterdir():
+                if u.is_dir() and u.name.lower() not in ("public", "default", "all users"):
+                    cand = u / "Documents" / "Obsidian Vault"
+                    if cand.exists():
+                        return cand / "NetHub"
+        except OSError:
+            pass
+    return home_vault / "NetHub"
+
+
+VAULT_NETHUB = _descobrir_vault_nethub()
 GIT_AUTHOR_NAME = "Kaio Lima"
 GIT_AUTHOR_EMAIL = "kaiocomkamil@gmail.com"
 
@@ -450,7 +469,9 @@ class AutoFixService:
             pasta_decisoes = VAULT_NETHUB / "04 Decisões"
             pasta_decisoes.mkdir(parents=True, exist_ok=True)
 
-            titulo_arquivo = re.sub(r'[<>:"/\\|?*]', "", titulo).strip()
+            titulo_limpo = re.sub(r'[\r\n\t]+', ' ', titulo).strip()
+            titulo_arquivo = re.sub(r'[<>:"/\\|?*]', '', titulo_limpo).strip()
+            titulo_arquivo = re.sub(r'\s+', ' ', titulo_arquivo)[:80]
             nome_nota = f"{hoje} — {titulo_arquivo}.md"
             caminho_nota = pasta_decisoes / nome_nota
 

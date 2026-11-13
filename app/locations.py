@@ -23,7 +23,20 @@ def default_vault_dir(environ: Optional[Mapping[str, str]] = None) -> str:
     fixed = (env.get(VAULT_ENV) or "").strip()
     if fixed:
         return fixed
-    return str(Path.home() / "Documents" / "Obsidian Vault" / VAULT_PROJECT_NAME)
+    home_vault = Path.home() / "Documents" / "Obsidian Vault"
+    if home_vault.exists():
+        return str(home_vault / VAULT_PROJECT_NAME)
+    users_dir = Path(os.environ.get("SystemDrive", "C:") + r"\Users")
+    if users_dir.is_dir():
+        try:
+            for u in users_dir.iterdir():
+                if u.is_dir() and u.name.lower() not in ("public", "default", "all users"):
+                    cand = u / "Documents" / "Obsidian Vault"
+                    if cand.exists():
+                        return str(cand / VAULT_PROJECT_NAME)
+        except OSError:
+            pass
+    return str(home_vault / VAULT_PROJECT_NAME)
 
 
 def resolve_vault_dir(configured: Optional[str] = None, environ: Optional[Mapping[str, str]] = None) -> str:

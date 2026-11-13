@@ -10,20 +10,27 @@ import re
 
 log = logging.getLogger("hera.telegram.facts")
 
-_user_vault = Path(r"C:\Users\Kaio Lima\Documents\Obsidian Vault")
-_home_vault = Path.home() / "Documents" / "Obsidian Vault"
-FACTS_REL_PATH = "03 Operação/Atendimento — Base da IA.md"
+def _descobrir_vault_nethub() -> Path:
+    if os.environ.get("NETHUB_VAULT"):
+        return Path(os.environ["NETHUB_VAULT"])
+    facts_rel = "03 Operação/Atendimento — Base da IA.md"
+    home_vault = Path.home() / "Documents" / "Obsidian Vault"
+    if (home_vault / "NetHub" / facts_rel).exists():
+        return home_vault / "NetHub"
+    users_dir = Path(os.environ.get("SystemDrive", "C:") + r"\Users")
+    if users_dir.is_dir():
+        try:
+            for u in users_dir.iterdir():
+                if u.is_dir() and u.name.lower() not in ("public", "default", "all users"):
+                    cand = u / "Documents" / "Obsidian Vault"
+                    if (cand / "NetHub" / facts_rel).exists() or (cand / "NetHub").exists():
+                        return cand / "NetHub"
+        except OSError:
+            pass
+    return home_vault / "NetHub"
 
-if os.environ.get("NETHUB_VAULT"):
-    DEFAULT_VAULT = Path(os.environ["NETHUB_VAULT"])
-elif (_user_vault / "NetHub" / FACTS_REL_PATH).exists():
-    DEFAULT_VAULT = _user_vault / "NetHub"
-elif (_home_vault / "NetHub" / FACTS_REL_PATH).exists():
-    DEFAULT_VAULT = _home_vault / "NetHub"
-elif _user_vault.exists():
-    DEFAULT_VAULT = _user_vault / "NetHub"
-else:
-    DEFAULT_VAULT = _home_vault / "NetHub"
+
+DEFAULT_VAULT = _descobrir_vault_nethub()
 
 
 @dataclass

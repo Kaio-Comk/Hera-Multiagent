@@ -16,15 +16,32 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 log = logging.getLogger("hera.finance.expense_manager")
 
-DESKTOP_PLANILHA = Path(r"C:\Users\Kaio Lima\Desktop\Finanças Kaio.xlsx")
+def _user_home() -> Path:
+    h = Path.home()
+    if (h / "Desktop").exists() or (h / "Documents").exists():
+        return h
+    users_dir = Path(os.environ.get("SystemDrive", "C:") + r"\Users")
+    if users_dir.is_dir():
+        try:
+            for u in users_dir.iterdir():
+                if u.is_dir() and u.name.lower() not in ("public", "default", "all users"):
+                    if (u / "Desktop").exists() or (u / "Documents").exists():
+                        return u
+        except OSError:
+            pass
+    return h
+
+
+_HOME = _user_home()
+DESKTOP_PLANILHA = _HOME / "Desktop" / "Finanças Kaio.xlsx"
 BACKUP_PLANILHA = Path(r"B:\Finanças\Extratos\Finanças Kaio.xlsx")
-GASTOS_2026_PATH = Path(r"C:\Users\Kaio Lima\Finanças\extratos\Gastos 2026.xlsx")
+GASTOS_2026_PATH = _HOME / "Finanças" / "extratos" / "Gastos 2026.xlsx"
 GASTOS_BASE_PATH = Path(r"B:\Finanças\Extratos\00 - Orçamento e Planilhas\Gastos 2026 (Orçamento Base).xlsx")
 
 AUDIT_LOG_PATH = Path(r"B:\Finanças\Extratos\gastos_telegram.jsonl")
 RECEIPTS_DIR = Path(r"B:\Finanças\Extratos\Comprovantes Telegram")
 BACKUP_DIR = Path(r"B:\Finanças\Extratos\00 - Orçamento e Planilhas\Backups")
-OBSIDIAN_FINANCAS = Path(r"C:\Users\Kaio Lima\Documents\Obsidian Vault\Kaio\Finanças.md")
+OBSIDIAN_FINANCAS = _HOME / "Documents" / "Obsidian Vault" / "Kaio" / "Finanças.md"
 
 MONTH_NAMES = {
     1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril",
@@ -60,48 +77,56 @@ class ExpenseManager:
             shutil.copy2(GASTOS_2026_PATH, BACKUP_DIR / f"Gastos_2026_{timestamp}.xlsx")
 
     def record_expense(self, expense: Dict[str, Any], receipt_path: Optional[Path] = None) -> Dict[str, Any]:
-        """Lança a despesa nas planilhas oficiais, atualiza extrato, histórico e Obsidian."""
+        """Lança a movimentação financeira (despesa ou receita) no Fluxo SQLite e histórico."""
         self._backup_files()
+
+        tipo = str(expense.get("tipo") or "EXPENSE").upper().strip()
+        if tipo not in ("INCOME", "EXPENSE", "TRANSFER"):
+            tipo = "EXPENSE"
 
         valor = float(expense.get("valor", 0.0))
         data_str = expense.get("data") or datetime.now().strftime("%Y-%m-%d")
         dt = datetime.strptime(data_str, "%Y-%m-%d")
         mes_nome = MONTH_NAMES.get(dt.month, "Novembro")
-        descricao = str(expense.get("descricao") or "Despesa").strip()
-        categoria = str(expense.get("categoria") or "Alimentação & Mercado").strip()
+        descricao = str(expense.get("descricao") or ("Receita" if tipo == "INCOME" else "Despesa")).strip()
+        categoria = str(expense.get("categoria") or ("Outros Recebimentos Pix" if tipo == "INCOME" else "Alimentação & Mercado")).strip()
         forma = str(expense.get("forma") or "PIX").strip()
         banco = str(expense.get("banco") or "InfinitePay").strip()
         beneficiario = str(expense.get("beneficiario") or "").strip()
-        observacao = str(expense.get("observacao") or "Comprovante via Telegram").strip()
+        observacao = str(expense.get("observacao") or "Lançamento via Telegram").strip()
 
-        # 1. Atualizar Finanças Kaio.xlsx (Gastos + Extrato)
-        if DESKTOP_PLANILHA.exists():
-            wb = openpyxl.load_workbook(DESKTOP_PLANILHA)
-            self._update_gastos_sheet(wb, dt, mes_nome, descricao, categoria, forma, valor, observacao)
-            self._update_extrato_sheet(wb, dt, banco, descricao, beneficiario, categoria, valor)
-            wb.save(DESKTOP_PLANILHA)
-            shutil.copy2(DESKTOP_PLANILHA, BACKUP_PLANILHA)
-            log.info("Finanças Kaio.xlsx atualizado com sucesso no Desktop e em Extratos.")
+        # 1. Atualizar Finanças Kaio.xlsx apenas se for despesa e planilha existir
+        if tipo == "EXPENSE" and DESKTOP_PLANILHA.exists():
+            try:
+                wb = openpyxl.load_workbook(DESKTOP_PLANILHA)
+                self._update_gastos_sheet(wb, dt, mes_nome, descricao, categoria, forma, valor, observacao)
+                self._update_extrato_sheet(wb, dt, banco, descricao, beneficiario, categoria, valor)
+                wb.save(DESKTOP_PLANILHA)
+                shutil.copy2(DESKTOP_PLANILHA, BACKUP_PLANILHA)
+                log.info("Finanças Kaio.xlsx atualizado no Desktop.")
+            except Exception as e_sheet:
+                log.warning("Aviso ao atualizar Finanças Kaio.xlsx: %s", e_sheet)
 
-        # 2. Atualizar Gastos 2026.xlsx
-        if GASTOS_2026_PATH.exists():
-            wb_g = openpyxl.load_workbook(GASTOS_2026_PATH)
-            if mes_nome in wb_g.sheetnames:
-                ws_m = wb_g[mes_nome]
-                # Encontrar primeira linha livre após cabeçalhos
-                insert_row = ws_m.max_row + 1
-                for r in range(ws_m.max_row, 2, -1):
-                    if ws_m.cell(r, 1).value is not None or ws_m.cell(r, 2).value is not None:
-                        insert_row = r + 1
-                        break
-                ws_m.cell(insert_row, 1, float(dt.day))
-                ws_m.cell(insert_row, 2, descricao)
-                ws_m.cell(insert_row, 5, valor)
-                ws_m.cell(insert_row, 7, "OK")
-                wb_g.save(GASTOS_2026_PATH)
-                if GASTOS_BASE_PATH.parent.exists():
-                    shutil.copy2(GASTOS_2026_PATH, GASTOS_BASE_PATH)
-                log.info("Gastos 2026.xlsx atualizado na aba %s (linha %d)", mes_nome, insert_row)
+        # 2. Atualizar Gastos 2026.xlsx apenas se for despesa e planilha existir
+        if tipo == "EXPENSE" and GASTOS_2026_PATH.exists():
+            try:
+                wb_g = openpyxl.load_workbook(GASTOS_2026_PATH)
+                if mes_nome in wb_g.sheetnames:
+                    ws_m = wb_g[mes_nome]
+                    insert_row = ws_m.max_row + 1
+                    for r in range(ws_m.max_row, 2, -1):
+                        if ws_m.cell(r, 1).value is not None or ws_m.cell(r, 2).value is not None:
+                            insert_row = r + 1
+                            break
+                    ws_m.cell(insert_row, 1, float(dt.day))
+                    ws_m.cell(insert_row, 2, descricao)
+                    ws_m.cell(insert_row, 5, valor)
+                    ws_m.cell(insert_row, 7, "OK")
+                    wb_g.save(GASTOS_2026_PATH)
+                    if GASTOS_BASE_PATH.parent.exists():
+                        shutil.copy2(GASTOS_2026_PATH, GASTOS_BASE_PATH)
+            except Exception as e_gastos:
+                log.warning("Aviso ao atualizar Gastos 2026.xlsx: %s", e_gastos)
 
         # 3. Arquivar comprovante
         saved_receipt_path = None
@@ -110,7 +135,7 @@ class ExpenseManager:
             mes_folder = RECEIPTS_DIR / dt.strftime("%Y-%m")
             mes_folder.mkdir(parents=True, exist_ok=True)
             clean_desc = "".join(c for c in descricao if c.isalnum() or c in (" ", "-", "_")).strip()
-            dest_name = f"{dt.strftime('%Y-%m-%d')} — PIX R$ {valor:.2f} — {clean_desc}{receipt_p.suffix}".replace(",", ".")
+            dest_name = f"{dt.strftime('%Y-%m-%d')} — {tipo} R$ {valor:.2f} — {clean_desc}{receipt_p.suffix}".replace(",", ".")
             dest_file = mes_folder / dest_name
             shutil.copy2(receipt_p, dest_file)
             saved_receipt_path = str(dest_file)
@@ -120,6 +145,7 @@ class ExpenseManager:
             "timestamp": datetime.now().isoformat(),
             "data": data_str,
             "mes": mes_nome,
+            "tipo": tipo,
             "valor": valor,
             "descricao": descricao,
             "categoria": categoria,
@@ -138,15 +164,47 @@ class ExpenseManager:
         # 6. Gravar diretamente no banco SQLite central do Fluxo (PC)
         try:
             from app.finance.fluxo_db import fluxo_db
+            
+            # Mapeamento inteligente de conta
+            b_low = banco.lower()
+            conta_id = 1  # InfinitePay default
+            if "99pay" in b_low or "99 pay" in b_low or "99" in b_low:
+                conta_id = 7
+            elif "inter" in b_low:
+                conta_id = 3
+            elif "nubank" in b_low or "nu" in b_low:
+                conta_id = 2
+            elif "picpay" in b_low:
+                conta_id = 4
+            elif "bradesco" in b_low:
+                conta_id = 5
+            elif "efi" in b_low or "efí" in b_low:
+                conta_id = 6
+            elif "dinheiro" in b_low or "carteira" in b_low:
+                conta_id = 8
+
+            # Resolver categoria_id por nome exato no fluxo_db
+            cat_id = None
+            with fluxo_db.get_connection() as conn:
+                r_cat = conn.execute("SELECT id FROM categories WHERE name = ? AND archived = 0 LIMIT 1;", (categoria,)).fetchone()
+                if r_cat:
+                    cat_id = r_cat["id"]
+                else:
+                    r_kind = conn.execute("SELECT id FROM categories WHERE kind = ? AND archived = 0 ORDER BY id LIMIT 1;", (tipo,)).fetchone()
+                    if r_kind:
+                        cat_id = r_kind["id"]
+
             fluxo_db.add_transaction(
                 descricao=descricao,
                 valor=valor,
-                tipo="EXPENSE",
+                tipo=tipo,
+                categoria_id=cat_id,
+                conta_id=conta_id,
                 data_transacao=dt.date(),
                 observacao=observacao,
                 import_key=f"telegram_{int(datetime.now().timestamp())}",
             )
-            log.info("Lançamento gravado diretamente no banco SQLite do Fluxo (B:\\Finanças\\fluxo.db)")
+            log.info("Lançamento (%s R$ %.2f) gravado diretamente no SQLite do Fluxo (B:\\Finanças\\fluxo.db)", tipo, valor)
         except Exception as err:
             log.warning(f"Erro ao gravar no fluxo.db: {err}")
 
@@ -159,6 +217,8 @@ class ExpenseManager:
             log.warning(f"Erro ao sincronizar snapshot do Fluxo: {err}")
 
         return audit_entry
+
+    record_transaction = record_expense
 
     def _update_gastos_sheet(self, wb, dt, mes_nome, descricao, categoria, forma, valor, observacao):
         """Insere o lançamento na tabela do Orçamento 2026 da aba Gastos."""

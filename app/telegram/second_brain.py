@@ -11,7 +11,26 @@ from typing import Any, Dict, List, Optional
 
 log = logging.getLogger("hera.telegram.second_brain")
 
-VAULT_PADRAO = Path(r"C:\Users\Kaio Lima\Documents\Obsidian Vault")
+def _descobrir_vault_padrao() -> Path:
+    if os.environ.get("NETHUB_VAULT"):
+        return Path(os.environ["NETHUB_VAULT"])
+    home_vault = Path.home() / "Documents" / "Obsidian Vault"
+    if home_vault.exists():
+        return home_vault
+    users_dir = Path(os.environ.get("SystemDrive", "C:") + r"\Users")
+    if users_dir.is_dir():
+        try:
+            for u in users_dir.iterdir():
+                if u.is_dir() and u.name.lower() not in ("public", "default", "all users"):
+                    cand = u / "Documents" / "Obsidian Vault"
+                    if cand.exists():
+                        return cand
+        except OSError:
+            pass
+    return home_vault
+
+
+VAULT_PADRAO = _descobrir_vault_padrao()
 
 
 def sem_acento(s: str) -> str:
