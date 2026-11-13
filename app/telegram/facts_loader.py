@@ -12,9 +12,18 @@ log = logging.getLogger("hera.telegram.facts")
 
 _user_vault = Path(r"C:\Users\Kaio Lima\Documents\Obsidian Vault")
 _home_vault = Path.home() / "Documents" / "Obsidian Vault"
-_chosen_vault = _user_vault if (not _home_vault.exists() and _user_vault.exists()) else _home_vault
-DEFAULT_VAULT = Path(os.environ.get("NETHUB_VAULT") or _chosen_vault) / "NetHub"
 FACTS_REL_PATH = "03 Operação/Atendimento — Base da IA.md"
+
+if os.environ.get("NETHUB_VAULT"):
+    DEFAULT_VAULT = Path(os.environ["NETHUB_VAULT"])
+elif (_user_vault / "NetHub" / FACTS_REL_PATH).exists():
+    DEFAULT_VAULT = _user_vault / "NetHub"
+elif (_home_vault / "NetHub" / FACTS_REL_PATH).exists():
+    DEFAULT_VAULT = _home_vault / "NetHub"
+elif _user_vault.exists():
+    DEFAULT_VAULT = _user_vault / "NetHub"
+else:
+    DEFAULT_VAULT = _home_vault / "NetHub"
 
 
 @dataclass
@@ -79,14 +88,14 @@ def get_support_facts(vault_path: Optional[Path] = None, force_reload: bool = Fa
                     "App Android em https://gw.nethubfilmes.org/app/mobile.apk",
                     "URL do provedor de midia ou servidor para o app ou TV e https://gw.nethubfilmes.org",
                     "Codigo de recuperacao de senha vai para o e-mail cadastrado (verificar spam e promocoes)",
-                    "Na Roku TV e Roku Express usa-se o app Magic Player com a URL M3U https://gw.nethubfilmes.org/get.php?username=EMAIL&password=SENHA&type=m3u_plus ou Braziper TV/Assist via MAC (filmes e series VOD sem canais ao vivo)",
+                    "Na Roku TV e Roku Express usa-se o app Magic Player com a URL M3U https://gw.nethubfilmes.org/get.php?username=EMAIL&password=[SENHA]&type=m3u_plus ou Braziper TV/Assist via MAC (filmes e series VOD sem canais ao vivo)",
                 ],
                 "es": [
                     "El bot en espanol es @NetHub_Peliculas_Bot",
                     "Prueba gratis de 30 minutos a partir del primer video",
                     "Pago con tarjeta (Stripe) o Telegram Stars direto en el bot con /suscripcion",
                     "URL del proveedor o servidor para la app o TV es https://gw.nethubfilmes.org",
-                    "En Roku TV y Roku Express se usa la app Magic Player con el enlace M3U https://gw.nethubfilmes.org/get.php?username=CORREO&password=CONTRASEÑA&type=m3u_plus o Braziper TV/Assist vía MAC",
+                    "En Roku TV y Roku Express se usa la app Magic Player con el enlace M3U https://gw.nethubfilmes.org/get.php?username=CORREO&password=[SENHA]&type=m3u_plus o Braziper TV/Assist vía MAC",
                 ],
             },
             escalar=["paguei e nao ativou", "fiz o pix e nao liberou", "comprovante", "reembolso", "cancelar", "estorno", "bloqueio", "golpe", "procon"],

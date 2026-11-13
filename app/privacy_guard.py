@@ -18,7 +18,7 @@ class PrivacyGuard:
         "private_key": re.compile(r'-----BEGIN[ A-Z0-9_\-]*PRIVATE KEY-----[\s\S]*?-----END[ A-Z0-9_\-]*PRIVATE KEY-----'),
         "jwt_token": re.compile(r'\beyJ[a-zA-Z0-9_\-]{10,}\.eyJ[a-zA-Z0-9_\-]{10,}\.[a-zA-Z0-9_\-]{10,}\b'),
         "generic_credential": re.compile(
-            r'(?:api[_-]?key|access[_-]?token|client[_-]?secret|password|passwd)["\':=\s]+([a-zA-Z0-9_\-\.!@#$%&*]{10,})',
+            r'(?:api[_-]?key|access[_-]?token|client[_-]?secret|password|passwd)["\':=\s]+(?!SEU_|SUA_|YOUR_|<|\[|SENHA|CONTRASE|PASSWORD|EMAIL|USER)([a-zA-Z0-9_\-\.!@#$%&*]{10,})',
             re.IGNORECASE
         )
     }
