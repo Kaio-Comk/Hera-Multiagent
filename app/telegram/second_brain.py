@@ -15,7 +15,7 @@ def _descobrir_vault_padrao() -> Path:
     if os.environ.get("NETHUB_VAULT"):
         return Path(os.environ["NETHUB_VAULT"])
     home_vault = Path.home() / "Documents" / "Obsidian Vault"
-    if home_vault.exists():
+    if (home_vault / ".obsidian").exists():
         return home_vault
     users_dir = Path(os.environ.get("SystemDrive", "C:") + r"\Users")
     if users_dir.is_dir():
@@ -23,7 +23,7 @@ def _descobrir_vault_padrao() -> Path:
             for u in users_dir.iterdir():
                 if u.is_dir() and u.name.lower() not in ("public", "default", "all users"):
                     cand = u / "Documents" / "Obsidian Vault"
-                    if cand.exists():
+                    if (cand / ".obsidian").exists():
                         return cand
         except OSError:
             pass

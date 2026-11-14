@@ -29,19 +29,19 @@ NETHUB_ES_DIR = Path(os.environ.get("NETHUB_ES_PATH", r"B:\Projetos\NetHub\NetHu
 def _descobrir_vault_nethub() -> Path:
     if os.environ.get("NETHUB_VAULT"):
         return Path(os.environ["NETHUB_VAULT"])
-    home_vault = Path.home() / "Documents" / "Obsidian Vault"
-    if home_vault.exists():
-        return home_vault / "NetHub"
     users_dir = Path(os.environ.get("SystemDrive", "C:") + r"\Users")
     if users_dir.is_dir():
         try:
             for u in users_dir.iterdir():
                 if u.is_dir() and u.name.lower() not in ("public", "default", "all users"):
                     cand = u / "Documents" / "Obsidian Vault"
-                    if cand.exists():
+                    if (cand / ".obsidian").exists() or (cand / "NetHub").exists():
                         return cand / "NetHub"
         except OSError:
             pass
+    home_vault = Path.home() / "Documents" / "Obsidian Vault"
+    if (home_vault / ".obsidian").exists() or (home_vault / "NetHub").exists():
+        return home_vault / "NetHub"
     return home_vault / "NetHub"
 
 

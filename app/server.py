@@ -404,7 +404,7 @@ async def _telegram_llm_caller(mensagens: list[dict]) -> str:
                     messages=msgs,
                     stream=False,
                     temperature=0.2,
-                    max_tokens=250,
+                    max_tokens=700,
                 )
                 resp = await _gateway_call(req, only_provider=prov, label="hera (suporte telegram)")
                 if resp.choices and resp.choices[0].message.content:

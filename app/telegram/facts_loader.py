@@ -30,6 +30,7 @@ def _descobrir_vault_nethub() -> Path:
     return home_vault / "NetHub"
 
 
+FACTS_REL_PATH = "03 Operação/Atendimento — Base da IA.md"
 DEFAULT_VAULT = _descobrir_vault_nethub()
 
 
