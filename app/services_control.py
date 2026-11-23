@@ -14,7 +14,6 @@ import os
 import shutil
 import socket
 import subprocess  # nosec B404
-import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional

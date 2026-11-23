@@ -106,8 +106,12 @@ async def lifespan(app: FastAPI):
     global gateway_http_client
     gateway_http_client = make_safe_async_client(timeout=60.0)   # valida o destino na conexão (anti-rebinding)
 
-    # Inicia o servidor de sincronização sem fio do Fluxo (porta 8765)
+    # Servidor de sincronização sem fio do Fluxo (porta 8765). DESLIGADO por padrão desde
+    # 20/11/2026: não tinha senha nenhuma (qualquer aparelho do Wi-Fi lia e sobrescrevia
+    # os dados financeiros) e o Kaio não usa mais o app. Religar: HERA_FLUXO_SYNC=1.
     try:
+        if os.environ.get("HERA_FLUXO_SYNC", "") != "1":
+            raise RuntimeError("desligado (HERA_FLUXO_SYNC != 1)")
         import threading
         from app.finance.fluxo_sync_server import start_server as start_fluxo
         threading.Thread(target=lambda: start_fluxo(port=8765), daemon=True, name="HeraFluxoSync").start()

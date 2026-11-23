@@ -6,10 +6,8 @@ de conexão e terminação limpa de erros pós-commit sem costura de respostas.
 
 import json
 import time
-import uuid
 from typing import AsyncIterator, Optional, Dict, Any
 
-from app.gateway.schemas import NormalizedDelta
 
 def format_openai_sse_chunk(
     request_id: str,

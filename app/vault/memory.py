@@ -1,9 +1,8 @@
 import os
 from app.locations import resolve_vault_dir
 import re
-import glob
 import hashlib
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 
 class ObsidianMemoryManager:
     """Gerenciador de leitura semântica, injeção de contexto e memória persistente no Obsidian Vault.

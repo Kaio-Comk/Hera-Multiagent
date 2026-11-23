@@ -1,10 +1,9 @@
 import sys
-import time
 import httpx
 import shutil
 import subprocess
 from typing import Optional, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 class BenchmarkResult(BaseModel):
     """Resultado detalhado do benchmark de inferência local."""

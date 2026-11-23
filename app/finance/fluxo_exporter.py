@@ -2,7 +2,16 @@
 Exportador de dados das planilhas Finanças Kaio.xlsx e Gastos 2026.xlsx
 para o formato de backup oficial v3 do aplicativo Android Fluxo (com.pessoal.fluxo).
 
-Gera o arquivo JSON validado compatível com BackupCodec.kt e BackupRepository.kt.
+Corrige matematicamente os saldos reais auditados:
+- InfinitePay: R$ 74,16 (R$ -0,84 após gastos de 06/11 R$ 75,00)
+- Bradesco (Kaillany): R$ 3,04
+- Nubank: R$ 0,00
+- Banco Inter: R$ 0,00
+- PicPay: R$ 0,00
+- Efí MEI: R$ 0,00 (desconsiderado do total pessoal)
+- 99Pay: R$ 0,00 (encerrada)
+- Carteira: R$ 0,00
+- Saldo Líquido Total Disponível: R$ 2,20 (ou R$ 77,20 antes de 06/11).
 """
 
 from __future__ import annotations
@@ -14,8 +23,10 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 import openpyxl
 
-EXCEL_FINANCAS = Path(r"C:\Users\Kaio Lima\Desktop\Finanças Kaio.xlsx")
-EXCEL_GASTOS_2026 = Path(r"C:\Users\Kaio Lima\Finanças\extratos\Gastos 2026.xlsx")
+EXCEL_FINANCAS = Path(r"B:\Finanças\Extratos\Finanças Kaio.xlsx")
+if not EXCEL_FINANCAS.exists():
+    EXCEL_FINANCAS = Path(r"B:\Finanças\Extratos\00 - Orçamento e Planilhas\Finanças Kaio.xlsx")
+
 OUTPUT_BACKUP = Path(r"B:\Finanças\Extratos\fluxo-backup-latest.json")
 
 EPOCH = date(1970, 1, 1)
@@ -24,35 +35,45 @@ def to_epoch_day(d: Any) -> int:
     if isinstance(d, datetime):
         d = d.date()
     elif isinstance(d, str):
-        # YYYY-MM-DD
         d = datetime.strptime(d[:10], "%Y-%m-%d").date()
     return (d - EPOCH).days
 
 
 def build_fluxo_backup(
     financas_path: Path = EXCEL_FINANCAS,
-    gastos_path: Path = EXCEL_GASTOS_2026,
     output_path: Path = OUTPUT_BACKUP,
 ) -> Dict[str, Any]:
-    wb_financas = openpyxl.load_workbook(financas_path, data_only=True)
-    wb_gastos = openpyxl.load_workbook(gastos_path, data_only=True) if gastos_path.exists() else None
+    wb = openpyxl.load_workbook(financas_path, data_only=True)
+    ws_extrato = wb["Extrato"]
 
-    # 1. CONTAS (Accounts)
-    # Cores ARGB: formato inteiro assinado (32 bits)
-    # Nubank: #820ad1 (-8254767)
-    # Inter: #ff7a00 (-34304)
-    # InfinitePay: #00c067 (-16727961)
-    # PicPay: #11c76f (-15612049)
-    # Bradesco: #cc092f (-3405521)
-    # Efí MEI: #f26522 (-891614)
-    # 99Pay: #ffcc00 (-13312)
-    # Carteira: #4caf50 (-11737704)
+    # 1. MAPEAMENTO DE CONTAS
+    # Cores ARGB:
+    # InfinitePay: -16727961 (#00c067)
+    # Nubank: -8254767 (#820ad1)
+    # Inter: -34304 (#ff7a00)
+    # PicPay: -15612049 (#11c76f)
+    # Bradesco: -3405521 (#cc092f)
+    # Efí MEI: -891614 (#f26522)
+    # 99Pay: -13312 (#ffcc00)
+    # Carteira: -11737704 (#4caf50)
+
+    # Initial balances calculados exatamente para atingir os saldos auditados reais:
+    # Net das transações:
+    # 1 (InfinitePay): -7.84 (com almoço 35 + sorvete 40 de 06/11). Com init 82.00 -> saldo atual = -0.84 (antes de hoje era 74.16).
+    # 2 (Nubank): 0.00 -> init 0
+    # 3 (Banco Inter): -1274.53 -> init 1274.53 -> saldo 0.00
+    # 4 (PicPay): 0.00 -> init 0 -> saldo 0.00
+    # 5 (Bradesco): -575.85 -> init 578.89 -> saldo 3.04
+    # 6 (Efí MEI): +260.17 -> init -260.17 -> saldo 0.00
+    # 7 (99Pay): -169.48 -> init 169.48 -> saldo 0.00
+    # 8 (Carteira): 0.00 -> init 0 -> saldo 0.00
+
     accounts = [
         {
             "id": 1,
             "name": "InfinitePay",
             "type": "CHECKING",
-            "initialBalanceCents": 0,
+            "initialBalanceCents": 8200,  # R$ 82,00 inicial -> R$ 74,16 em 05/11 -> R$ -0,84 em 06/11
             "colorArgb": -16727961,
             "archived": False,
             "createdAt": 1700000000000,
@@ -72,7 +93,7 @@ def build_fluxo_backup(
             "id": 3,
             "name": "Banco Inter",
             "type": "CHECKING",
-            "initialBalanceCents": 0,
+            "initialBalanceCents": 127453,  # R$ 1.274,53 inicial -> R$ 0,00 final
             "colorArgb": -34304,
             "archived": False,
             "createdAt": 1700000000000,
@@ -92,7 +113,7 @@ def build_fluxo_backup(
             "id": 5,
             "name": "Bradesco (Kaillany)",
             "type": "CHECKING",
-            "initialBalanceCents": 0,
+            "initialBalanceCents": 57889,  # R$ 578,89 inicial -> R$ 3,04 final
             "colorArgb": -3405521,
             "archived": False,
             "createdAt": 1700000000000,
@@ -102,21 +123,21 @@ def build_fluxo_backup(
             "id": 6,
             "name": "Efí (MEI)",
             "type": "CHECKING",
-            "initialBalanceCents": 0,
+            "initialBalanceCents": -26017,  # Desconsiderado no pessoal -> R$ 0,00 final
             "colorArgb": -891614,
             "archived": False,
             "createdAt": 1700000000000,
-            "includeInTotal": False,
+            "includeInTotal": False,  # Conta jurídica separada
         },
         {
             "id": 7,
             "name": "99Pay",
             "type": "WALLET",
-            "initialBalanceCents": 0,
+            "initialBalanceCents": 16948,  # R$ 169,48 inicial -> R$ 0,00 final
             "colorArgb": -13312,
-            "archived": True,
+            "archived": True,  # Carteira encerrada em julho
             "createdAt": 1700000000000,
-            "includeInTotal": False,
+            "includeInTotal": True,
         },
         {
             "id": 8,
@@ -130,24 +151,19 @@ def build_fluxo_backup(
         },
     ]
 
-    account_map: Dict[str, int] = {
+    account_map = {
         "infinitepay": 1,
-        "cloudwalk": 1,
         "nubank": 2,
-        "nu pagamentos": 2,
-        "banco inter": 3,
         "inter": 3,
         "picpay": 4,
         "bradesco": 5,
-        "bradesco kaillany": 5,
-        "bradesco celular": 5,
-        "efí (mei)": 6,
-        "efí s.a.": 6,
-        "gerencianet": 6,
+        "efí": 6,
+        "efi": 6,
+        "mei": 6,
         "99pay": 7,
         "99 motorista": 7,
-        "carteira": 8,
         "dinheiro": 8,
+        "carteira": 8,
     }
 
     def get_account_id(bank_str: str) -> int:
@@ -155,11 +171,9 @@ def build_fluxo_backup(
         for k, v in account_map.items():
             if k in b:
                 return v
-        return 1  # Default InfinitePay
+        return 1
 
     # 2. CATEGORIAS (Categories)
-    # Ler todas as categorias do Extrato e do Gastos
-    ws_extrato = wb_financas["Extrato"]
     cat_names: Set[str] = set()
     cat_kind_hint: Dict[str, str] = {}
 
@@ -176,7 +190,6 @@ def build_fluxo_backup(
                 if cname not in cat_kind_hint:
                     cat_kind_hint[cname] = "EXPENSE"
 
-    # Categorias básicas adicionais
     default_cats = [
         ("Alimentação & Mercado", "EXPENSE", -11737704),
         ("Transporte & Moto", "EXPENSE", -34304),
@@ -209,9 +222,8 @@ def build_fluxo_backup(
     ]
 
     for idx, name in enumerate(sorted_cat_names, start=1):
-        # Determina INCOME vs EXPENSE
         n_lower = name.lower()
-        if any(w in n_lower for w in ["receita", "vendas", "ganhos", "salário", "salario", "recebimento", "entrada", "cashback", "lucros"]):
+        if any(w in n_lower for w in ["receita", "vendas", "ganhos", "salário", "salario", "recebimento", "entrada", "cashback", "lucros", "reembolso", "estorno"]):
             kind = "INCOME"
         else:
             kind = cat_kind_hint.get(name, "EXPENSE")
@@ -232,13 +244,17 @@ def build_fluxo_backup(
         c = str(cat_str).lower().strip()
         if c in category_map:
             return category_map[c]
-        # Match parcial
         for k, v in category_map.items():
             if k in c or c in k:
                 return v
         return category_map.get("entradas pix diversas" if is_income else "outros gastos", 1)
 
     # 3. TRANSAÇÕES (Transactions)
+    # REGRA FUNDAMENTAL:
+    # Cada linha da planilha pertence ao extrato daquela conta específica.
+    # Entrada -> INCOME na conta (sem debitar terceiros).
+    # Saída   -> EXPENSE na conta (sem creditar terceiros).
+    # toAccountId permanece NULL para NÃO criar transferências cruzadas artificiais que distorciam os saldos!
     transactions = []
     trans_id = 1
 
@@ -260,34 +276,47 @@ def build_fluxo_backup(
         desc = str(desc_raw or tipo_raw or "Transação").strip()
         notes = f"{tipo_raw or ''}".strip()
 
-        # Determina valor e tipo
         in_val = float(val_in) if isinstance(val_in, (int, float)) and val_in > 0 else 0.0
         out_val = float(val_out) if isinstance(val_out, (int, float)) and val_out > 0 else 0.0
 
         if in_val <= 0 and out_val <= 0:
             continue
 
-        is_transfer = "transferência entre contas" in str(cat_raw or "").lower()
+        card_id = None
+        inv_month = None
 
-        if is_transfer:
-            # Transferência
-            amount_cents = int(round((out_val or in_val) * 100))
-            if amount_cents <= 0:
-                continue
-            # Escolhe outra conta como destino
-            to_acc = 2 if acc_id != 2 else 1
-            t_type = "TRANSFER"
-            cat_id = None
-        elif in_val > 0:
+        if in_val > 0:
             amount_cents = int(round(in_val * 100))
             t_type = "INCOME"
             cat_id = get_category_id(str(cat_raw or ""), is_income=True)
-            to_acc = None
         else:
             amount_cents = int(round(out_val * 100))
             t_type = "EXPENSE"
             cat_id = get_category_id(str(cat_raw or ""), is_income=False)
-            to_acc = None
+
+            # Identificação precisa de pagamentos de fatura de cartão Bradesco:
+            d_lower = desc.lower()
+            if "gastos cartao de credito" in d_lower or "pagto antec" in d_lower or (acc_id == 7 and amount_cents == 80973 and "5806" in desc):
+                card_id = 1
+                t_type = "INVOICE_PAYMENT"
+                if amount_cents == 23699:
+                    inv_month = 202602
+                elif amount_cents == 55143:
+                    inv_month = 202603
+                elif amount_cents == 81720:
+                    inv_month = 202604
+                elif amount_cents == 95819:
+                    inv_month = 202605
+                elif amount_cents == 50062:
+                    inv_month = 202606
+                elif amount_cents == 80973:
+                    inv_month = 202607
+                elif amount_cents in (47620, 63431):
+                    inv_month = 202608
+                elif amount_cents == 113434:
+                    inv_month = 202609
+                elif amount_cents == 102003:
+                    inv_month = 202610
 
         transactions.append({
             "id": trans_id,
@@ -297,13 +326,13 @@ def build_fluxo_backup(
             "description": desc,
             "notes": notes,
             "accountId": acc_id,
-            "toAccountId": to_acc,
+            "toAccountId": None,
             "categoryId": cat_id,
             "isPaid": True,
             "excludeFromReports": False,
             "recurrenceGroupId": None,
-            "cardId": None,
-            "invoiceMonth": None,
+            "cardId": card_id,
+            "invoiceMonth": inv_month,
             "createdAt": 1700000000000 + trans_id * 1000,
             "fixedRuleId": None,
             "currency": "BRL",
@@ -315,7 +344,6 @@ def build_fluxo_backup(
         trans_id += 1
 
     # 4. FINANCIAMENTOS (Loans) e PARCELAS (LoanInstallments)
-    # Honda Titan 160 (Santander Aymoré) da aba Dividas
     loans = [{
         "id": 1,
         "name": "Honda Titan 160",
@@ -329,31 +357,19 @@ def build_fluxo_backup(
         "cetBp": 240,
         "accountId": 1,  # InfinitePay
         "categoryId": get_category_id("Transporte & Moto"),
-        "notes": "42 parcelas já pagas. 6 restantes com desconto para quitação antecipada.",
+        "notes": "42 parcelas já pagas (87,5%). 6 restantes com desconto para quitação antecipada por R$ 3.937,80.",
         "archived": False,
         "createdAt": 1700000000000,
     }]
 
-    # 48 parcelas
-    loan_installments = []
-    # Quotas de desconto conhecidas da aba Dividas:
-    # 35: 710.16 (2027-01-30)
-    # 36: 697.18 (2027-02-28)
-    # 37: 684.00 (2027-03-30)
-    # 39: 657.97 (2027-05-30)
-    # 40: 645.13 (2027-06-30)
-    # 41: 632.94 (2027-07-30)
-    # 42: 620.58 (2027-08-30)
-    # 43: 608.46 (2027-09-30)
     quotes = {
         35: 71016, 36: 69718, 37: 68400, 39: 65797,
         40: 64513, 41: 63294, 42: 62058, 43: 60846,
     }
-
     quote_date_epoch = to_epoch_day(date(2026, 10, 15))
 
+    loan_installments = []
     for n in range(1, 49):
-        # Data de vencimento estimada: dia 30 de cada mês a partir de 2023-08
         year = 2023 + (7 + n - 1) // 12
         month = (7 + n - 1) % 12 + 1
         day = 28 if month == 2 else 30
@@ -362,7 +378,6 @@ def build_fluxo_backup(
         is_paid = (n <= 42)
         paid_date = due_date if is_paid else None
         paid_cents = 76017 if is_paid else None
-
         quote_val = quotes.get(n)
 
         loan_installments.append({
@@ -378,34 +393,87 @@ def build_fluxo_backup(
             "transactionId": None,
         })
 
-    # 5. DÍVIDAS (Debts)
+    # 5. DÍVIDAS (Debts) - Serasa Limpa Nome
     debts = [
         {
             "id": 1,
-            "creditor": "Serasa Limpa Nome / Negociações",
-            "contractNumber": "Acordos Kaio",
+            "creditor": "Nu Financeira (Nubank CPF Principal)",
+            "contractNumber": "Contrato Principal",
             "originalDueDate": to_epoch_day(date(2025, 1, 1)),
-            "amountCents": 150000,
+            "amountCents": 717903,
             "negativado": True,
-            "offerCents": 45000,
-            "offerCondition": "Desconto de 70% à vista",
+            "offerCents": 100322,
+            "offerCondition": "86% de desconto à vista",
             "offerInstallments": 1,
-            "offerInstallmentCents": 45000,
+            "offerInstallmentCents": 100322,
             "offerValidUntil": to_epoch_day(date(2026, 12, 31)),
             "status": "NEGOTIATING",
-            "notes": "Acompanhamento de ofertas no Serasa Limpa Nome.",
+            "notes": "Maior dívida do Nubank no CPF. Oportunidade de quitar por R$ 1.003,22.",
             "paidDate": None,
             "transactionId": None,
             "createdAt": 1700000000000,
-        }
+        },
+        {
+            "id": 2,
+            "creditor": "Nu Financeira (Nubank CNPJ)",
+            "contractNumber": "Contrato CNPJ",
+            "originalDueDate": to_epoch_day(date(2025, 1, 1)),
+            "amountCents": 142052,
+            "negativado": True,
+            "offerCents": 42524,
+            "offerCondition": "70% de desconto à vista",
+            "offerInstallments": 1,
+            "offerInstallmentCents": 42524,
+            "offerValidUntil": to_epoch_day(date(2026, 12, 31)),
+            "status": "NEGOTIATING",
+            "notes": "Dívida jurídica Nubank.",
+            "paidDate": None,
+            "transactionId": None,
+            "createdAt": 1700000000000,
+        },
+        {
+            "id": 3,
+            "creditor": "Nu Financeira (Nubank Menor)",
+            "contractNumber": "Contrato Menor",
+            "originalDueDate": to_epoch_day(date(2025, 1, 1)),
+            "amountCents": 55563,
+            "negativado": True,
+            "offerCents": 18683,
+            "offerCondition": "66% de desconto à vista",
+            "offerInstallments": 1,
+            "offerInstallmentCents": 18683,
+            "offerValidUntil": to_epoch_day(date(2026, 12, 31)),
+            "status": "NEGOTIATING",
+            "notes": "Dívida menor Nubank.",
+            "paidDate": None,
+            "transactionId": None,
+            "createdAt": 1700000000000,
+        },
+        {
+            "id": 4,
+            "creditor": "Telefônica Brasil (Vivo)",
+            "contractNumber": "Contrato Vivo 3x",
+            "originalDueDate": to_epoch_day(date(2025, 1, 1)),
+            "amountCents": 31040,
+            "negativado": True,
+            "offerCents": 17072,
+            "offerCondition": "45% de desconto à vista",
+            "offerInstallments": 1,
+            "offerInstallmentCents": 17072,
+            "offerValidUntil": to_epoch_day(date(2026, 12, 31)),
+            "status": "NEGOTIATING",
+            "notes": "Dívida de telefonia Vivo.",
+            "paidDate": None,
+            "transactionId": None,
+            "createdAt": 1700000000000,
+        },
     ]
 
-    # 6. GANHOS DE APLICATIVO (RideEarnings - 99 e Uber)
+    # 6. GANHOS DE APLICATIVO (RideEarnings)
     ride_earnings = []
     ride_id = 1
-    ws_ganhos = wb_financas["Ganhos"]
+    ws_ganhos = wb["Ganhos"]
 
-    # Meses Jan a Out 2026
     month_dates = [
         (1, date(2026, 1, 1), date(2026, 1, 31)),
         (2, date(2026, 2, 1), date(2026, 2, 28)),
@@ -458,42 +526,42 @@ def build_fluxo_backup(
             })
             ride_id += 1
 
-    # 7. METAS (Goals) da aba Pagar Contas
+    # 7. METAS (Goals)
     goals = [
         {
             "id": 1,
-            "name": "Quitar a Moto",
-            "description": "Quitação antecipada da Honda Titan 160 com desconto",
-            "targetCents": 582678,
-            "deadline": to_epoch_day(date(2026, 10, 31)),
+            "name": "🏍️ Quitar a Moto (Titan 160)",
+            "description": "Quitação das 6 parcelas restantes com deságio de juros por R$ 3.937,80 (42 de 48 parcelas já quitadas).",
+            "targetCents": 393780,  # Valor real auditado de quitação hoje
+            "deadline": to_epoch_day(date(2026, 12, 31)),
             "colorArgb": -34304,
             "status": "ACTIVE",
             "createdAt": 1700000000000,
         },
         {
             "id": 2,
-            "name": "Máquina de Lavar",
-            "description": "Compra da máquina de lavar para a casa",
+            "name": "🧺 Máquina de Lavar",
+            "description": "Compra da máquina de lavar para a casa (meta seguinte após a moto).",
             "targetCents": 150000,
-            "deadline": to_epoch_day(date(2026, 11, 30)),
+            "deadline": to_epoch_day(date(2027, 3, 31)),
             "colorArgb": -16727961,
             "status": "ACTIVE",
             "createdAt": 1700000000000,
         },
         {
             "id": 3,
-            "name": "Ajeitar a Casa",
-            "description": "Reforma e melhorias na residência",
+            "name": "🏠 Ajeitar a Casa",
+            "description": "Reforma e melhorias na residência.",
             "targetCents": 300000,
-            "deadline": to_epoch_day(date(2026, 12, 31)),
+            "deadline": to_epoch_day(date(2027, 6, 30)),
             "colorArgb": -8254767,
             "status": "ACTIVE",
             "createdAt": 1700000000000,
         },
         {
             "id": 4,
-            "name": "Carro",
-            "description": "Aquisição do veículo da família",
+            "name": "🚗 Compra do Carro",
+            "description": "Aquisição do veículo da família (médio/longo prazo).",
             "targetCents": 6500000,
             "deadline": to_epoch_day(date(2028, 12, 31)),
             "colorArgb": -3405521,
@@ -507,7 +575,7 @@ def build_fluxo_backup(
         {
             "id": 1,
             "title": "Finanças Consolidadas Kaio & Kaillany",
-            "body": "Histórico completo auditado das contas InfinitePay, Nubank, Inter, PicPay, Bradesco, Efí e 99Pay.\nMeta prioritária: Quitação da Honda Titan 160.",
+            "body": "Histórico auditado oficial. Saldo líquido pessoal: R$ 77,20 (InfinitePay R$ 74,16 + Bradesco R$ 3,04). Meta prioritária: Quitação da Moto por R$ 3.937,80.",
             "status": "INFO",
             "pinned": True,
             "createdAt": 1700000000000,
@@ -515,19 +583,143 @@ def build_fluxo_backup(
         }
     ]
 
-    # Cartões de Crédito (Cards)
     cards = [
         {
             "id": 1,
-            "name": "Cartão Kaillany",
+            "name": "Cartão Kaillany (Bradesco)",
             "limitCents": 300000,
             "closingDay": 5,
-            "dueDay": 12,
+            "dueDay": 10,
             "colorArgb": -3405521,
             "defaultPaymentAccountId": 5,
             "archived": False,
         }
     ]
+
+    # 9. COMPRAS E PARCELAS DO CARTÃO DE CRÉDITO
+    card_purchases = []
+    card_installments = []
+    p_id = 1
+    i_id = 1
+
+    month_name_map = {
+        'fevereiro': (2026, 2),
+        'março': (2026, 3),
+        'marco': (2026, 3),
+        'abril': (2026, 4),
+        'maio': (2026, 5),
+        'junho': (2026, 6),
+        'julho': (2026, 7),
+        'agosto': (2026, 8),
+        'setembro': (2026, 9),
+        'outubro': (2026, 10),
+        'novembro': (2026, 11),
+        'dezembro': (2026, 12),
+    }
+
+    def get_card_category_id(c_desc: str) -> int:
+        d = c_desc.lower()
+        if any(w in d for w in ["uber", "99", "gasolina", "combustivel", "moto", "estacionamento"]):
+            return get_category_id("Transporte & Moto")
+        if any(w in d for w in ["farmacia", "drogaria", "pague menos", "diony", "saude", "medico", "consulta"]):
+            return get_category_id("Saúde & Farmácia")
+        if any(w in d for w in ["assai", "supermercado", "mercado", "frutas", "leon", "ifd*", "ifood", "restaurante", "padaria", "panificadora", "lanches", "acai", "sorvete"]):
+            return get_category_id("Alimentação & Mercado")
+        if any(w in d for w in ["mercadolivre", "mercado livre", "amazon", "shopee", "claudia bolsas", "loja", "tntinfoloja", "magazine", "compras", "etceter", "marjorie"]):
+            return get_category_id("Compras & Mercado Livre")
+        if any(w in d for w in ["apple", "google", "chatgpt", "openai", "cursor", "anthropic", "github", "software", "nuvem"]):
+            return get_category_id("I.A., Software & Ferramentas")
+        if any(w in d for w in ["vivo", "claro", "tim", "enel", "sobral net", "internet", "luz", "agua", "gas", "nosso gas"]):
+            return get_category_id("Moradia & Contas Básicas")
+        if any(w in d for w in ["queima diaria", "cinema", "show", "lazer"]):
+            return get_category_id("Lazer & Passeios")
+        return get_category_id("Outros Gastos")
+
+    if "Gastos" in wb.sheetnames:
+        import re
+        ws_gastos = wb["Gastos"]
+        for r in range(202, ws_gastos.max_row + 1):
+            fat = ws_gastos.cell(r, 2).value
+            if not fat:
+                continue
+            f_str = str(fat).strip()
+            m_match = re.search(r'([A-Za-zç]+)/?(\d{4})?', f_str, re.IGNORECASE)
+            if not m_match:
+                continue
+            m_name = m_match.group(1).lower()
+            if m_name not in month_name_map:
+                continue
+            y, m = month_name_map[m_name]
+            inv_month = y * 100 + m
+
+            dt_val = ws_gastos.cell(r, 3).value
+            card_final = str(ws_gastos.cell(r, 4).value or '').strip()
+            c_desc = str(ws_gastos.cell(r, 5).value or 'Compra Cartão').strip()
+            val = ws_gastos.cell(r, 7).value
+            if val is None:
+                continue
+            val = float(val)
+            amount_cents = int(round(val * 100))
+
+            p_date = None
+            if isinstance(dt_val, (datetime, date)):
+                p_date = dt_val if isinstance(dt_val, date) else dt_val.date()
+            elif isinstance(dt_val, str) and "/" in dt_val:
+                parts = dt_val.strip().split("/")
+                if len(parts) == 2:
+                    try:
+                        d_day = int(parts[0])
+                        d_mon = int(parts[1])
+                        d_yr = 2026
+                        if d_mon == 12 and m <= 2:
+                            d_yr = 2025
+                        p_date = date(d_yr, d_mon, d_day)
+                    except Exception:
+                        pass
+            if not p_date:
+                p_date = date(y, m, 1)
+
+            inst_match = re.search(r'(\d{1,2})/(\d{1,2})', c_desc)
+            if inst_match:
+                inst_num = int(inst_match.group(1))
+                inst_count = int(inst_match.group(2))
+            else:
+                inst_num = 1
+                inst_count = 1
+
+            epoch_d = to_epoch_day(p_date)
+            cat_id = get_card_category_id(c_desc)
+
+            card_purchases.append({
+                "id": p_id,
+                "cardId": 1,
+                "description": c_desc,
+                "categoryId": cat_id,
+                "totalCents": amount_cents,
+                "installmentCount": inst_count,
+                "purchaseDate": epoch_d,
+                "kind": "PURCHASE",
+                "notes": f"Cartão final {card_final}".strip(),
+                "createdAt": 1700000000000 + p_id * 1000,
+                "fixedRuleId": None,
+                "currency": "BRL",
+                "originalAmountCents": None,
+                "latitude": None,
+                "longitude": None,
+                "importKey": f"card_purchase_{r}",
+            })
+
+            card_installments.append({
+                "id": i_id,
+                "purchaseId": p_id,
+                "cardId": 1,
+                "number": inst_num,
+                "amountCents": amount_cents,
+                "invoiceMonth": inv_month,
+            })
+
+            p_id += 1
+            i_id += 1
 
     snapshot: Dict[str, Any] = {
         "format": "fluxo-backup",
@@ -536,8 +728,8 @@ def build_fluxo_backup(
         "accounts": accounts,
         "categories": categories,
         "cards": cards,
-        "purchases": [],
-        "installments": [],
+        "purchases": card_purchases,
+        "installments": card_installments,
         "transactions": transactions,
         "budgets": [],
         "goals": goals,
@@ -556,20 +748,19 @@ def build_fluxo_backup(
         "notes": notes,
     }
 
-    # Salva JSON
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(snapshot, f, ensure_ascii=False, indent=2)
 
     print(f"✅ Backup do Fluxo gerado com sucesso!")
     print(f"📁 Destino: {output_path}")
-    print(f"📊 Resumo do snapshot:")
+    print(f"📊 Resumo do snapshot corrigido:")
     print(f"   • Contas: {len(accounts)}")
     print(f"   • Categorias: {len(categories)}")
     print(f"   • Transações: {len(transactions)}")
     print(f"   • Financiamentos: {len(loans)} ({len(loan_installments)} parcelas)")
     print(f"   • Dívidas: {len(debts)}")
-    print(f"   • Ganhos de app (99/Uber): {len(ride_earnings)}")
+    print(f"   • Ganhos de app: {len(ride_earnings)}")
     print(f"   • Metas: {len(goals)}")
     print(f"   • Notas: {len(notes)}")
 

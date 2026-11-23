@@ -6,7 +6,7 @@ sem corromper código, indentação Python, fences Markdown ou estruturas JSON.
 
 import json
 from dataclasses import dataclass
-from typing import Tuple, List, Optional
+from typing import Tuple, List
 
 @dataclass(frozen=True)
 class TokenSavingReport:

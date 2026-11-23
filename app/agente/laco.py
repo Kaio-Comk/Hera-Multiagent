@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import time
-from typing import Any, AsyncIterator, Awaitable, Callable, Iterable, Sequence
+from typing import Any, AsyncIterator, Awaitable, Callable, Sequence
 
 from cli.chat_ferramenta_ui import formatar_grupo_acoes
 from cli.chat_ferramentas import (

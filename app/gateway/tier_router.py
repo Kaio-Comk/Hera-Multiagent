@@ -25,7 +25,7 @@ from app.gateway.providers import (
     ModalityResponse,
 )
 from app.gateway.token_saver import RTKTokenSaver
-from app.gateway.sse import format_openai_sse_chunk, format_sse_done, format_sse_error, sse_stream_generator
+from app.gateway.sse import format_openai_sse_chunk, format_sse_done, format_sse_error
 from app.gateway.streaming import StreamRecord, StreamTelemetry
 from app.gateway.resilience import ProviderGuard
 from app.privacy_guard import PrivacyGuard

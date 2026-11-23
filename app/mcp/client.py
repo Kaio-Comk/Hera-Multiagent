@@ -5,8 +5,8 @@ import re
 from pathlib import Path
 from typing import Dict, Any, Optional, Callable
 
-from app.mcp.schemas import McpToolCallRequest, McpToolCallResult, McpToolDefinition
-from app.mcp.catalog import McpCatalog, McpSecurityError, McpPermissionDeniedError
+from app.mcp.schemas import McpToolCallRequest, McpToolCallResult
+from app.mcp.catalog import McpCatalog, McpSecurityError
 from app.gateway.privacy import GatewayPrivacyManager
 from app.privacy_guard import PrivacyGuard
 from app.mcp.launch import McpLaunchError, build_argv, build_env, validate_stdio_server

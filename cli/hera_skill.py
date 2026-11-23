@@ -43,7 +43,7 @@ def _http_request(endpoint: str, method: str = "GET", data: Optional[Dict[str, A
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
 
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:  # nosec B310 - servidor local do Hera em 127.0.0.1
             raw = resp.read().decode("utf-8")
             return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as e:
@@ -70,7 +70,7 @@ def cmd_setup() -> Dict[str, Any]:
     # Checar Ollama local
     try:
         req = urllib.request.Request("http://127.0.0.1:11434/api/tags")
-        with urllib.request.urlopen(req, timeout=3) as resp:
+        with urllib.request.urlopen(req, timeout=3) as resp:  # nosec B310 - servidor local do Hera em 127.0.0.1
             data = json.loads(resp.read().decode("utf-8"))
             results["ollama_online"] = True
             results["ollama_models"] = [m.get("name") for m in data.get("models", [])][:8]
@@ -262,7 +262,7 @@ def main() -> None:
         print(json.dumps(r, indent=2, ensure_ascii=False))
     elif args.command == "report":
         r = cmd_report(args.run_id)
-        print(f"📊 Relatório compilado com sucesso!")
+        print("📊 Relatório compilado com sucesso!")
         print(f"   Status: {r['status']} | Passos: {r['steps_count']} | Tokens: {r['total_tokens']:,}")
         print(f"   Arquivo: {r['report_file']}")
         print(f"   URL: {r['file_url']}")

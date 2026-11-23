@@ -8,7 +8,6 @@ import httpx
 from models.task import AgentTask, AgentResult, TaskStatus
 from models.agent import HealthStatus, AgentCapabilities, RunHandle
 from adapters import images as images_mod
-from adapters.base import AgentAdapter
 from adapters.progress import STATUS, TEXT, say
 
 class OllamaAdapter:

@@ -293,9 +293,11 @@ def test_interpolacoes_de_html_da_ui_foram_revisadas():
     novas = sorted(found - REVISADAS)
     assert not novas, f"interpolação nova em HTML da UI sem revisão de XSS: {novas}"
     # e nenhuma delas injeta dado de fora sem escape: dados do servidor/IdP só aparecem dentro de escapeHtml/escAttr
+    # (ou encodeURIComponent, num caminho de URL). 05/11/2026: a regex tinha o caractere backspace no lugar de \b e
+    # nunca casava, então esta verificação não fazia nada desde 27/10; consertada.
     for expr in found:
-        for raw in re.findall(r"(?:p|d|e|t|r|data)\.(?:name|title|snippet|message|default_model|assigned_agent|assigned_model|user_code|provider|url|signup)",
-                              re.sub(r"(?:escapeHtml|escAttr)\([^)]*\)", "", expr)):
+        for raw in re.findall(r"\b(?:p|d|e|t|r|data)\.(?:name|title|snippet|message|default_model|assigned_agent|assigned_model|user_code|provider|url|signup)\b",
+                              re.sub(r"(?:escapeHtml|escAttr|encodeURIComponent)\([^)]*\)", "", expr)):
             pytest.fail(f"dado externo fora de escape: {raw} em {expr!r}")
 
 

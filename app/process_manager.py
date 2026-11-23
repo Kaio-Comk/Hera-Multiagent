@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 class ProcessState(str, Enum):

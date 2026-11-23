@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 import uuid
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path

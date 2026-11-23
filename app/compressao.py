@@ -4,7 +4,7 @@ import asyncio
 import json
 import math
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Iterable, Sequence
+from typing import Any, Awaitable, Callable, Sequence
 
 from app.imagens import TOKENS_POR_IMAGEM, contar_imagens
 

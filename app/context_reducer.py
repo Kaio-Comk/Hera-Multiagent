@@ -7,10 +7,8 @@ reduzido deterministicamente antes de alimentar o modelo de fronteira.
 from __future__ import annotations
 
 import ast
-import os
-import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 
 class ContextReducer:

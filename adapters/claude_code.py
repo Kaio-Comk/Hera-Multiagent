@@ -8,11 +8,10 @@ from adapters import images as images_mod
 from adapters.model_args import model_args
 from adapters.cli_stream import ClaudeStream, run_streaming, _kill_tree
 from adapters.progress import STATUS, say
-from typing import Dict, Any, Optional, List
+from typing import Dict, Optional
 
 from models.task import AgentTask, AgentResult, TaskStatus
 from models.agent import HealthStatus, AgentCapabilities, RunHandle
-from adapters.base import AgentAdapter
 
 # O Claude Code nao tem um comando que liste modelos: sao os APELIDOS (sempre o mais novo da familia) e os nomes
 # completos conhecidos. O campo de modelo do painel aceita qualquer nome valido, esta lista so sugere.

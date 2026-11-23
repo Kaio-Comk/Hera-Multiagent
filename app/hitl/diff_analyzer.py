@@ -1,6 +1,6 @@
 import re
 from pathlib import Path
-from typing import List, Optional, Tuple, Set
+from typing import List, Optional, Set
 from app.hitl.schemas import DiffStats, DiffAlert
 
 # Padrões de detecção de segredos em diffs adicionados

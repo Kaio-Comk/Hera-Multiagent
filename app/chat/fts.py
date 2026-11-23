@@ -153,7 +153,7 @@ def _buscar_like(
         params.append(f"%{_escapar_like(t)}%")
 
     sql = (
-        "SELECT m.conversation_id AS conversation_id, "
+        "SELECT m.conversation_id AS conversation_id, "  # nosec B608 - so placeholders '?'; termos vao em params com LIKE escapado
         "c.title AS conversation_title, "
         "m.id AS message_id, "
         "m.role AS role, "

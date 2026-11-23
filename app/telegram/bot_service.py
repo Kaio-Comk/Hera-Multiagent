@@ -19,6 +19,12 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+try:
+    import dotenv
+    dotenv.load_dotenv(Path(r"B:\Projetos\Hera\.env"))
+except Exception:
+    pass
+
 import httpx
 
 # Imports internos do Hera
@@ -241,19 +247,20 @@ class HeraTelegramBot:
         if cmd in ("/start", "/help"):
             welcome = (
                 "🦚 *Olá! Eu sou a Hera Assistente.*\n\n"
-                "Estou conectada ao sistema e às suas finanças. "
-                "Pode conversar comigo, pedir análises ou enviar comprovantes Pix!\n\n"
+                "Estou conectada ao ecossistema do seu PC, servidores e finanças (App Fluxo). "
+                "Pode conversar comigo, pedir análises ou enviar comprovantes e extratos!\n\n"
                 "📌 *Comandos & Recursos:*\n"
-                "• 🧾 *Envio de Comprovante:* Mande a foto do comprovante com o comentário (ex: _comprei um sorvete_) e eu adiciono na sua planilha!\n"
-                "• 💸 *Gasto por Texto:* Digite algo como _comprei um sorvete de 40 reais_ e eu adiciono automaticamente.\n"
-                "• `/fluxo` — Baixar o arquivo de sincronização / backup completo para o app Fluxo no celular\n"
-                "• `/apk` — Baixar o APK atualizado do Fluxo (v2.5.0)\n"
-                "• `/gastos` — Ver os últimos gastos lançados via Telegram\n"
-                "• `/status` — Ver uso de CPU, RAM, GPU e serviços\n"
+                "• 🧾 *Envio de Comprovante:* Mande a foto do comprovante com o comentário (ex: _recebi corrida na 99_ ou _comprei almoço_) e eu lanço no Fluxo!\n"
+                "• 💸 *Lançamento por Texto:* Digite algo como _recebi 120 reais de corrida_ ou _gastei 40 reais de sorvete_\n"
+                "• `/saldo` — Ver saldos em tempo real de todas as suas contas bancárias\n"
+                "• `/gastos` — Ver as últimas movimentações lançadas via Telegram\n"
+                "• `/fluxo` — Baixar o snapshot completo do Fluxo para o celular\n"
+                "• `/apk` — Baixar o APK atualizado do Fluxo\n"
+                "• `/status` — Ver telemetria do PC (CPU, RAM, GPU, serviços)\n"
                 "• `/model` — Ver ou alternar modelo de IA (100% Nuvem)\n"
                 "• `/clear` — Limpar histórico da conversa e reiniciar contexto\n"
                 "• `/help` — Ver esta ajuda\n\n"
-                "💬 *Pode me mandar uma mensagem ou comprovante agora!*"
+                "💬 *Pode me mandar uma mensagem, pergunta ou comprovante agora!*"
             )
             await self.send_message(chat_id, welcome)
             return
@@ -303,16 +310,36 @@ class HeraTelegramBot:
             await self.send_document(chat_id, apk_path, caption=caption)
             return
 
-        elif cmd == "/gastos":
+        elif cmd in ("/saldo", "/contas"):
+            from app.finance.fluxo_db import fluxo_db
+            summary = fluxo_db.get_summary()
+            lines = [
+                "💰 *Saldos Atuais — App Fluxo*",
+                "",
+                f"💵 *Saldo Total Consolidado:* `R$ {summary['total_saldo']:.2f}`",
+                "",
+                "🏦 *Saldos por Conta:*",
+            ]
+            for c in summary["contas"]:
+                in_total = "🟢" if c["include_in_total"] else "⚪"
+                lines.append(f"• {in_total} *{c['nome']}:* `R$ {c['saldo']:.2f}`")
+            lines.append("")
+            lines.append(f"📊 *Total de Transações Auditadas:* {summary['total_transacoes']}")
+            await self.send_message(chat_id, "\n".join(lines))
+            return
+
+        elif cmd in ("/gastos", "/movimentacoes", "/extrato"):
             from app.finance.expense_manager import AUDIT_LOG_PATH
             if not AUDIT_LOG_PATH.exists() or AUDIT_LOG_PATH.stat().st_size == 0:
-                await self.send_message(chat_id, "📂 *Nenhum gasto lançado via Telegram ainda.*")
+                await self.send_message(chat_id, "📂 *Nenhuma movimentação lançada via Telegram ainda.*")
                 return
             lines = [json.loads(l) for l in AUDIT_LOG_PATH.read_text(encoding="utf-8").strip().split("\n") if l.strip()]
-            recent = lines[-5:]
-            msg_g = ["📊 *Últimos Gastos Lançados via Telegram:*\n"]
+            recent = lines[-6:]
+            msg_g = ["📊 *Últimas Movimentações Lançadas via Telegram:*\n"]
             for g in reversed(recent):
-                msg_g.append(f"• `{g['data']}` — *R$ {g['valor']:.2f}* — {g['descricao']} ({g['categoria']})")
+                tipo = g.get("tipo", "EXPENSE")
+                icon = "🟢 +" if tipo == "INCOME" else ("🔄 " if tipo == "TRANSFER" else "🔴 -")
+                msg_g.append(f"• `{g['data']}` — {icon}*R$ {g['valor']:.2f}* — {g['descricao']} ({g['categoria']})")
             await self.send_message(chat_id, "\n".join(msg_g))
             return
 
@@ -353,7 +380,7 @@ class HeraTelegramBot:
                 await self.send_message(chat_id, msg_models)
             return
 
-        # ── 3. Intenção Financeira por Texto (Ex: 'comprei sorvete R$ 40') ────────
+        # ── 3. Intenção Financeira por Texto (Ex: 'comprei sorvete R$ 40' ou 'recebi corrida R$ 120') ────────
         if self.receipt_parser.is_financial_intent(text):
             await self.send_chat_action(chat_id, "typing")
             await self._process_receipt(chat_id, file_id=None, file_name=None, user_comment=text)
@@ -369,8 +396,22 @@ class HeraTelegramBot:
         if len(self.conversation_history) > self.max_history_turns * 2:
             self.conversation_history = self.conversation_history[-self.max_history_turns * 2:]
 
-        # Montar lista completa com system prompt
-        messages_to_send = [ChatMessage(role="system", content=SYSTEM_PROMPT)] + self.conversation_history
+        # Enriquecer o contexto da conversa com telemetria e finanças vivas do usuário
+        finance_context = ""
+        try:
+            from app.finance.fluxo_db import fluxo_db
+            s = fluxo_db.get_summary()
+            finance_context = (
+                f"\n\n[CONTEXTO VIVO DO USUÁRIO]:\n"
+                f"- Saldo Total Consolidado no App Fluxo: R$ {s['total_saldo']:.2f}\n"
+                f"- Contas ativas: " + ", ".join(f"{c['nome']}: R$ {c['saldo']:.2f}" for c in s['contas'] if c['saldo'] != 0) + "\n"
+                f"- Últimas transações no Fluxo: " + "; ".join(f"{t['data']} ({t['tipo']}): R$ {t['valor']:.2f} - {t['descricao']}" for t in s['ultimas_transacoes'][:4])
+            )
+        except Exception:
+            pass
+
+        full_system_prompt = SYSTEM_PROMPT + finance_context
+        messages_to_send = [ChatMessage(role="system", content=full_system_prompt)] + self.conversation_history
 
         req = ChatCompletionRequest(
             model=self.current_model,
@@ -402,7 +443,7 @@ class HeraTelegramBot:
         file_name: Optional[str] = None,
         user_comment: str = "",
     ) -> None:
-        """Processa comprovante (imagem, PDF ou texto) e lança na planilha de gastos do Kaio."""
+        """Processa comprovante (imagem, PDF ou texto) e lança no Fluxo."""
         temp_file: Optional[Path] = None
         raw_text = ""
 
@@ -437,39 +478,60 @@ class HeraTelegramBot:
             if valor <= 0:
                 await self.send_message(
                     chat_id,
-                    "⚠️ *Não identifiquei o valor da despesa.*\n"
-                    "Por favor informe o valor (ex: `R$ 40,00 Sorvete`)."
+                    "⚠️ *Não identifiquei o valor da movimentação.*\n"
+                    "Por favor informe o valor (ex: `R$ 40,00 Sorvete` ou `R$ 120,00 Corrida 99`)."
                 )
                 return
 
-            # Gravação atômica na planilha oficial do Kaio
+            # Gravação atômica no Fluxo SQLite
             entry = self.expense_manager.record_expense(parsed, receipt_path=temp_file)
 
+            tipo = entry.get("tipo", "EXPENSE")
+            if tipo == "INCOME":
+                header = "🟢 *Receita / Ganho Registrado com Sucesso!*"
+                action_line = f"📥 Recebimento: R$ {entry['valor']:.2f} — *{entry['descricao']}*"
+                valor_line = f"💰 *Valor:* `+R$ {entry['valor']:.2f}`"
+            elif tipo == "TRANSFER":
+                header = "🔄 *Transferência Registrada com Sucesso!*"
+                action_line = f"↔️ Transferência: R$ {entry['valor']:.2f} — *{entry['descricao']}*"
+                valor_line = f"💰 *Valor:* `R$ {entry['valor']:.2f}`"
+            else:
+                header = "🔴 *Despesa Registrada com Sucesso!*"
+                action_line = f"💳 Pagamento / Despesa: R$ {entry['valor']:.2f} — *{entry['descricao']}*"
+                valor_line = f"💸 *Valor:* `-R$ {entry['valor']:.2f}`"
+
             msg_confirm = (
-                "🧾 *Comprovante Pix Lançado com Sucesso!*\n\n"
-                f"💳 Pix enviado: R$ {entry['valor']:.2f} para {entry['descricao']}\n\n"
-                f"💰 *Valor:* `R$ {entry['valor']:.2f}`\n"
+                f"{header}\n\n"
+                f"{action_line}\n\n"
+                f"{valor_line}\n"
                 f"🏷️ *Descrição:* *{entry['descricao']}*\n"
                 f"📂 *Categoria:* `{entry['categoria']}`\n"
-                f"🏦 *Forma / Banco:* {entry['forma']} ({entry['banco']})\n"
+                f"🏦 *Conta / Banco:* {entry['forma']} ({entry['banco']})\n"
                 f"📅 *Data:* {entry['data']} ({entry['mes']})\n"
             )
             if entry.get("beneficiario"):
-                msg_confirm += f"👤 *Beneficiário:* {entry['beneficiario']}\n"
+                b_label = "Origem / Pagador" if tipo == "INCOME" else "Beneficiário"
+                msg_confirm += f"👤 *{b_label}:* {entry['beneficiario']}\n"
             if entry.get("observacao"):
                 msg_confirm += f"📝 *Obs:* _{entry['observacao']}_\n"
-            msg_confirm += (
-                "\n📊 *Sistemas Atualizados:*\n"
-                "• `Finanças Kaio.xlsx` (Gastos & Extrato)\n"
-                "• `Gastos 2026.xlsx` (Orçamento Mensal)\n"
-                "• `App Fluxo (Android)`: Notificação emitida & Snapshot atualizado\n"
-                "• `Obsidian Vault`: Finanças.md"
-            )
+
+            # Saldo atualizado diretamente do SQLite do Fluxo
+            try:
+                from app.finance.fluxo_db import fluxo_db
+                summary = fluxo_db.get_summary()
+                msg_confirm += (
+                    f"\n📊 *App Fluxo Sincronizado:*\n"
+                    f"• 💰 *Saldo Total Consolidado:* `R$ {summary['total_saldo']:.2f}`\n"
+                    f"• 📱 *Snapshot:* Atualizado no celular e PC"
+                )
+            except Exception:
+                msg_confirm += "\n📱 *App Fluxo:* Sincronizado com sucesso."
+
             await self.send_message(chat_id, msg_confirm)
 
         except Exception as exc:
             log.exception("[HeraTelegramBot] Erro ao processar comprovante: %s", exc)
-            await self.send_message(chat_id, f"⚠️ *Erro ao lançar despesa na planilha:*\n`{exc}`")
+            await self.send_message(chat_id, f"⚠️ *Erro ao lançar movimentação no Fluxo:*\n`{exc}`")
         finally:
             if temp_file and temp_file.exists():
                 try:

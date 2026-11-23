@@ -290,7 +290,7 @@ class DAGScheduler:
                         res = AgentResult(
                             task_id=task_id,
                             status=TaskStatus.CANCELLED,
-                            summary=f"Cancelada automaticamente: dependência prévia falhou",
+                            summary="Cancelada automaticamente: dependência prévia falhou",
                             error_message="Falha em tarefa antecedente no DAG"
                         )
                         self.coordinator.complete_task(task_id, res)

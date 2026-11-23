@@ -6,14 +6,12 @@ from adapters.model_args import clean_model, model_args
 from adapters.cli_stream import AntigravityStream, run_streaming, _kill_tree
 from adapters.progress import STATUS, say
 from app.locations import find_agy_binary
-import shutil
 import time
 import asyncio
-from typing import Dict, Any, Optional, List
+from typing import Dict, Optional
 
 from models.task import AgentTask, AgentResult, TaskStatus
 from models.agent import HealthStatus, AgentCapabilities, RunHandle
-from adapters.base import AgentAdapter
 
 FALLBACK_MODELS = ["gemini-3.8-flash-high", "gemini-3.8-flash-medium", "gemini-3.8-flash-low"]
 MODELS_TTL = 300.0

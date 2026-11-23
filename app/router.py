@@ -1,6 +1,6 @@
 import asyncio
 import time
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple
 from models.task import AgentTask
 from adapters.base import AgentAdapter
 from app.privacy_guard import PrivacyGuard
@@ -109,8 +109,8 @@ class TaskRouter:
 
             # Se não houver executor local disponível, FALHAR FECHADO (não fazer fallback para nuvem!)
             raise PermissionError(
-                f"Falha de segurança (Fail-Closed): Tarefa confidencial/offline não pode ser enviada para a nuvem "
-                f"e o executor local (Ollama) não está disponível (desligado ou sem resposta)."
+                "Falha de segurança (Fail-Closed): Tarefa confidencial/offline não pode ser enviada para a nuvem "
+                "e o executor local (Ollama) não está disponível (desligado ou sem resposta)."
             )
 
         # 2. Atribuição manual direta (quando segura)

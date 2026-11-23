@@ -6,7 +6,7 @@ import asyncio
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, Optional, Tuple, Any
 from pydantic import BaseModel, Field
 
 from models.task import AgentTask, AgentResult, TaskStatus

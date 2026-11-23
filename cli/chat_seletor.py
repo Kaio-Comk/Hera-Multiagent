@@ -7,7 +7,6 @@ nao deixa nada na tela quando termina (erase_when_done=True).
 
 from __future__ import annotations
 
-from typing import Callable
 
 from prompt_toolkit.application import Application
 from prompt_toolkit.formatted_text import FormattedText

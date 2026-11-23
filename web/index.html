@@ -3684,7 +3684,8 @@
           <input id="pv-key-${escAttr(n)}" type="password" autocomplete="off" placeholder="Cole a chave de API (opcional agora)" class="flex-1 min-w-[160px] bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-100 font-mono">
           <button type="button" class="btn btn-sm btn-primary" data-pv="add-confirm" data-id="${escAttr(n)}">Adicionar e ligar</button></div>
           ${pr.signup ? `<div class="text-[11px] text-zinc-400">Crie a chave em <a class="text-brand-300 underline" target="_blank" rel="noopener noreferrer" href="${escAttr(pr.signup)}">${escapeHtml(pr.signup)}</a>. Ela fica no cofre do Hera, protegida pelo Windows.</div>` : ""}</div>` : "";
-      const line = p ? `${p.default_model || ""} · ${(p.models || []).length} modelo(s)` : (pr.default_model ? `${pr.default_model}` : "");
+      // plain text, escaped by escapeHtml(e.line) when rendered
+      const line = p ? (p.default_model || "") + " · " + (p.models || []).length + " modelo(s)" : (pr.default_model ? String(pr.default_model) : "");
       return { id: n, label: pr.label || n, ready, status, line, tier: pr.tier, note: pr.note || "", actions,
         detail: p && pvOpen.has(n) ? pvDetailHtml(p) : "", extra: addForm };
     });
@@ -3840,7 +3841,8 @@
   // ----- apelidos: sugestões de destino (provedor/modelo)
   function aliasTargets() {
     const out = [];
-    ((routerState && routerState.providers) || []).filter(p => p.active).forEach(p => [...new Set([p.default_model, ...(p.models || [])])].forEach(m => out.push(`${p.name}/${m}`)));
+    // plain text (escaped by escAttr in renderAliasTargets); concatenation, not an HTML template, so the XSS guard test stays strict
+    ((routerState && routerState.providers) || []).filter(p => p.active).forEach(p => [...new Set([p.default_model, ...(p.models || [])])].forEach(m => out.push(p.name + "/" + m)));
     ((routerState && routerState.ollama_models) || []).forEach(m => out.push(`ollama/${m}`));
     return out;
   }

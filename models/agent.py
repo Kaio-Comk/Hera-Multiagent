@@ -1,5 +1,4 @@
 from typing import List, Dict, Optional, Any
-import time
 from pydantic import BaseModel, Field
 
 class HealthStatus(BaseModel):

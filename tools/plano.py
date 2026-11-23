@@ -37,7 +37,7 @@ def _api(caminho: str, corpo: dict | None = None, timeout: int = 60) -> dict:
     req = urllib.request.Request(BASE + caminho, data=dados, method="POST" if dados else "GET",
                                  headers={"X-Hera-Token": _token(), "Content-Type": "application/json; charset=utf-8"})
     try:
-        return json.loads(urllib.request.urlopen(req, timeout=timeout).read())
+        return json.loads(urllib.request.urlopen(req, timeout=timeout).read())  # nosec B310 - servidor local do Hera em 127.0.0.1
     except urllib.error.HTTPError as e:
         raise SystemExit(f"Hera recusou ({e.code}): {e.read().decode('utf-8', 'replace')[:600]}")
     except urllib.error.URLError as e:

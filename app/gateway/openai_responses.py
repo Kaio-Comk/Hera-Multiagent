@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, List, Optional
 
 from app.gateway.translator.responses_api import (
     chat_stream_to_responses, flush_responses_stream, new_responses_stream_state, responses_to_chat_request,

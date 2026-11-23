@@ -16,7 +16,7 @@ _PADROES_INCOMPAT: tuple[tuple[str, str], ...] = (
     ('#!/bin/bash', 'usa bash'),
     ('#!/usr/bin/env bash', 'usa bash'),
     ('chmod ', 'usa chmod'),
-    ('/tmp/', 'usa /tmp'),
+    ('/tmp/', 'usa /tmp'),  # nosec B108 - texto do detector de skills incompativeis, nao e uso de /tmp
     ('sudo ', 'usa sudo'),
     ('apt-get ', 'usa apt-get/brew'),
     ('apt install', 'usa apt-get/brew'),

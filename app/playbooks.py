@@ -6,11 +6,10 @@ a saude da quota (healthy, degraded, survival).
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 
 class RoleConfig(BaseModel):

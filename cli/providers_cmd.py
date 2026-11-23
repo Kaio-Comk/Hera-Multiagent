@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import difflib
 import getpass
-import json
 from pathlib import Path
 from typing import Any, Callable, Iterable
 

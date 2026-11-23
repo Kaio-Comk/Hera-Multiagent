@@ -4,7 +4,7 @@ import re
 import shutil
 import asyncio
 from pathlib import Path
-from typing import Optional, Dict, Tuple, List
+from typing import Optional, Dict, Tuple
 
 class WorktreeError(Exception):
     """Exceção levantada em operações de git worktree."""

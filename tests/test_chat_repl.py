@@ -799,6 +799,7 @@ async def test_delegar_montado_so_com_agente_e_maestro(monkeypatch: pytest.Monke
 async def test_filho_read_only_sem_recursao_e_sem_escrever_efeitos(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
 ) -> None:
     from cli import chat_repl
     from cli.chat_comandos import ConfigAgente
@@ -827,7 +828,7 @@ async def test_filho_read_only_sem_recursao_e_sem_escrever_efeitos(
     monkeypatch.setattr(chat_repl.Agente, '__init__', agente_init_spy)
 
     raiz = Raiz(Path('.'))
-    checkpoints = Checkpoints(Path('.dados'), raiz)
+    checkpoints = Checkpoints(tmp_path / '.dados', raiz)   # nunca na pasta do repositorio
     leitura = Leitura(raiz)
     escrita = Escrita(raiz, checkpoints, modo='guarded')
 

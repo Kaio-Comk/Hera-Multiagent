@@ -95,7 +95,7 @@ APP_PRESO = {
 ROKU_TV = {
     "pt": (
         "Na Roku TV e Roku Express você pode assistir pelo app Magic Player da loja da Roku. "
-        "Basta ir em Add Playlist, colocar Nome NetHub e a URL M3U https://gw.nethubfilmes.org/get.php?username=SEU_EMAIL&password=SUA_SENHA&type=m3u_plus com o e-mail e senha da sua conta Pro. "
+        "Basta ir em Add Playlist, colocar Nome NetHub e a URL M3U https://gw.nethubfilmes.org/get.php?username=[EMAIL]&password=[SENHA]&type=m3u_plus com o e-mail e senha da sua conta Pro. "
         "Também funcionam os apps Braziper TV e Assist via MAC, e lembramos que nosso catálogo tem filmes e séries sob demanda, sem canais de TV ao vivo."
     ),
     "es": (

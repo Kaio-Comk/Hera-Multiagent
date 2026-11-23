@@ -1,6 +1,5 @@
-from typing import List, Optional, Literal, Dict, Any
-from pydantic import BaseModel, Field
-import time
+from typing import List, Optional, Literal
+from pydantic import BaseModel
 
 
 class ArenaCandidate(BaseModel):

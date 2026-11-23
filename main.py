@@ -1,4 +1,10 @@
 import os
+from pathlib import Path
+try:
+    import dotenv
+    dotenv.load_dotenv(Path(r"B:\Projetos\Hera\.env"))
+except Exception:
+    pass
 from app.locations import resolve_vault_dir
 import sys
 import uuid

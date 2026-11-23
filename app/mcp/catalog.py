@@ -1,9 +1,7 @@
 import hashlib
 import json
 import os
-import re
 from typing import Dict, Iterable, List, Optional
-from urllib.parse import urlsplit
 
 from app.mcp.schemas import McpServerConfig, McpToolDefinition
 from app.gateway.provider_policy import validate_provider_url, SSRFSecurityError

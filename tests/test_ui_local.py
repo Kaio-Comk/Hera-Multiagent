@@ -25,7 +25,7 @@ def test_index_nao_usa_nenhum_recurso_externo():
 
 def test_arquivos_gerados_existem_e_tem_conteudo():
     css = (WEB / "static" / "tailwind.css").read_text(encoding="utf-8")
-    assert len(css) > 10_000 and ".bg-brand-500" in css and "2xl\:grid-cols-2" in css
+    assert len(css) > 10_000 and ".bg-brand-500" in css and r"2xl\:grid-cols-2" in css
     fonts = (WEB / "static" / "fonts.css").read_text(encoding="utf-8")
     for ref in re.findall(r"url\('(/static/fonts/[^']+)'\)", fonts):
         assert (WEB / ref.lstrip("/")).is_file(), ref

@@ -5,15 +5,12 @@ from typing import Dict, List, Optional
 
 from app.hitl.schemas import (
     DiffProposal,
-    DiffStats,
-    DiffAlert,
     ApprovalRequest,
-    ApprovalToken,
     RejectRequest,
     RequestChangesRequest,
     MergeResult,
 )
-from app.hitl.git_manager import GitManager, GitSecurityError, DirtyWorkingTreeError, MergeConflictError
+from app.hitl.git_manager import GitManager, DirtyWorkingTreeError, MergeConflictError
 from app.hitl.diff_analyzer import DiffAnalyzer
 from app.hitl.approval_engine import ApprovalEngine, ApprovalSecurityError
 

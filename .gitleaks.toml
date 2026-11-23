@@ -5,7 +5,15 @@ title = "Hera"
 useDefault = true
 
 [allowlist]
-description = "Senha inventada usada pelos testes do filtro de dados sensiveis (DLP); nao e um segredo real."
+description = "Senha e chaves inventadas usada pelos testes do filtro de dados sensiveis (DLP); nao e um segredo real."
 regexes = [
   '''^Abc12345678901234567890$''',
+  # Chaves e tokens FICTICIOS dos testes de DLP/redacao (sk-test..., ghp_ de exemplo, JWT do jwt.io "John Doe").
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ\.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c''',
+  '''ghp_1234567890abcdef12345678901234567890''',
+  '''ghp_1234567890abcdef1234567890abcdef1234''',
+  '''sk\-1234567890abcdef1234567890abcdef''',
+  '''sk\-api\-secreta\-0123456789abcdef''',
+  '''sk\-no\-arquivo\-0123456789''',
+  '''sk\-secretissima\-0123456789abc''',
 ]

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import argparse
 import os
-import shutil
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Callable
 
 from app.memory.index import IndiceIndisponivel, MemoryIndex
 from app.memory.schema import TIPOS

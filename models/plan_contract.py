@@ -3,7 +3,7 @@
 Implementa a especificacao do padrao Plan Big, Execute Small (Anthropic CMA) e
 garante validacao deterministica do Grafo Aciclico Dirigido antes de qualquer execucao.
 """
-from typing import List, Optional, Literal, Dict, Any, Set
+from typing import List, Optional, Literal, Dict, Set
 from pydantic import BaseModel, Field, model_validator
 
 

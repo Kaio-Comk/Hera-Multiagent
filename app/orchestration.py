@@ -7,7 +7,7 @@ Fluxo (duas chamadas, para o humano ver o plano antes de gastar nada):
   3. `build_dag`            -> os passos viram tarefas; o roteador (DLP / modo offline) continua mandando.
 """
 from __future__ import annotations
-from models.plan_contract import PlanContractModel, PlanStepModel
+from models.plan_contract import PlanContractModel
 from app.context_reducer import ContextReducer
 
 import json
@@ -116,8 +116,8 @@ def build_planning_prompt(goal: str, catalog: List[Dict[str, Any]], max_steps: i
         "pasta do projeto depois do passo; o passo so e aprovado se todos terminarem com codigo 0. Deixe [] quando nao houver teste.\n"
         f"- No maximo {max_steps} passos; 'depends_on' lista ids de passos anteriores; cada instrucao deve ser entendida sem ver as outras.\n\n"
         + (f"CONTEXTO DA CONVERSA (o que ja foi dito e feito; use para continuar, nao para repetir):\n{context}\n\n" if context else "")
-        + (f"IMAGENS ANEXADAS pelo usuario (todos os passos recebem estes arquivos; so alguns motores enxergam imagens, entao "
-           f"coloque no passo que precisa delas a instrucao de abrir e descrever o arquivo):\n"
+        + ("IMAGENS ANEXADAS pelo usuario (todos os passos recebem estes arquivos; so alguns motores enxergam imagens, entao "
+           "coloque no passo que precisa delas a instrucao de abrir e descrever o arquivo):\n"
            + "\n".join(f"- {p}" for p in image_paths) + "\n\n" if image_paths else "")
         + (("PASTAS DO PROJETO CITADO NO OBJETIVO (o trabalho e NELAS: use estes caminhos absolutos nas instrucoes e NAO assuma que o "
             "projeto e a pasta do Hera):\n" + "\n".join(f"- {f}" for f in folders) + "\n\n") if folders else

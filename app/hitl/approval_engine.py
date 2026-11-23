@@ -6,7 +6,7 @@ from pathlib import Path
 import hashlib
 import secrets
 from typing import Set, Dict, Optional
-from app.hitl.schemas import DiffProposal, ApprovalToken, ApprovalRequest
+from app.hitl.schemas import DiffProposal, ApprovalToken
 
 
 class ApprovalSecurityError(RuntimeError):

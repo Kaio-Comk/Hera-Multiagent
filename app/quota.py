@@ -7,13 +7,12 @@ para comutacao de playbooks (Anthropic CMA).
 from __future__ import annotations
 
 import json
-import os
 import re
 import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 DEFAULT_COOLDOWN = 30 * 60          # sem horário de volta na mensagem: tenta de novo em 30 min
 MIN_COOLDOWN = 5 * 60

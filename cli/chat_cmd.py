@@ -505,7 +505,7 @@ async def executar(
 
                 print(f'Aviso: pasta {extra} nao liberada ({exc})')
 
-        sha = hashlib.sha1(str(Path.cwd()).encode('utf-8')).hexdigest()[:12]
+        sha = hashlib.sha1(str(Path.cwd()).encode('utf-8'), usedforsecurity=False).hexdigest()[:12]   # so nome de pasta
 
         pasta_checkpoints = Path.home() / '.hera' / 'checkpoints' / sha
 
